@@ -1,7 +1,6 @@
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -26,6 +25,12 @@ const ConfirmOrderInputSchema = z.object({
   confidence_score: z.number().min(0).max(1).nullable().optional(),
   notes: z.string().nullable().optional(),
   items: z.array(ConfirmOrderItemSchema).min(1, 'L\'ordine deve contenere almeno una riga'),
+  // Access token della sessione Supabase corrente (supabaseBrowser.auth.getSession()).
+  // L'app non usa createBrowserClient di @supabase/ssr, quindi la sessione
+  // vive solo in localStorage lato client: la Server Action non può
+  // derivarla dai cookie (sarebbero sempre vuoti) e deve validare questo
+  // token esplicitamente con supabase.auth.getUser(accessToken).
+  accessToken: z.string().min(1),
 });
 
 export type ConfirmOrderInput = z.infer<typeof ConfirmOrderInputSchema>;
@@ -48,44 +53,20 @@ export async function confirmOrderAction(input: ConfirmOrderInput): Promise<Conf
     if (!validation.success) {
       return { success: false, error: validation.error.issues[0]?.message || 'Dati ordine non validi' };
     }
-    const { items, customer_name, customer_phone, audio_transcript, confidence_score, notes } = validation.data;
+    const { items, customer_name, customer_phone, audio_transcript, confidence_score, notes, accessToken } = validation.data;
 
-    const cookieStore = await cookies();
-    const cookieAdapter = {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: any) {
-        try {
-          cookieStore.set({ name, value, ...options });
-        } catch {
-          // Ignora errori in server action read-only
-        }
-      },
-      remove(name: string, options: any) {
-        try {
-          cookieStore.set({ name, value: '', ...options });
-        } catch {
-          // Ignora errori
-        }
-      },
-    };
-
-    const supabaseAuth = createServerClient(supabaseUrl, supabaseAnonKey, { cookies: cookieAdapter });
-    const supabaseAdmin = createServerClient(supabaseUrl, supabaseServiceKey, { cookies: cookieAdapter });
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Stesso principio di sicurezza di extractVoiceOrderAction: tenant_id e
-    // agent_id derivano SEMPRE dalla sessione, mai da un valore fornito dal
-    // client, altrimenti chiunque potrebbe scrivere ordini nel tenant di
-    // qualcun altro chiamando questa Server Action come un endpoint POST.
+    // agent_id derivano SEMPRE dall'utente risolto dal token di sessione,
+    // mai da un valore fornito dal client, altrimenti chiunque potrebbe
+    // scrivere ordini nel tenant di qualcun altro chiamando questa Server
+    // Action come un endpoint POST.
     let userId: string | undefined;
     try {
-      const userResult = await supabaseAuth.auth.getUser();
+      const userResult = await supabaseAuth.auth.getUser(accessToken);
       userId = userResult.data.user?.id || undefined;
-      if (!userId) {
-        const sessionResult = await supabaseAuth.auth.getSession();
-        userId = sessionResult.data.session?.user?.id || undefined;
-      }
     } catch (err) {
       console.error('[confirmOrderAction] Auth error:', err);
     }

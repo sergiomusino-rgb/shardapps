@@ -1,7 +1,6 @@
 'use server';
 
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 import {
   VoiceOrderExtractionSchema,
   type VoiceOrderExtraction,
@@ -23,6 +22,14 @@ const MIN_AUTO_CONFIRM_CONFIDENCE = 0.75;
 
 export interface ExtractVoiceOrderInput {
   audioTranscript: string;
+  /**
+   * Access token della sessione Supabase corrente (supabaseBrowser.auth.getSession()).
+   * L'app non usa createBrowserClient di @supabase/ssr, quindi la sessione
+   * vive solo in localStorage lato client: le Server Action non possono
+   * derivarla dai cookie (sarebbero sempre vuoti) e devono validare questo
+   * token esplicitamente con supabase.auth.getUser(accessToken).
+   */
+  accessToken: string;
 }
 
 export interface ExtractVoiceOrderResult {
@@ -146,51 +153,26 @@ export async function extractVoiceOrderAction(
       return { success: false, error: 'Trascrizione audio mancante' };
     }
 
-    const cookieStore = await cookies();
-    const cookieAdapter = {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: any) {
-        try {
-          cookieStore.set({ name, value, ...options });
-        } catch {
-          // Ignora errori in server action read-only
-        }
-      },
-      remove(name: string, options: any) {
-        try {
-          cookieStore.set({ name, value: '', ...options });
-        } catch {
-          // Ignora errori
-        }
-      },
-    };
+    if (!input.accessToken) {
+      return { success: false, error: 'Devi effettuare il login per creare un ordine' };
+    }
 
-    // Client con anon key per leggere la sessione utente dai cookie
-    const supabaseAuth = createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: cookieAdapter,
-    });
+    // Client con anon key, usato solo per validare il token passato dal client
+    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
 
     // Client con service role per le query dati (bypassa RLS lato server)
-    const supabaseAdmin = createServerClient(supabaseUrl, supabaseServiceKey, {
-      cookies: cookieAdapter,
-    });
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Il tenant_id non viene MAI accettato da input: è una Server Action
     // chiamabile come un endpoint POST con payload arbitrario, quindi
     // fidarsi di un tenant_id fornito dal client permetterebbe di leggere il
     // catalogo e generare ordini per il tenant di chiunque altro. L'unica
-    // fonte attendibile è la sessione Supabase legata ai cookie della
-    // richiesta (stesso pattern di frontend/app/actions/generator.ts).
+    // fonte attendibile è l'utente risolto dal token di sessione, verificato
+    // qui contro Supabase Auth (non un tenant_id fornito direttamente).
     let userId: string | undefined;
     try {
-      const userResult = await supabaseAuth.auth.getUser();
+      const userResult = await supabaseAuth.auth.getUser(input.accessToken);
       userId = userResult.data.user?.id || undefined;
-      if (!userId) {
-        const sessionResult = await supabaseAuth.auth.getSession();
-        userId = sessionResult.data.session?.user?.id || undefined;
-      }
     } catch (err) {
       console.error('[extractVoiceOrderAction] Auth error:', err);
     }

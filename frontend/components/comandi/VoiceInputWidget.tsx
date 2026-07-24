@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, Mic, Square, X } from 'lucide-react';
 import { extractVoiceOrderAction } from '@/app/actions/comandi-voice';
 import type { VoiceOrderExtraction } from '@/types/comandi';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { supabaseBrowser } from '@/src/lib/supabase-browser';
 
 // Stesso pattern di dichiarazione usato in dashboard/creator/page.tsx e
 // dashboard/generator/page.tsx: Web Speech API non è ancora in TS lib.dom.
@@ -149,7 +150,14 @@ export default function VoiceInputWidget({
       setIsProcessing(true);
       setError(null);
       try {
-        const result = await extractVoiceOrderAction({ audioTranscript: trimmed });
+        const {
+          data: { session },
+        } = await supabaseBrowser.auth.getSession();
+
+        const result = await extractVoiceOrderAction({
+          audioTranscript: trimmed,
+          accessToken: session?.access_token || '',
+        });
         if (!result.success || !result.data) {
           reportError(result.error || t('comandi_voice_error_ai_processing'));
           return;

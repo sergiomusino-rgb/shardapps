@@ -13,6 +13,7 @@ import {
 import { confirmOrderAction } from '@/app/actions/comandi-orders';
 import type { ParsedOrderItem, VoiceOrderExtraction } from '@/types/comandi';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { supabaseBrowser } from '@/src/lib/supabase-browser';
 
 export interface OrderReviewCardProps {
   extraction: VoiceOrderExtraction;
@@ -78,7 +79,12 @@ export default function OrderReviewCard({ extraction, onOrderConfirmed, classNam
     setError(null);
 
     try {
+      const {
+        data: { session },
+      } = await supabaseBrowser.auth.getSession();
+
       const result = await confirmOrderAction({
+        accessToken: session?.access_token || '',
         audio_transcript: extraction.summary_text,
         confidence_score: extraction.confidence_score,
         items: items.map((item) => ({
