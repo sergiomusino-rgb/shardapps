@@ -15,8 +15,9 @@ function generatePassword(): string {
   return password;
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     // Verifica autenticazione ZeusX
     const cookieStore = await cookies();
     const authCookie = cookieStore.getAll().find(c => c.name.endsWith('-auth-token') || c.name === 'sb-access-token');
@@ -47,7 +48,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const { data: app, error: appError } = await supabase
       .from('apps')
       .select('id, tenant_id, client_password, client_active, expires_at')
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
 
     if (appError || !app) {
@@ -74,7 +75,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       const { error } = await supabase
         .from('apps')
         .update({ client_active: newActive })
-        .eq('id', params.id);
+        .eq('id', id);
 
       if (error) {
         return NextResponse.json({ error: 'Errore aggiornamento stato' }, { status: 500 });
@@ -90,7 +91,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           client_password: newPassword,
           initial_password: newPassword,
         })
-        .eq('id', params.id);
+        .eq('id', id);
 
       if (error) {
         return NextResponse.json({ error: 'Errore rigenerazione password' }, { status: 500 });
@@ -114,7 +115,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           client_active: true,
           expiry_warning_sent: false,
         })
-        .eq('id', params.id);
+        .eq('id', id);
 
       if (error) {
         return NextResponse.json({ error: 'Errore estensione scadenza' }, { status: 500 });

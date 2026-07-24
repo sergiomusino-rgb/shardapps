@@ -14,8 +14,9 @@ function generatePassword(): string {
   return password;
 }
 
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
+    const { slug } = await params;
     const body = await req.json();
     const { email } = body;
 
@@ -27,7 +28,7 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     const { data: app, error: appError } = await supabase
       .from('apps')
       .select('id, client_email, client_active, expires_at')
-      .eq('slug', params.slug)
+      .eq('slug', slug)
       .single();
 
     if (appError || !app) {

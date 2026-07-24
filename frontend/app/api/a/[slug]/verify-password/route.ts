@@ -5,8 +5,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
+    const { slug } = await params;
     const body = await req.json();
     const { password } = body;
 
@@ -17,7 +18,7 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     const { data: app, error } = await supabase
       .from('apps')
       .select('id, client_password, client_active, expires_at, config')
-      .eq('slug', params.slug)
+      .eq('slug', slug)
       .single();
 
     if (error || !app) {
