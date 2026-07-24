@@ -6,7 +6,9 @@ import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
   ArrowLeft,
+  Check,
   CheckCircle2,
+  Copy,
   LogOut,
   Package,
   Plus,
@@ -17,6 +19,7 @@ import {
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
+import { updatePosCredentialsAction } from '@/app/actions/comandi-provisioning';
 import type { CatalogItem, Order, ProductSynonym } from '@/types/comandi';
 
 type Tab = 'catalog' | 'company' | 'orders';
@@ -443,6 +446,7 @@ function CompanyTab({ tenantId }: { tenantId: string }) {
   if (loading) return <p className="text-sm text-gray-500">…</p>;
 
   return (
+    <>
     <form onSubmit={handleSave} className="max-w-lg flex flex-col gap-4">
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
@@ -518,6 +522,140 @@ function CompanyTab({ tenantId }: { tenantId: string }) {
         {t('comandi_dashboard_company_save_button')}
       </button>
     </form>
+    <CredentialsSection tenantId={tenantId} />
+    </>
+  );
+}
+
+// ─── Credenziali di accesso (account cassa) ────────────────────────────────
+
+function CredentialsSection({ tenantId }: { tenantId: string }) {
+  const { t } = useLanguage();
+  const [posEmail, setPosEmail] = useState('');
+  const [posPassword, setPosPassword] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [changing, setChanging] = useState(false);
+  const [changeError, setChangeError] = useState<string | null>(null);
+  const [changeSuccess, setChangeSuccess] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data: app } = await supabase
+        .from('apps' as any)
+        .select('id, client_email')
+        .eq('tenant_id', tenantId)
+        .eq('app_type', 'comandi_ai')
+        .maybeSingle();
+
+      const appRow = app as { id: string; client_email?: string } | null;
+      if (!appRow) {
+        setLoading(false);
+        return;
+      }
+      setPosEmail(appRow.client_email || '');
+
+      // RPC (non SELECT diretta): client_password/initial_password sono
+      // revocate per anon/authenticated su apps, vedi migrazione lockdown.
+      const { data: creds } = await (supabase as any).rpc('get_app_client_credentials', { p_app_id: appRow.id });
+      if (Array.isArray(creds) && creds[0]?.client_password) {
+        setPosPassword(creds[0].client_password);
+      }
+      setLoading(false);
+    })();
+  }, [tenantId]);
+
+  const copy = (value: string, field: 'email' | 'password') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangeError(null);
+    setChangeSuccess(false);
+
+    if (newPassword.length < 6) {
+      setChangeError(t('comandi_dashboard_credentials_password_too_short'));
+      return;
+    }
+
+    setChanging(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setChangeError(t('comandi_dashboard_company_error_generic'));
+        return;
+      }
+      const result = await updatePosCredentialsAction({ accessToken: session.access_token, newPassword });
+      if (!result.success) {
+        setChangeError(result.error || t('comandi_dashboard_company_error_generic'));
+        return;
+      }
+      setPosPassword(newPassword);
+      setNewPassword('');
+      setChangeSuccess(true);
+    } catch (err) {
+      console.error('[CredentialsSection] Errore cambio password:', err);
+      setChangeError(t('comandi_dashboard_company_error_generic'));
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  if (loading || !posEmail) return null;
+
+  return (
+    <div className="max-w-lg mt-8 rounded-xl border border-gray-800 bg-gray-900/60 p-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
+        {t('comandi_dashboard_credentials_title')}
+      </p>
+      <div className="space-y-2 mb-4">
+        <div>
+          <p className="text-[11px] text-gray-500 mb-0.5">{t('creator_comandi_success_credentials_email')}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-mono text-sm text-gray-200 break-all">{posEmail}</p>
+            <button type="button" onClick={() => copy(posEmail, 'email')} className="shrink-0 text-gray-500 hover:text-white">
+              {copiedField === 'email' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+        {posPassword && (
+          <div>
+            <p className="text-[11px] text-gray-500 mb-0.5">{t('creator_comandi_success_credentials_password')}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-sm text-gray-200">{posPassword}</p>
+              <button type="button" onClick={() => copy(posPassword, 'password')} className="shrink-0 text-gray-500 hover:text-white">
+                {copiedField === 'password' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={handleChangePassword} className="flex flex-col sm:flex-row gap-2 items-start">
+        <input
+          type="text"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder={t('comandi_dashboard_credentials_new_password_placeholder')}
+          className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder:text-gray-500"
+        />
+        <button
+          type="submit"
+          disabled={changing || !newPassword}
+          className="px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {changing ? t('comandi_dashboard_credentials_changing') : t('comandi_dashboard_credentials_change_button')}
+        </button>
+      </form>
+      {changeError && <p className="text-xs text-red-400 mt-2">{changeError}</p>}
+      {changeSuccess && <p className="text-xs text-green-400 mt-2">{t('comandi_dashboard_credentials_change_success')}</p>}
+    </div>
   );
 }
 

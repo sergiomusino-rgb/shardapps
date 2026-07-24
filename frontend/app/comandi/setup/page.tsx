@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Building2, Loader2, MapPin, Phone, Receipt, Sparkles } from 'lucide-react';
+import { AlertTriangle, Building2, Check, CheckCircle2, Copy, ExternalLink, Loader2, MapPin, Phone, Receipt, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 export default function ComandiSetupPage() {
   const { t } = useLanguage();
@@ -22,6 +23,8 @@ export default function ComandiSetupPage() {
   const [seedDemoCatalog, setSeedDemoCatalog] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [provisionedResult, setProvisionedResult] = useState<{ slug: string; posEmail?: string; posPassword?: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
 
   // Guard: la pagina di onboarding richiede una sessione attiva (l'utente
   // arriva qui solo dopo login/registrazione da /comandi).
@@ -79,7 +82,29 @@ export default function ComandiSetupPage() {
         return;
       }
 
-      router.push(`/dashboard/comandi?t=${Date.now()}`);
+      // Provisiona subito l'istanza (landing/login/dashboard/cassa dedicati
+      // su /a/{slug}): il tenant appena creato ha già 1 slot incluso (vedi
+      // setupTenantAction), quindi il controllo slot qui passa sempre per
+      // una prima registrazione. Idempotente: se esiste già un'istanza
+      // Comandi per questo tenant, restituisce quella invece di duplicarla.
+      const provisionResult = await provisionComandiAppAction({ accessToken: session.access_token });
+
+      if (!provisionResult.success || !provisionResult.slug) {
+        // I dati aziendali sono comunque salvati: /dashboard/comandi fa da
+        // rete di sicurezza e ritenta il provisioning da lì.
+        console.error('[ComandiSetupPage] Errore provisionComandiAppAction:', provisionResult.error);
+        router.push(`/dashboard/comandi?t=${Date.now()}`);
+        return;
+      }
+
+      // Mostra le credenziali di primo accesso prima di reindirizzare:
+      // l'utente deve poterle copiare/consegnare, non solo intravederle.
+      setProvisionedResult({
+        slug: provisionResult.slug,
+        posEmail: provisionResult.posEmail,
+        posPassword: provisionResult.posPassword,
+      });
+      setLoading(false);
     } catch (err) {
       console.error('[ComandiSetupPage] Errore setupTenantAction:', err);
       setError(t('comandi_setup_error_network'));
@@ -87,10 +112,76 @@ export default function ComandiSetupPage() {
     }
   };
 
+  const copyCred = (value: string, field: 'email' | 'password') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950">
         <Loader2 size={32} className="animate-spin text-amber-500" />
+      </div>
+    );
+  }
+
+  if (provisionedResult) {
+    return (
+      <div className="bg-slate-950 text-white min-h-screen w-full font-sans flex items-center justify-center px-4 py-16">
+        <div className="w-full max-w-md rounded-2xl border border-green-700/50 bg-gradient-to-br from-green-950/40 to-emerald-950/20 p-8 flex flex-col items-center text-center gap-3">
+          <CheckCircle2 className="w-10 h-10 text-green-400" />
+          <p className="text-lg font-bold text-white">{t('creator_comandi_success_title')}</p>
+          <p className="text-sm text-slate-400 max-w-sm">{t('creator_comandi_success_desc')}</p>
+
+          {provisionedResult.posEmail && provisionedResult.posPassword && (
+            <div className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-left mt-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+                {t('creator_comandi_success_credentials_title')}
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_email')}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-sm text-slate-200 break-all">{provisionedResult.posEmail}</p>
+                    <button
+                      type="button"
+                      onClick={() => copyCred(provisionedResult.posEmail!, 'email')}
+                      className="shrink-0 text-slate-500 hover:text-white"
+                      title="Copia"
+                    >
+                      {copiedField === 'email' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_password')}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-mono text-sm text-slate-200">{provisionedResult.posPassword}</p>
+                    <button
+                      type="button"
+                      onClick={() => copyCred(provisionedResult.posPassword!, 'password')}
+                      className="shrink-0 text-slate-500 hover:text-white"
+                      title="Copia"
+                    >
+                      {copiedField === 'password' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-3">{t('creator_comandi_success_credentials_hint')}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => router.push(`/a/${provisionedResult.slug}?t=${Date.now()}`)}
+            className="mt-2 flex items-center gap-2 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+          >
+            <ExternalLink className="w-4 h-4" />
+            {t('creator_comandi_success_cta')}
+          </button>
+        </div>
       </div>
     );
   }

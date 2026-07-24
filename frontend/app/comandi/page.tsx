@@ -8,34 +8,53 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
 import { supabase } from '@/src/lib/supabase';
 
-// Step 1 del decoupling di Comandi: landing + auth standalone, non ancora
-// un pannello operativo separato. Dopo login/registrazione si atterra
-// sull'unica dashboard operativa esistente (/dashboard/comandi); la sua
-// eventuale migrazione a una rotta standalone è un passo successivo.
-const POST_LOGIN_REDIRECT = '/dashboard/comandi';
+// Ogni account Comandi ha ora un'istanza dedicata su /a/{slug} (landing,
+// login, cassa e dashboard per-istanza): il vecchio /dashboard/comandi resta
+// solo come rete di sicurezza (redirect automatico) se la risoluzione
+// dell'istanza qui sotto fallisce per qualche motivo.
+const FALLBACK_REDIRECT = '/dashboard/comandi';
 const ONBOARDING_REDIRECT = '/comandi/setup';
 
 type AuthMode = 'login' | 'register';
 
 // Un utente senza riga in tenant_members non ha ancora completato lo Step 2
-// (dati aziendali): lo mandiamo in onboarding invece che dritto in
-// dashboard, dove tutte le Server Action del modulo fallirebbero con
-// "nessun tenant associato".
+// (dati aziendali): lo mandiamo in onboarding, dove viene creato anche il
+// tenant. Un utente con tenant ma senza istanza Comandi ancora provisionata
+// (es. tenant creato da un altro flusso ZeusX) torna anch'esso in onboarding,
+// che ora provisiona pure l'istanza (vedi comandi/setup/page.tsx).
 async function resolvePostAuthDestination(userId: string): Promise<string> {
   try {
     // Cast mirato: stesso motivo di dashboard/comandi/page.tsx — il client
-    // Supabase qui non ha un generic Database che copre tenant_members.
-    const { data } = await supabase
+    // Supabase qui non ha un generic Database che copre tenant_members/apps.
+    const membershipQuery = await supabase
       .from('tenant_members' as any)
       .select('tenant_id')
       .eq('user_id', userId)
       .limit(1)
       .single();
+    const membership = membershipQuery.data as { tenant_id: string } | null;
 
-    return data ? POST_LOGIN_REDIRECT : ONBOARDING_REDIRECT;
-  } catch (err) {
-    console.error('[ComandiLandingPage] Errore verifica tenant esistente:', err);
+    if (!membership?.tenant_id) {
+      return ONBOARDING_REDIRECT;
+    }
+
+    const appQuery = await supabase
+      .from('apps' as any)
+      .select('slug')
+      .eq('tenant_id', membership.tenant_id)
+      .eq('app_type', 'comandi_ai')
+      .limit(1)
+      .maybeSingle();
+    const app = appQuery.data as { slug: string } | null;
+
+    if (app?.slug) {
+      return `/a/${app.slug}`;
+    }
+
     return ONBOARDING_REDIRECT;
+  } catch (err) {
+    console.error('[ComandiLandingPage] Errore risoluzione istanza:', err);
+    return FALLBACK_REDIRECT;
   }
 }
 

@@ -1,57 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { LayoutDashboard, Loader2, Mic, Package, ShoppingCart } from 'lucide-react';
+import { Mic, Package, ShoppingCart } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
-import { supabase } from '@/src/lib/supabase';
 
 export interface ComandiInstanceLandingProps {
   slug: string;
   appName?: string;
-  tenantId: string;
 }
-
-type AuthState = 'checking' | 'authenticated' | 'anonymous';
 
 // Landing pubblica per una singola istanza Comandi AI provisionata da slot
 // (app/a/[slug]/page.tsx quando app_type === 'comandi_ai'). Stessi contenuti
 // della landing standalone /comandi (stesse chiavi i18n comandi_landing_*).
-// Se l'utente è già autenticato e membro del tenant proprietario, mostra le
-// azioni dirette (Cassa/Dashboard) invece del CTA di accesso: il login non
-// deve più forzare l'ingresso diretto in cassa, atterra qui.
-export default function ComandiInstanceLanding({ slug, appName, tenantId }: ComandiInstanceLandingProps) {
+// Pagina statica, senza controllo di sessione: un solo CTA "Inizia" verso il
+// login. Una volta autenticato, l'operatore atterra direttamente in cassa
+// (vedi app/a/[slug]/login/page.tsx), da cui la dashboard di gestione resta
+// comunque raggiungibile tramite il menu nella console operativa.
+export default function ComandiInstanceLanding({ slug, appName }: ComandiInstanceLandingProps) {
   const { t } = useLanguage();
-  const [authState, setAuthState] = useState<AuthState>('checking');
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (cancelled) return;
-
-      if (!session?.user) {
-        setAuthState('anonymous');
-        return;
-      }
-
-      const { data: membership } = await supabase
-        .from('tenant_members' as any)
-        .select('tenant_id')
-        .eq('user_id', session.user.id)
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
-
-      if (cancelled) return;
-      setAuthState(membership ? 'authenticated' : 'anonymous');
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
 
   const features = [
     {
@@ -93,39 +59,12 @@ export default function ComandiInstanceLanding({ slug, appName, tenantId }: Coma
             {t('comandi_landing_hero_subtitle')}
           </p>
 
-          {authState === 'checking' && (
-            <div className="mt-4 h-[52px] flex items-center justify-center">
-              <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
-            </div>
-          )}
-
-          {authState === 'anonymous' && (
-            <Link
-              href={`/a/${slug}/login`}
-              className="mt-4 bg-amber-600 hover:bg-amber-500 text-white font-semibold px-8 py-4 rounded-xl text-center shadow-lg transition-colors"
-            >
-              {t('comandi_landing_cta_login')}
-            </Link>
-          )}
-
-          {authState === 'authenticated' && (
-            <div className="mt-4 flex flex-col sm:flex-row gap-4">
-              <Link
-                href={`/a/${slug}/app`}
-                className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white font-semibold px-8 py-4 rounded-xl text-center shadow-lg transition-colors"
-              >
-                <Mic className="w-4 h-4" />
-                {t('comandi_instance_cta_checkout')}
-              </Link>
-              <Link
-                href={`/a/${slug}/dashboard`}
-                className="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold px-8 py-4 rounded-xl text-center transition-colors"
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                {t('comandi_instance_cta_dashboard')}
-              </Link>
-            </div>
-          )}
+          <Link
+            href={`/a/${slug}/login`}
+            className="mt-4 bg-amber-600 hover:bg-amber-500 text-white font-semibold px-8 py-4 rounded-xl text-center shadow-lg transition-colors"
+          >
+            {t('comandi_instance_cta_start')}
+          </Link>
         </section>
 
         <section className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-3 gap-6 mt-20">

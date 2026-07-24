@@ -192,9 +192,10 @@ function ComandiLoginForm() {
         return;
       }
 
-      // Atterra sulla landing dell'istanza (non dritto in cassa): da lì
-      // l'operatore sceglie esplicitamente "Vai alla Cassa" o "Dashboard".
-      router.push(`/a/${slug}?t=${Date.now()}`);
+      // Dritto in cassa: la landing è ora una pagina statica senza scelta
+      // Cassa/Dashboard. La dashboard di gestione resta comunque
+      // raggiungibile dal menu nella console operativa.
+      router.push(`/a/${slug}/app?t=${Date.now()}`);
     } catch {
       setError(t('login_error_connection'));
       setLoading(false);

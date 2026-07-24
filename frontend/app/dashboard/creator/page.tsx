@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/src/lib/LanguageContext';
-import { Send, Loader2, Mic, MicOff, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Send, Loader2, Mic, MicOff, CheckCircle2, ExternalLink, Copy, Check } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
@@ -38,6 +38,8 @@ export default function CreatorPage() {
   const [isProvisioningComandi, setIsProvisioningComandi] = useState(false);
   const [comandiError, setComandiError] = useState<string | null>(null);
   const [provisionedComandiSlug, setProvisionedComandiSlug] = useState<string | null>(null);
+  const [provisionedComandiCreds, setProvisionedComandiCreds] = useState<{ email: string; password: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
   const recognitionRef = useRef<any>(null);
 
   // Inizializza SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
@@ -151,6 +153,9 @@ export default function CreatorPage() {
         // dell'istanza, così l'utente può copiarlo/tornare al Creator senza
         // perdere il contesto.
         setProvisionedComandiSlug(result.slug);
+        if (result.posEmail && result.posPassword) {
+          setProvisionedComandiCreds({ email: result.posEmail, password: result.posPassword });
+        }
         setIsProvisioningComandi(false);
       } else {
         setComandiError(result.error || t('creator_comandi_error_generic'));
@@ -161,6 +166,12 @@ export default function CreatorPage() {
       setComandiError(t('creator_comandi_error_generic'));
       setIsProvisioningComandi(false);
     }
+  };
+
+  const copyComandiCred = (value: string, field: 'email' | 'password') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   return (
@@ -181,9 +192,49 @@ export default function CreatorPage() {
             <p className="text-xs font-mono text-gray-500 bg-gray-900/60 rounded-lg px-3 py-1.5 break-all">
               {typeof window !== 'undefined' ? window.location.origin : ''}/a/{provisionedComandiSlug}
             </p>
+
+            {provisionedComandiCreds && (
+              <div className="w-full max-w-sm rounded-xl border border-gray-700 bg-gray-900/60 p-4 text-left">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
+                  {t('creator_comandi_success_credentials_title')}
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-0.5">{t('creator_comandi_success_credentials_email')}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono text-sm text-gray-200 break-all">{provisionedComandiCreds.email}</p>
+                      <button
+                        type="button"
+                        onClick={() => copyComandiCred(provisionedComandiCreds.email, 'email')}
+                        className="shrink-0 text-gray-500 hover:text-white"
+                        title="Copia"
+                      >
+                        {copiedField === 'email' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-500 mb-0.5">{t('creator_comandi_success_credentials_password')}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-mono text-sm text-gray-200">{provisionedComandiCreds.password}</p>
+                      <button
+                        type="button"
+                        onClick={() => copyComandiCred(provisionedComandiCreds.password, 'password')}
+                        className="shrink-0 text-gray-500 hover:text-white"
+                        title="Copia"
+                      >
+                        {copiedField === 'password' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-3">{t('creator_comandi_success_credentials_hint')}</p>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
               <a
-                href={`/a/${provisionedComandiSlug}/app`}
+                href={`/a/${provisionedComandiSlug}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"

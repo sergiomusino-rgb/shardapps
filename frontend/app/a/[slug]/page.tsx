@@ -636,7 +636,7 @@ export default function AppRootPageEntry() {
   const appInfo = useAppInfo();
 
   if (appInfo.appType === 'comandi_ai') {
-    return <ComandiInstanceLanding slug={appInfo.slug} appName={appInfo.appName} tenantId={appInfo.tenantId} />;
+    return <ComandiInstanceLanding slug={appInfo.slug} appName={appInfo.appName} />;
   }
 
   return <GeneratedAppRootPage />;
