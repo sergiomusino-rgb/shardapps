@@ -42,6 +42,10 @@ export interface Tenant {
   plan: string;
   app_limit: number;
   total_apps_created: number;
+  vat_number: string | null;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
   created_at: string | null; // TIMESTAMPTZ
   updated_at: string | null; // TIMESTAMPTZ
 }
