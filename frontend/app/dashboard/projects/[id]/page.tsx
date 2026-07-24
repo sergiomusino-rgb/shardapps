@@ -72,10 +72,15 @@ export default function AppDetailPage() {
     // authenticated key (vedi migrazione lockdown_apps_password_columns): si
     // recuperano tramite RPC SECURITY DEFINER che verifica la membership sul
     // tenant dell'app prima di restituirle.
-    supabase.rpc('get_app_client_credentials', { p_app_id: loaded.id }).then(({ data, error }) => {
-      if (error || !data || !data[0]) return;
-      setApp(prev => prev ? { ...prev, client_password: data[0].client_password, initial_password: data[0].initial_password } : prev);
-    });
+    // Cast mirato: il client `supabase` (src/lib/supabase.ts) non ha un
+    // generic Database con le funzioni RPC dichiarate, quindi risolverebbe
+    // qui a `never` come altrove nel progetto (vedi audit tsc).
+    (supabase.rpc as any)('get_app_client_credentials', { p_app_id: loaded.id }).then(
+      ({ data, error }: { data: { client_password: string; initial_password: string }[] | null; error: unknown }) => {
+        if (error || !data || !data[0]) return;
+        setApp(prev => prev ? { ...prev, client_password: data[0].client_password, initial_password: data[0].initial_password } : prev);
+      }
+    );
   }
 
   useEffect(() => {

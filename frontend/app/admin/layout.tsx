@@ -66,13 +66,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return;
     }
 
+    // Cast mirato: frontend/types/database.ts non è lo schema Database
+    // generato da Supabase (manca la colonna 'role' su profiles), quindi il
+    // client tipizzato risolverebbe qui a `never` come altrove nel progetto.
     const { data: profile } = await supabaseBrowser
-      .from('profiles')
+      .from('profiles' as any)
       .select('role')
       .eq('user_id', session.user.id)
       .single();
-    
-    if (profile?.role === 'admin') {
+
+    if ((profile as { role?: string } | null)?.role === 'admin') {
       setIsAdmin(true);
     } else {
       router.push('/dashboard');

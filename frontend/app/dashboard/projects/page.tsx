@@ -54,10 +54,14 @@ export default function ProjectsPage() {
       console.log('[Projects] User:', user.id);
 
       // Get user's tenant
-      const { data: memberships, error: membershipError } = await supabaseBrowser
-        .from('tenant_members')
+      // Cast mirato: frontend/types/database.ts non copre tenant_members,
+      // quindi il client tipizzato risolverebbe qui a `never` come altrove
+      // nel progetto (vedi audit tsc).
+      const { data: membershipsRaw, error: membershipError } = await supabaseBrowser
+        .from('tenant_members' as any)
         .select('tenant_id')
         .eq('user_id', user.id);
+      const memberships = membershipsRaw as { tenant_id: string }[] | null;
 
       if (membershipError) {
         console.error('[Projects] membership error:', membershipError);

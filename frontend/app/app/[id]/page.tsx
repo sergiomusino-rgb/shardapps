@@ -31,11 +31,15 @@ export default function AppViewerPage() {
 
   async function loadApp() {
     try {
-      const { data: appData, error } = await supabase
-        .from('apps')
+      // Cast mirato: il client `supabase` (src/lib/supabase.ts) non ha un
+      // generic Database, quindi supabase-js risolve qui a `never` come
+      // altrove nel progetto (vedi audit tsc).
+      const { data: appDataRaw, error } = await supabase
+        .from('apps' as any)
         .select('id, name, config, blueprint_id')
         .eq('id', appId)
         .single();
+      const appData = appDataRaw as { id: string; name: string; config: Record<string, unknown>; blueprint_id: string | null } | null;
 
       if (error || !appData) {
         console.error('App not found:', error);
@@ -50,7 +54,7 @@ export default function AppViewerPage() {
       const sanitized = sanitizeBlueprint(appData.config);
       console.log('[AppViewer] Sanitized blueprint:', sanitized);
       console.log('[AppViewer] Tables count:', sanitized?.schema?.tables?.length || 0);
-      
+
       if (!sanitized) {
         console.error('[AppViewer] sanitizeBlueprint returned null for config:', appData.config);
       }

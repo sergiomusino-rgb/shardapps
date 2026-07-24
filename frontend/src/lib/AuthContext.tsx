@@ -61,14 +61,18 @@ export function AuthProvider({
     
     if (session?.user && appId) {
       // Utente Supabase autenticato - carica i suoi dati app_user
-      const { data: appUser, error } = await supabase
-        .from('app_users')
+      // Cast mirato: frontend/types/database.ts non copre app_users, quindi
+      // il client tipizzato risolverebbe qui a `never` come altrove nel
+      // progetto (vedi audit tsc).
+      const { data: appUserRaw, error } = await supabase
+        .from('app_users' as any)
         .select('*')
         .eq('user_id', session.user.id)
         .eq('app_id', appId)
         .eq('is_active', true)
         .single();
-      
+      const appUser = appUserRaw as AppUser | null;
+
       if (!error && appUser) {
         setUser(appUser);
         setRole(appUser.role);
@@ -120,14 +124,18 @@ export function AuthProvider({
     
     if (data.session?.user) {
       // Carica i dati app_user
-      const { data: appUser } = await supabase
-        .from('app_users')
+      // Cast mirato: frontend/types/database.ts non copre app_users, quindi
+      // il client tipizzato risolverebbe qui a `never` come altrove nel
+      // progetto (vedi audit tsc).
+      const { data: appUserRaw } = await supabase
+        .from('app_users' as any)
         .select('*')
         .eq('user_id', data.session.user.id)
         .eq('app_id', appId)
         .eq('is_active', true)
         .single();
-      
+      const appUser = appUserRaw as AppUser | null;
+
       if (appUser) {
         setUser(appUser);
         setRole(appUser.role);

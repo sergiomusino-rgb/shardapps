@@ -41,9 +41,12 @@ export default function ManagementPage() {
     }
 
     // Carica le app del rivenditore
-    const { data, error: appsError } = await supabase.rpc('get_reseller_apps_with_total', {
+    // Cast mirato: il client `supabase` non ha un generic Database con le
+    // funzioni RPC dichiarate, quindi risolverebbe qui a `never` come
+    // altrove nel progetto (vedi audit tsc).
+    const { data, error: appsError } = await (supabase.rpc as any)('get_reseller_apps_with_total', {
       p_reseller_id: session.user.id
-    });
+    }) as { data: AppRegistryItem[] | null; error: { message: string } | null };
 
     if (appsError) {
       setError(appsError.message);
@@ -59,8 +62,11 @@ export default function ManagementPage() {
 
   const toggleAppStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'active' ? 'suspended' : 'active';
-    
-    const { error } = await supabase
+
+    // Cast mirato: frontend/types/database.ts non copre app_registry,
+    // quindi il client tipizzato risolverebbe qui a `never` come altrove
+    // nel progetto (vedi audit tsc).
+    const { error } = await (supabase as any)
       .from('app_registry')
       .update({ status: newStatus })
       .eq('id', id);

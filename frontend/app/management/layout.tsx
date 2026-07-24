@@ -50,11 +50,15 @@ export default function ManagementLayout({
     }
 
     // Get user profile with role and plan
-    const { data: profile } = await supabase
-      .from('profiles')
+    // Cast mirato: frontend/types/database.ts non copre role/subscription_plan
+    // su profiles, quindi il client tipizzato risolverebbe qui a `never`
+    // come altrove nel progetto (vedi audit tsc).
+    const { data: profileRaw } = await supabase
+      .from('profiles' as any)
       .select('role, subscription_plan')
       .eq('user_id', session.user.id)
       .single();
+    const profile = profileRaw as { role?: string; subscription_plan?: string } | null;
 
     if (!profile) {
       router.push('/login');
