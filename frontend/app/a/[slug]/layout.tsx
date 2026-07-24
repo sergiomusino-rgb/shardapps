@@ -27,6 +27,8 @@ interface AppInfo {
   client_price: number | null;
   auth_mode: AuthMode;
   config: Record<string, unknown> | null;
+  tenant_id: string;
+  app_type: string | null;
 }
 
 // Estrae il settore dell'app dallo schema salvato (blueprint.sector per la
@@ -94,6 +96,8 @@ export default function AppLayout({ children }: PropsWithChildren) {
             client_price: 25,
             auth_mode: 'supabase',
             config: { sector: demo.sector, description: demo.description, schema: { tables: demo.tables } },
+            tenant_id: '',
+            app_type: null,
           });
           setLoading(false);
         }
@@ -103,7 +107,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
       const [{ data: rawApp }, { data: { user } }] = await Promise.all([
         supabase
           .from('apps')
-          .select('id, name, status, trial_ends_at, stripe_subscription_id, client_subscription_price, client_price, auth_mode, config')
+          .select('id, name, status, trial_ends_at, stripe_subscription_id, client_subscription_price, client_price, auth_mode, config, tenant_id, app_type')
           .eq('slug', slug)
           .single(),
         supabase.auth.getUser(),
@@ -156,11 +160,30 @@ export default function AppLayout({ children }: PropsWithChildren) {
         return;
       }
 
-      // ─── Gate cliente (dashboard/app/fatture) per le app auth_mode='supabase':
-      // richiede sessione Supabase Auth + membership attiva in app_users.
-      // Le app legacy non hanno alcun gate qui: l'autenticazione a password
-      // è gestita dal componente pagina stesso (invariato).
-      if (isClientProtected && app?.auth_mode === 'supabase') {
+      // ─── Gate cliente (dashboard/app/fatture) ────────────────────────────
+      // Comandi AI (app_type='comandi_ai'): niente app_users/client_password,
+      // gli operatori sono già membri del tenant proprietario (stesso
+      // Supabase Auth di /comandi e /dashboard/comandi) — si verifica
+      // tenant_members invece di app_users, e si torna alla landing
+      // standalone di Comandi (non al login legacy dell'app generata).
+      if (isClientProtected && app?.app_type === 'comandi_ai') {
+        if (!user) {
+          router.replace('/comandi');
+          return;
+        }
+        const { data: membership } = await supabase
+          .from('tenant_members')
+          .select('tenant_id')
+          .eq('user_id', user.id)
+          .eq('tenant_id', app.tenant_id)
+          .maybeSingle();
+        if (!membership) {
+          router.replace('/comandi');
+          return;
+        }
+      } else if (isClientProtected && app?.auth_mode === 'supabase') {
+        // App a schema generato con auth_mode='supabase': richiede sessione
+        // Supabase Auth + membership attiva in app_users (invariato).
         if (!user) {
           router.replace(`/a/${slug}/login`);
           return;
@@ -275,8 +298,39 @@ export default function AppLayout({ children }: PropsWithChildren) {
 
   // Paywall: si applica a tutte le route tranne la landing pubblica e la
   // pagina "app sospesa" (che deve restare visibile per spiegare il blocco).
+  // Vale anche per Comandi AI: il blocco per trial scaduto/abbonamento non in
+  // regola è logica di business, non "chrome" ZeusX da nascondere.
   if (isAppBlocked && appInfo && !isRootLanding && !isBlockedPage) {
     return <TrialPaywallModal appName={appInfo.name} slug={slug} trialEndsAt={appInfo.trial_ends_at || new Date().toISOString()} price={clientPrice} />;
+  }
+
+  // ─── Isolamento full white-label per Comandi AI ────────────────────────
+  // Nessun banner trial, nessun link "Torna alla Dashboard", nessun
+  // ZeusXBrandingFooter, nessun ThemeProvider/AuthProvider (concetti legati
+  // al motore a schema dinamico/app_users, qui non pertinenti): solo il
+  // contenitore full-screen per la console Comandi, che gestisce da sé
+  // loading/gate tramite ComandiOperativeConsole.
+  if (appInfo?.app_type === 'comandi_ai') {
+    return (
+      <LanguageProvider>
+        <AppInfoProvider
+          value={{
+            appId: appInfo.id,
+            slug,
+            authMode: appInfo.auth_mode,
+            appName: appInfo.name,
+            config: appInfo.config,
+            status: appInfo.status,
+            trialEndsAt: appInfo.trial_ends_at,
+            stripeSubscriptionId: appInfo.stripe_subscription_id,
+            clientPrice,
+            appType: appInfo.app_type,
+          }}
+        >
+          <div className="min-h-screen">{children}</div>
+        </AppInfoProvider>
+      </LanguageProvider>
+    );
   }
 
   // Banner trial: discreto, solo nelle route cliente (dashboard/app/fatture)
@@ -298,6 +352,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
               trialEndsAt: appInfo?.trial_ends_at || null,
               stripeSubscriptionId: appInfo?.stripe_subscription_id || null,
               clientPrice,
+              appType: appInfo?.app_type || null,
             }}
           >
             <div

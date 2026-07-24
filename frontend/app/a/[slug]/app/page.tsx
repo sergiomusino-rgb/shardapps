@@ -30,6 +30,7 @@ import {
   import FullscreenToggle from '@/components/FullscreenToggle';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
   import { sortTablesForSidebar, getDatiAziendaliTable } from './table-definitions';
+  import ComandiOperativeConsole from '@/components/comandi/ComandiOperativeConsole';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -1887,7 +1888,7 @@ function LoginScreen({ slug, appName, logoUrl, primaryColor, onLogin }: LoginScr
 
 // ─── Main App Component ───────────────────────────────────────────────────────
 
-export default function ViewerProFinal() {
+function ViewerProFinal() {
   const slug = useMemo(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
@@ -3559,4 +3560,24 @@ function SidebarItem({ icon, label, active, onClick, colors, primaryColor }: Sid
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
     </button>
   );
+}
+
+// ─── Entry point della route /a/[slug]/app ─────────────────────────────────
+// Comandi AI (app_type='comandi_ai', vedi provisionComandiAppAction) ha uno
+// schema fisso e una console operativa dedicata: salta interamente il motore
+// a tabelle dinamiche generato dall'AI (ViewerProFinal), che resta invariato
+// per tutte le altre app.
+export default function AppPage() {
+  const appInfo = useAppInfo();
+
+  if (appInfo.appType === 'comandi_ai') {
+    return (
+      <ComandiOperativeConsole
+        className="min-h-screen bg-gray-950 py-8 px-4"
+        unauthenticatedRedirect="/comandi"
+      />
+    );
+  }
+
+  return <ViewerProFinal />;
 }

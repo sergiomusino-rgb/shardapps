@@ -17,6 +17,10 @@ export interface AppInfoContextValue {
   /** Prezzo mensile (€) che il cliente finale paga per questa app: deciso dal
    * reseller in Management, non fisso — vedi lib/pricing.ts. */
   clientPrice: number;
+  /** NULL per le app a schema generato da AI. 'comandi_ai' per il modulo
+   * Comandi provisionato da slot: instrada verso la console operativa
+   * dedicata invece del motore a tabelle dinamiche (app/a/[slug]/app). */
+  appType: string | null;
 }
 
 const AppInfoContext = createContext<AppInfoContextValue | undefined>(undefined);

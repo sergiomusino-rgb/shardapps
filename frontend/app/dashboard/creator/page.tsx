@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/src/lib/LanguageContext';
-import { Send, Loader2, Mic, MicOff } from 'lucide-react';
+import { Send, Loader2, Mic, MicOff, CheckCircle2, ExternalLink } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 // Type declarations for SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
 declare global {
@@ -34,6 +35,9 @@ export default function CreatorPage() {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isProvisioningComandi, setIsProvisioningComandi] = useState(false);
+  const [comandiError, setComandiError] = useState<string | null>(null);
+  const [provisionedComandiSlug, setProvisionedComandiSlug] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
 
   // Inizializza SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
@@ -125,6 +129,40 @@ export default function CreatorPage() {
     }
   };
 
+  // Comandi AI non passa dalla generazione di uno schema via AI: è un
+  // modulo a schema fisso già pronto, selezionarlo consuma direttamente
+  // uno slot e provisiona l'istanza (trial 30gg, vedi provisionComandiAppAction).
+  const handleProvisionComandi = async () => {
+    setIsProvisioningComandi(true);
+    setComandiError(null);
+
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+
+      if (!session?.access_token) {
+        router.push('/login');
+        return;
+      }
+
+      const result = await provisionComandiAppAction({ accessToken: session.access_token });
+
+      if (result.success && result.slug) {
+        // Non reindirizza subito: mostra prima la success screen con l'URL
+        // dell'istanza, così l'utente può copiarlo/tornare al Creator senza
+        // perdere il contesto.
+        setProvisionedComandiSlug(result.slug);
+        setIsProvisioningComandi(false);
+      } else {
+        setComandiError(result.error || t('creator_comandi_error_generic'));
+        setIsProvisioningComandi(false);
+      }
+    } catch (err) {
+      console.error('Errore provisioning Comandi AI:', err);
+      setComandiError(t('creator_comandi_error_generic'));
+      setIsProvisioningComandi(false);
+    }
+  };
+
   return (
     <div className="p-8">
       <div className="max-w-2xl mx-auto">
@@ -133,6 +171,61 @@ export default function CreatorPage() {
           <h1 className="text-4xl font-bold mb-4">{t('creator_title')}</h1>
           <p className="text-gray-400 text-lg">{t('creator_subtitle')}</p>
         </div>
+
+        {/* Comandi AI: template a schema fisso, pronto all'uso, nessun prompt richiesto */}
+        {provisionedComandiSlug ? (
+          <div className="mb-4 rounded-2xl border border-green-700/50 bg-gradient-to-br from-green-950/40 to-emerald-950/20 p-6 flex flex-col items-center text-center gap-3">
+            <CheckCircle2 className="w-10 h-10 text-green-400" />
+            <p className="text-lg font-bold text-white">{t('creator_comandi_success_title')}</p>
+            <p className="text-sm text-gray-400 max-w-md">{t('creator_comandi_success_desc')}</p>
+            <p className="text-xs font-mono text-gray-500 bg-gray-900/60 rounded-lg px-3 py-1.5 break-all">
+              {typeof window !== 'undefined' ? window.location.origin : ''}/a/{provisionedComandiSlug}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
+              <a
+                href={`/a/${provisionedComandiSlug}/app`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                {t('creator_comandi_success_cta')}
+              </a>
+              <button
+                type="button"
+                onClick={() => setProvisionedComandiSlug(null)}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-lg font-semibold bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                {t('creator_comandi_success_dismiss')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 rounded-2xl border border-amber-700/40 bg-gradient-to-br from-amber-950/40 to-orange-950/20 p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center shrink-0">
+                <Mic className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-lg font-bold text-white">{t('creator_comandi_card_title')}</p>
+                <p className="text-sm text-gray-400 mt-1">{t('creator_comandi_card_desc')}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleProvisionComandi}
+              disabled={isProvisioningComandi}
+              className="shrink-0 flex items-center gap-2 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isProvisioningComandi && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isProvisioningComandi ? t('creator_comandi_card_loading') : t('creator_comandi_card_cta')}
+            </button>
+          </div>
+        )}
+
+        {comandiError && (
+          <div className="mb-6 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">{comandiError}</div>
+        )}
 
         {/* Main Box */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
