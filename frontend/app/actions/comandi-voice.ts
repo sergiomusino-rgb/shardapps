@@ -41,17 +41,26 @@ export interface ExtractVoiceOrderResult {
 // ─── LLM Call ─────────────────────────────────────────────────────────────────
 
 async function callLLM(prompt: string): Promise<string> {
-  const provider = (process.env.LLM_PROVIDER || 'gemini').toLowerCase();
+  const provider = (process.env.LLM_PROVIDER || 'groq').toLowerCase();
 
-  if (provider === 'gemini') {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('GEMINI_API_KEY non configurata');
+  if (provider === 'groq') {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error('GROQ_API_KEY non configurata');
 
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const result = await model.generateContent(prompt);
-    return result.response.text();
+    const { default: Groq } = await import('groq-sdk');
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      // llama-3.3-70b-versatile: miglior compromesso qualità/latenza per
+      // l'estrazione strutturata dell'ordine dal catalogo. In alternativa
+      // llama3-8b-8192 per la massima velocità a scapito della precisione
+      // nel matching dei prodotti.
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.2,
+    });
+
+    return completion.choices[0]?.message?.content || '';
   }
 
   if (provider === 'openai') {
@@ -77,7 +86,7 @@ async function callLLM(prompt: string): Promise<string> {
     return data.choices?.[0]?.message?.content || '';
   }
 
-  throw new Error(`Provider '${provider}' non supportato. Usa 'gemini' o 'openai'.`);
+  throw new Error(`Provider '${provider}' non supportato. Usa 'groq' o 'openai'.`);
 }
 
 // ─── Prompt ───────────────────────────────────────────────────────────────────
