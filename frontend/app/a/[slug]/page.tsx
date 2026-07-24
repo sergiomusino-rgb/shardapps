@@ -12,6 +12,7 @@ import { resolveIcon } from './app/iconResolver';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import InstallAppBanner from '@/components/InstallAppBanner';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
+import ComandiInstanceLanding from '@/components/comandi/ComandiInstanceLanding';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -25,7 +26,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // ─── Entry point della route /a/[slug] ─────────────────────────────────────
 // App legacy: gate a password storico (LegacyLoginGate, invariato).
 // App nuove (auth_mode='supabase'): landing pubblica di settore.
-export default function AppRootPage() {
+function GeneratedAppRootPage() {
   const { authMode } = useAppInfo();
   return authMode === 'supabase' ? <LandingPublic /> : <LegacyLoginGate />;
 }
@@ -627,4 +628,16 @@ function LegacyLoginGate() {
       </div>
     </div>
   );
+}
+// ─── Entry point della route /a/[slug] (landing pubblica) ──────────────────
+// Comandi AI ha una landing dedicata a schema fisso, senza il motore
+// sector/blueprint dell'AI generator: salta interamente GeneratedAppRootPage.
+export default function AppRootPageEntry() {
+  const appInfo = useAppInfo();
+
+  if (appInfo.appType === 'comandi_ai') {
+    return <ComandiInstanceLanding slug={appInfo.slug} appName={appInfo.appName} tenantId={appInfo.tenantId} />;
+  }
+
+  return <GeneratedAppRootPage />;
 }

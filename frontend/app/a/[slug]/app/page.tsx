@@ -3574,7 +3574,8 @@ export default function AppPage() {
     return (
       <ComandiOperativeConsole
         className="min-h-screen bg-gray-950 py-8 px-4"
-        unauthenticatedRedirect="/comandi"
+        unauthenticatedRedirect={`/a/${appInfo.slug}/login`}
+        instanceSlug={appInfo.slug}
       />
     );
   }

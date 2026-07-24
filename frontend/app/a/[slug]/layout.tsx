@@ -164,11 +164,12 @@ export default function AppLayout({ children }: PropsWithChildren) {
       // Comandi AI (app_type='comandi_ai'): niente app_users/client_password,
       // gli operatori sono già membri del tenant proprietario (stesso
       // Supabase Auth di /comandi e /dashboard/comandi) — si verifica
-      // tenant_members invece di app_users, e si torna alla landing
-      // standalone di Comandi (non al login legacy dell'app generata).
+      // tenant_members invece di app_users. Flusso landing→login→dashboard
+      // dedicato a QUESTA istanza (non il funnel generico /comandi), come le
+      // altre app generate: si torna a /a/[slug]/login, non a /comandi.
       if (isClientProtected && app?.app_type === 'comandi_ai') {
         if (!user) {
-          router.replace('/comandi');
+          router.replace(`/a/${slug}/login`);
           return;
         }
         const { data: membership } = await supabase
@@ -178,7 +179,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
           .eq('tenant_id', app.tenant_id)
           .maybeSingle();
         if (!membership) {
-          router.replace('/comandi');
+          router.replace(`/a/${slug}/login`);
           return;
         }
       } else if (isClientProtected && app?.auth_mode === 'supabase') {
@@ -325,6 +326,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
             stripeSubscriptionId: appInfo.stripe_subscription_id,
             clientPrice,
             appType: appInfo.app_type,
+            tenantId: appInfo.tenant_id,
           }}
         >
           <div className="min-h-screen">{children}</div>
@@ -353,6 +355,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
               stripeSubscriptionId: appInfo?.stripe_subscription_id || null,
               clientPrice,
               appType: appInfo?.app_type || null,
+              tenantId: appInfo?.tenant_id || '',
             }}
           >
             <div

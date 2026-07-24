@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, RotateCcw, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
+import { CheckCircle2, Home, LayoutDashboard, Loader2, LogOut, RotateCcw, Settings, ShieldAlert } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import VoiceInputWidget from '@/components/comandi/VoiceInputWidget';
@@ -16,16 +17,38 @@ export interface ComandiOperativeConsoleProps {
    * l'istanza standalone (/a/[slug]/app) usa un layout full-screen. */
   className?: string;
   /** Dove mandare un utente senza sessione. La dashboard ZeusX rimanda al
-   * login della piattaforma; l'istanza standalone rimanda a /comandi. */
+   * login della piattaforma; l'istanza standalone rimanda al login
+   * dell'istanza. */
   unauthenticatedRedirect?: string;
+  /** Slug dell'istanza standalone (/a/[slug]/app): se presente mostra il
+   * menu Landing/Dashboard/Logout. Omesso nella dashboard ZeusX, dove questi
+   * link non hanno senso. */
+  instanceSlug?: string;
 }
 
 export default function ComandiOperativeConsole({
   className = 'p-8',
   unauthenticatedRedirect = '/login',
+  instanceSlug,
 }: ComandiOperativeConsoleProps) {
   const router = useRouter();
   const { t } = useLanguage();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [isMenuOpen]);
+
+  const handleLogout = async () => {
+    await supabaseBrowser.auth.signOut();
+    router.push(instanceSlug ? `/a/${instanceSlug}` : '/login');
+  };
 
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('loading');
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -126,7 +149,48 @@ export default function ComandiOperativeConsole({
             <p className="text-gray-400 text-lg">{t('comandi_page_subtitle')}</p>
           </div>
 
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2">
+            {instanceSlug && (
+              <div className="relative" ref={menuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsMenuOpen((v) => !v)}
+                  className="p-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                  aria-label={t('comandi_console_menu_aria')}
+                  aria-expanded={isMenuOpen}
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-700 bg-gray-900 shadow-xl py-1.5 z-20">
+                    <Link
+                      href={`/a/${instanceSlug}`}
+                      className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <Home className="w-4 h-4" />
+                      {t('comandi_console_menu_back_landing')}
+                    </Link>
+                    <Link
+                      href={`/a/${instanceSlug}/dashboard`}
+                      className="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      {t('comandi_console_menu_dashboard')}
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {t('comandi_console_menu_logout')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {sessionStatus === 'loading' && (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-800 border border-gray-700 text-gray-400">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />

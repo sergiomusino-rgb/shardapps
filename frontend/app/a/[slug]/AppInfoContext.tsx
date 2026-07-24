@@ -21,6 +21,10 @@ export interface AppInfoContextValue {
    * Comandi provisionato da slot: instrada verso la console operativa
    * dedicata invece del motore a tabelle dinamiche (app/a/[slug]/app). */
   appType: string | null;
+  /** Tenant proprietario di questa app. Usato dal login dedicato di Comandi
+   * AI per verificare che l'utente autenticato sia davvero membro di
+   * QUESTO tenant (non di uno qualsiasi). */
+  tenantId: string;
 }
 
 const AppInfoContext = createContext<AppInfoContextValue | undefined>(undefined);
