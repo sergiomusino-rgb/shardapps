@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, RotateCcw, ShieldAlert } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
+import { useLanguage } from '@/src/lib/LanguageContext';
 import VoiceInputWidget from '@/components/comandi/VoiceInputWidget';
 import OrderReviewCard from '@/components/comandi/OrderReviewCard';
 import type { VoiceOrderExtraction } from '@/types/comandi';
@@ -12,6 +13,7 @@ type SessionStatus = 'loading' | 'active' | 'no-tenant' | 'unauthenticated';
 
 export default function ComandiPage() {
   const router = useRouter();
+  const { t } = useLanguage();
 
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('loading');
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export default function ComandiPage() {
 
         if (sessionErr) {
           console.error('[ComandiPage] Errore getSession:', sessionErr);
-          setSessionError('Errore nel recupero della sessione utente');
+          setSessionError(t('comandi_error_session_fetch'));
           setSessionStatus('unauthenticated');
           return;
         }
@@ -78,7 +80,7 @@ export default function ComandiPage() {
       } catch (err) {
         console.error('[ComandiPage] Errore verifica sessione/tenant:', err);
         if (!cancelled) {
-          setSessionError('Errore di rete nel recupero della sessione');
+          setSessionError(t('comandi_error_network'));
           setSessionStatus('unauthenticated');
         }
       }
@@ -87,7 +89,7 @@ export default function ComandiPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, t]);
 
   const handleOrderParsed = useCallback((data: VoiceOrderExtraction) => {
     setExtraction(data);
@@ -108,29 +110,27 @@ export default function ComandiPage() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-4xl font-bold mb-2">Raccolta Ordini Vocale (Comandi)</h1>
-            <p className="text-gray-400 text-lg">
-              Detta l&apos;ordine del cliente: l&apos;AI lo riconcilia con il catalogo prima di salvarlo.
-            </p>
+            <h1 className="text-4xl font-bold mb-2">{t('comandi_page_title')}</h1>
+            <p className="text-gray-400 text-lg">{t('comandi_page_subtitle')}</p>
           </div>
 
           <div className="shrink-0">
             {sessionStatus === 'loading' && (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-800 border border-gray-700 text-gray-400">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Verifica sessione…
+                {t('comandi_session_checking')}
               </span>
             )}
             {sessionStatus === 'active' && (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-green-500/15 border border-green-700/50 text-green-400">
                 <span className="w-2 h-2 rounded-full bg-green-400" />
-                Sessione attiva{tenantName ? ` — ${tenantName}` : userEmail ? ` — ${userEmail}` : ''}
+                {t('comandi_session_active')}{tenantName ? ` — ${tenantName}` : userEmail ? ` — ${userEmail}` : ''}
               </span>
             )}
             {(sessionStatus === 'unauthenticated' || sessionStatus === 'no-tenant') && (
               <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500/15 border border-red-700/50 text-red-400">
                 <ShieldAlert className="w-3.5 h-3.5" />
-                {sessionStatus === 'no-tenant' ? 'Nessun tenant associato' : 'Sessione non attiva'}
+                {sessionStatus === 'no-tenant' ? t('comandi_session_no_tenant') : t('comandi_session_unauthenticated')}
               </span>
             )}
           </div>
@@ -142,7 +142,7 @@ export default function ComandiPage() {
 
         {sessionStatus === 'no-tenant' && (
           <div className="rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
-            Il tuo utente non è associato a nessun tenant. Contatta il supporto prima di registrare ordini vocali.
+            {t('comandi_no_tenant_banner')}
           </div>
         )}
 
@@ -153,9 +153,9 @@ export default function ComandiPage() {
             <div className="bg-gray-800 border border-green-700/50 rounded-xl p-8 flex flex-col items-center gap-4 text-center">
               <CheckCircle2 className="w-12 h-12 text-green-400" />
               <div>
-                <p className="text-xl font-semibold text-white">Ordine confermato e salvato</p>
+                <p className="text-xl font-semibold text-white">{t('comandi_order_confirmed_title')}</p>
                 <p className="text-sm text-gray-400 mt-1">
-                  Riferimento ordine: <span className="font-mono text-gray-300">{confirmedOrderId}</span>
+                  {t('comandi_order_reference_label')} <span className="font-mono text-gray-300">{confirmedOrderId}</span>
                 </p>
               </div>
               <button
@@ -164,7 +164,7 @@ export default function ComandiPage() {
                 className="flex items-center gap-2 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
-                Nuovo Ordine Vocale
+                {t('comandi_new_order_button')}
               </button>
             </div>
           ) : extraction ? (

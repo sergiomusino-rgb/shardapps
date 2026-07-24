@@ -50,7 +50,7 @@ export default function VoiceInputWidget({
   onError,
   className = '',
 }: VoiceInputWidgetProps) {
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -142,7 +142,7 @@ export default function VoiceInputWidget({
     async (transcript: string) => {
       const trimmed = transcript.trim();
       if (!trimmed) {
-        reportError('Nessun parlato riconosciuto. Riprova avvicinando il microfono.');
+        reportError(t('comandi_voice_no_speech'));
         return;
       }
 
@@ -151,18 +151,18 @@ export default function VoiceInputWidget({
       try {
         const result = await extractVoiceOrderAction({ audioTranscript: trimmed });
         if (!result.success || !result.data) {
-          reportError(result.error || 'Errore nell\'elaborazione AI dell\'ordine vocale');
+          reportError(result.error || t('comandi_voice_error_ai_processing'));
           return;
         }
         onOrderParsed(result.data);
       } catch (err) {
         console.error('[VoiceInputWidget] Errore invocazione extractVoiceOrderAction:', err);
-        reportError('Errore di comunicazione con il server durante l\'elaborazione');
+        reportError(t('comandi_voice_error_server_communication'));
       } finally {
         setIsProcessing(false);
       }
     },
-    [onOrderParsed, reportError]
+    [onOrderParsed, reportError, t]
   );
 
   // Chiamata quando la Web Speech API ha davvero terminato (dopo uno stop
@@ -200,7 +200,7 @@ export default function VoiceInputWidget({
 
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
-      reportError('Il tuo browser non supporta il riconoscimento vocale. Prova con Chrome su desktop o Android.');
+      reportError(t('comandi_voice_error_unsupported_browser'));
       return;
     }
 
@@ -209,7 +209,7 @@ export default function VoiceInputWidget({
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
       console.error('[VoiceInputWidget] getUserMedia error:', err);
-      reportError('Permesso microfono negato. Abilita l\'accesso al microfono per registrare un ordine vocale.');
+      reportError(t('comandi_voice_error_mic_denied'));
       return;
     }
     streamRef.current = stream;
@@ -275,9 +275,9 @@ export default function VoiceInputWidget({
     recognition.onerror = (event: any) => {
       console.error('[VoiceInputWidget] SpeechRecognition error:', event.error);
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-        reportError('Permesso microfono negato per la trascrizione vocale.');
+        reportError(t('comandi_voice_error_transcription_denied'));
       } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        reportError('Errore nel riconoscimento vocale. Riprova.');
+        reportError(t('comandi_voice_error_recognition_generic'));
       }
     };
 
@@ -308,7 +308,7 @@ export default function VoiceInputWidget({
 
     isRecordingRef.current = true;
     setIsRecording(true);
-  }, [finalizeRecording, locale, onAudioRecorded, reportError, runWaveformLoop]);
+  }, [finalizeRecording, locale, onAudioRecorded, reportError, runWaveformLoop, t]);
 
   const stopRecording = useCallback(() => {
     isRecordingRef.current = false;
@@ -342,7 +342,7 @@ export default function VoiceInputWidget({
       {!isSupported && (
         <div className="w-full flex items-start gap-2 rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-sm text-amber-300">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>Il tuo browser non supporta la registrazione vocale nativa. Usa Chrome su desktop o Android.</span>
+          <span>{t('comandi_voice_error_unsupported_banner')}</span>
         </div>
       )}
 
@@ -354,7 +354,7 @@ export default function VoiceInputWidget({
             type="button"
             onClick={() => setError(null)}
             className="shrink-0 text-red-300/70 hover:text-red-200"
-            aria-label="Chiudi errore"
+            aria-label={t('comandi_voice_close_error_aria')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -387,7 +387,7 @@ export default function VoiceInputWidget({
           onClick={handleToggle}
           disabled={!isSupported || isProcessing}
           aria-pressed={isRecording}
-          aria-label={isRecording ? 'Ferma registrazione ordine vocale' : 'Avvia registrazione ordine vocale'}
+          aria-label={isRecording ? t('comandi_voice_stop_aria') : t('comandi_voice_start_aria')}
           className={`relative z-10 flex items-center justify-center w-20 h-20 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
             isRecording
               ? 'bg-red-600 hover:bg-red-500 text-white'
@@ -408,12 +408,12 @@ export default function VoiceInputWidget({
       <div className="text-center">
         {isProcessing ? (
           <p role="status" className="text-sm font-medium text-amber-400">
-            Elaborazione AI in corso…
+            {t('comandi_voice_processing_status')}
           </p>
         ) : isRecording ? (
           <p className="text-lg font-mono font-semibold text-white tabular-nums">{formatDuration(elapsedSeconds)}</p>
         ) : (
-          <p className="text-sm text-gray-400">Tocca il microfono per dettare l'ordine</p>
+          <p className="text-sm text-gray-400">{t('comandi_voice_idle_prompt')}</p>
         )}
       </div>
 
