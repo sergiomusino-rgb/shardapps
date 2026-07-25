@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { z } from 'zod';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -55,8 +56,8 @@ export async function confirmOrderAction(input: ConfirmOrderInput): Promise<Conf
     }
     const { items, customer_name, customer_phone, audio_transcript, confidence_score, notes, accessToken } = validation.data;
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
+    const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     // Stesso principio di sicurezza di extractVoiceOrderAction: tenant_id e
     // agent_id derivano SEMPRE dall'utente risolto dal token di sessione,

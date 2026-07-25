@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { NextRequest, NextResponse } from 'next/server';
 import { getDesignTokens } from '@/lib/designTokens';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, serviceRoleKey);
+const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
 // Manifest PWA dinamico per app generata: nome, logo e palette (theme/background
 // color) presi dai dati reali dell'app invece del placeholder generico ZeusX,

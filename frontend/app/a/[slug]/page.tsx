@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { useAppInfo } from './AppInfoContext';
@@ -21,7 +22,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 // ─── Entry point della route /a/[slug] ─────────────────────────────────────
 // App legacy: gate a password storico (LegacyLoginGate, invariato).
@@ -428,7 +429,7 @@ function LegacyLoginGate() {
       // La struttura deve essere: config.schema.tables per la app page
       // IMPORTANTE: non sovrascrivere schema con {} quando appDefData è null
       const combinedConfig = {
-        ...(appInfoData?.config || {}),
+        ...((appInfoData?.config as Record<string, unknown> | null) || {}),
         ...(appDefData?.schema ? { schema: appDefData.schema } : {}),
         ...(appDefData?.ui_config ? { ui_config: appDefData.ui_config } : {}),
       };
@@ -436,7 +437,7 @@ function LegacyLoginGate() {
       console.log('[Login] combinedConfig:', combinedConfig);
 
        // Estrai la lingua dal config e salvala in localStorage
-       const appLang = combinedConfig?.lang || 'it';
+       const appLang = (combinedConfig as Record<string, unknown>)?.lang as string || 'it';
        if (appLang && ['it', 'en', 'fr', 'de', 'es'].includes(appLang)) {
          localStorage.setItem('zeusx_locale', appLang);
        }

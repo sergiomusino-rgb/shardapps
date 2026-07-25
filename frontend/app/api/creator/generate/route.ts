@@ -1,104 +1,37 @@
 // ─── Creator AI Generate API Route (Next.js App Router) ───────────────────────────────
-// Genera schema JSON tramite Groq API (Llama 3.3) e salva nella tabella apps
-// CON INIEZIONE DEL DESIGN SYSTEM
+// Genera lo schema JSON di anteprima tramite OpenRouter (Claude Sonnet 5), CON
+// INIEZIONE DEL DESIGN SYSTEM. Non salva nulla: la persistenza avviene solo
+// dopo conferma dell'utente su /api/creator/create (vedi DynamicAppPreview).
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { getDesignSystemForSector } from '@/lib/designSystemLoader';
-import { sanitizeBlueprint, normalizeSector, type Table } from '@/src/lib/blueprint-schema';
-import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
+import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
+import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
+import {
+  getUserFromToken,
+  getOrCreateTenant,
+  canCreateApp,
+  CREATOR_ADMIN_USER_ID,
+} from '@/src/lib/creator-server';
 
 // Configurazione Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, serviceRoleKey);
+const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
-const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
-
-// ─── Helper: Get user from auth token ───────────────────────────────────────────────
-async function getUserFromToken(token: string) {
-  const { data: { user } } = await supabase.auth.getUser(token);
-  return user;
-}
-
-// ─── Helper: Get or create tenant for user ───────────────────────────────────────────
-async function getOrCreateTenant(supabase: any, user: { id: string; email?: string }) {
-  const { data: memberships } = await supabase
-    .from('tenant_members')
-    .select('tenant_id')
-    .eq('user_id', user.id)
-    .limit(1);
-
-  if (memberships?.[0]?.tenant_id) return memberships[0].tenant_id;
-
-  const { data: tenant, error: tenantError } = await supabase
-    .from('tenants')
-    .insert({
-      owner_id: user.id,
-      name: user.email ? `Tenant di ${user.email}` : 'Tenant personale',
-      slug: `tenant-${user.id.slice(0, 8)}`,
-      plan: 'free',
-      app_limit: 0,
-      total_apps_created: 0,
-    })
-    .select('id')
-    .single();
-
-  if (tenantError || !tenant) {
-    throw new Error('Errore creazione tenant');
-  }
-
-  await supabase.from('tenant_members').insert({
-    tenant_id: tenant.id,
-    user_id: user.id,
-    role: 'owner',
-  });
-
-  return tenant.id;
-}
-
-// ─── Helper: verifica slot disponibili (stesso meccanismo di /api/apps) ─────────────
-// Creator AI creava app senza mai controllare né incrementare gli slot del
-// tenant: un tenant con app_limit 0 (nessun piano acquistato) poteva generare
-// app illimitate gratis. Allineato a canCreateApp in frontend/app/api/apps/route.ts.
-async function canCreateApp(supabase: any, tenantId: string, userId?: string): Promise<{ allowed: boolean; reason?: string; tenant?: any }> {
-  const { data: tenant, error: tenantError } = await supabase
-    .from('tenants')
-    .select('plan, app_limit, total_apps_created')
-    .eq('id', tenantId)
-    .single();
-
-  if (tenantError || !tenant) {
-    return { allowed: false, reason: 'Tenant non trovato' };
-  }
-
-  // Admin: app illimitate
-  if (userId === ADMIN_USER_ID) {
-    return { allowed: true, tenant };
-  }
-
-  const planLimits: Record<string, number> = {
-    free: 0,
-    starter: 1,
-    pro: 5,
-    business: 100,
-  };
-
-  const appLimit = tenant.app_limit ?? planLimits[tenant.plan] ?? 1;
-  const totalCreated = tenant.total_apps_created || 0;
-
-  if (appLimit - totalCreated <= 0) {
-    return { allowed: false, reason: 'SlotsExhausted', tenant };
-  }
-
-  return { allowed: true, tenant };
-}
-
-// ─── Helper: Call Groq API ─────────────────────────────────────────────────────────
-async function callGroq(prompt: string, sector: string, lang: string): Promise<any> {
+// ─── Helper: genera lo schema tramite l'AI Router (tier "advanced": generazione
+// completa di una nuova app, es. Claude Sonnet 5 via OpenRouter) ────────────────
+async function callSchemaGenerator(
+  prompt: string,
+  sector: string,
+  lang: string,
+  context: { userId: string; tenantId: string }
+): Promise<any> {
   // Carica il design system per il settore
   const designSystem = await getDesignSystemForSector(sector);
-  
+
   const systemPrompt = `Sei ZeusX AI, un assistente specializzato nella generazione di applicazioni SaaS.
 Genera uno schema JSON per un'applicazione di ${sector} in lingua ${lang}.
 
@@ -134,94 +67,32 @@ Se una tabella rappresenta ordini/prenotazioni/richieste, includi sempre un camp
 Se una tabella rappresenta prodotti/piatti/servizi in vendita, includi sempre un campo prezzo di tipo "number" con nome contenente "prezzo" o "totale".
 Non aggiungere testo prima o dopo il JSON.`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.8,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
-      ],
-    }),
+  // "app-generation" -> tier "advanced" (Claude Sonnet 5 via OpenRouter di
+  // default): è il caso d'uso di generazione complessa per cui esiste il tier
+  // avanzato del router (nuova app completa da prompt).
+  const { content } = await callAiRouter({
+    task: 'app-generation',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ],
+    context: { userId: context.userId, tenantId: context.tenantId },
   });
+  console.log('[creator/generate] RAW RESPONSE:', content);
 
-  // Check content type before parsing JSON
-  const contentType = res.headers.get('content-type');
-  if (!res.ok || !contentType?.includes('application/json')) {
-    const errorText = await res.text();
-    console.error('[Groq] Non-JSON response:', res.status, errorText.substring(0, 200));
-    throw new Error(`Groq API error (${res.status}): ${res.statusText || 'Invalid response'}`);
-  }
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Errore Groq');
-  
-  const content = data.choices?.[0]?.message?.content || '';
-  
-  // Log della risposta raw di Groq per debug
-  console.log('[Groq] RAW RESPONSE:', content);
-  
-  // Rimuovi tag markdown se presenti
-  const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
-  
-  // Estrai il JSON dalla risposta
-  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      // Assicura che ui esista
-      if (!parsed.ui) {
-        parsed.ui = {
-          primaryColor: designSystem.designTokens?.colors?.primary || '#6366f1'
-        };
-      }
-      return parsed;
-    } catch (parseError) {
-      console.error('[Groq] JSON parse error:', parseError);
-      console.error('[Groq] JSON that failed to parse:', jsonMatch[0]);
-      throw new Error(`Errore parsing JSON: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+  try {
+    const parsed = extractJsonFromAiContent(content) as any;
+    // Assicura che ui esista
+    if (!parsed.ui) {
+      parsed.ui = {
+        primaryColor: designSystem.designTokens?.colors?.primary || '#6366f1',
+      };
     }
+    return parsed;
+  } catch (parseError) {
+    console.error('[creator/generate] JSON parse error:', parseError, content);
+    throw parseError;
   }
-  
-  throw new Error('Nessun JSON valido nella risposta');
-}
-
-// ─── Helper: Adatta lo shape Zod (blueprint-schema) a quello atteso dal viewer
-// (table-definitions.ts / EditTableModal.tsx usano `field.name`, non `field.id`) ────
-function toViewerTables(tables: Table[]) {
-  return tables.map((t) => ({
-    name: t.name,
-    label: t.label,
-    labelPlural: t.labelPlural,
-    icon: t.icon,
-    fields: t.fields.map((f) => ({
-      id: f.id,
-      name: f.id,
-      label: f.label,
-      type: f.type,
-      required: f.required,
-      options: f.options,
-      fixed: false,
-      targetTable: f.target,
-      targetLabel: f.targetLabel,
-    })),
-  }));
-}
-
-// ─── Helper: Generate slug ─────────────────────────────────────────────────────────
-function generateSlug(name: string, sector: string): string {
-  const base = `${sector || 'wandermap'}-${name}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40);
-  const suffix = Math.random().toString(36).substring(2, 6);
-  return `${base}-${suffix}`;
 }
 
 // ─── POST /api/creator/generate ───────────────────────────────────────────────────
@@ -229,8 +100,8 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { userPrompt, sector, lang = 'it' } = body;
-    const safeSector = sector || 'wandermap';
-    
+    const safeSector = sector || 'saas';
+
     // Validazione input
     if (!userPrompt && !sector) {
       return NextResponse.json({
@@ -239,7 +110,7 @@ export async function POST(request: NextRequest) {
         code: 'MISSING_INPUT'
       }, { status: 400 });
     }
-    
+
     // Verifica autenticazione
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
@@ -249,10 +120,10 @@ export async function POST(request: NextRequest) {
         code: 'UNAUTHORIZED'
       }, { status: 401 });
     }
-    
+
     const token = authHeader.slice(7);
-    const user = await getUserFromToken(token);
-    
+    const user = await getUserFromToken(supabase, token);
+
     if (!user) {
       return NextResponse.json({
         success: false,
@@ -260,11 +131,12 @@ export async function POST(request: NextRequest) {
         code: 'UNAUTHORIZED'
       }, { status: 401 });
     }
-    
+
     // Verifica slot PRIMA di chiamare l'AI, per non sprecare budget se il
-    // tenant ha già esaurito le app disponibili sul suo piano.
+    // tenant ha già esaurito le app disponibili sul suo piano — anche in
+    // anteprima non ha senso far generare uno schema che non si potrà salvare.
     const tenantId = await getOrCreateTenant(supabase, user);
-    const { allowed, reason, tenant } = await canCreateApp(supabase, tenantId, user.id);
+    const { allowed, reason } = await canCreateApp(supabase, tenantId, user.id);
 
     if (!allowed) {
       if (reason === 'SlotsExhausted') {
@@ -283,29 +155,34 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Genera schema con Groq (con design system iniettato)
-    const rawSchema = await callGroq(userPrompt || `Genera un'app per ${safeSector}`, safeSector, lang);
+    // Genera schema tramite l'AI Router (tier "advanced", con design system iniettato)
+    const rawSchema = await callSchemaGenerator(
+      userPrompt || `Genera un'app per ${safeSector}`,
+      safeSector,
+      lang,
+      { userId: user.id, tenantId }
+    );
 
     // Il settore scelto dall'utente è la fonte di verità (non quello, spesso
-    // impreciso o assente, restituito da Groq) — determina layout e colori a runtime.
+    // impreciso o assente, restituito dal modello) — determina layout e colori a runtime.
     rawSchema.sector = normalizeSector(safeSector);
 
-    // FieldSchema (blueprint-schema.ts) valida solo `field.id`, ma Groq genera
-    // campi con `name` (formato storico atteso dal viewer). Senza questo step,
-    // ogni campo privo di `id` collasserebbe sul default 'campo' di Zod,
-    // producendo id duplicati tra i campi di una stessa tabella.
+    // FieldSchema (blueprint-schema.ts) valida solo `field.id`, ma il modello a
+    // volte genera campi con `name` (formato storico atteso dal viewer). Senza
+    // questo step, ogni campo privo di `id` collasserebbe sul default 'campo' di
+    // Zod, producendo id duplicati tra i campi di una stessa tabella.
     if (Array.isArray(rawSchema?.schema?.tables)) {
       for (const t of rawSchema.schema.tables) {
         if (!t || typeof t !== 'object') continue;
 
-        // Se Groq non fornisce labelPlural, TableSchema (blueprint-schema.ts)
+        // Se il modello non fornisce labelPlural, TableSchema (blueprint-schema.ts)
         // lo forza sul default letterale 'Tabelle' — la stessa entità reale
         // (es. "Pizza") finirebbe con l'etichetta plurale generica invece di
         // qualcosa come "Pizze". Deriviamo un fallback dal label reale.
         if (!t.labelPlural && t.label) {
           const label = String(t.label).trim();
-          // Pluralizzazione italiana approssimata (fallback: Groq dovrebbe già
-          // fornire labelPlural esplicito, vedi prompt sopra).
+          // Pluralizzazione italiana approssimata (fallback: il modello dovrebbe
+          // già fornire labelPlural esplicito, vedi prompt sopra).
           if (/a$/i.test(label)) t.labelPlural = `${label.slice(0, -1)}e`;
           else if (/[oe]$/i.test(label)) t.labelPlural = `${label.slice(0, -1)}i`;
           else t.labelPlural = label;
@@ -320,8 +197,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Valida/normalizza l'output dell'AI prima di salvarlo: rifiuta schemi
-    // malformati invece di scriverli così come sono in produzione.
+    // Valida/normalizza l'output del modello prima di restituirlo in anteprima:
+    // rifiuta schemi malformati invece di mostrarli così come sono.
     const blueprint = sanitizeBlueprint(rawSchema);
     if (!blueprint) {
       return NextResponse.json({
@@ -330,78 +207,32 @@ export async function POST(request: NextRequest) {
         code: 'INVALID_SCHEMA'
       }, { status: 500 });
     }
-    const schema = {
-      ...blueprint,
-      schema: { tables: toViewerTables(blueprint.schema.tables) },
-    };
 
-    // Genera slug univoco
-    const slug = generateSlug(schema.appName || 'app-creator', safeSector);
-
-    // Usa l'email dell'utente loggato come email cliente iniziale
-    const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;
-
-    // Calcola trial 30 giorni
-    const trialEndsAt = new Date();
-    trialEndsAt.setDate(trialEndsAt.getDate() + 30);
-
-    // Salva nella tabella apps (stessa di /api/apps)
-    // auth_mode:'supabase' -> nuovo flusso Landing/Login/Register/Dashboard con
-    // Supabase Auth reale (vedi /a/[slug]/register): niente password in chiaro,
-    // il cliente sceglie lui la propria password al primo accesso, vincolato
-    // a client_email. Le app esistenti restano su auth_mode='legacy' (default
-    // di colonna), non toccate da questo generatore.
-    const { data: app, error: appError } = await supabase
-      .from('apps')
-      .insert({
-        tenant_id: tenantId,
-        name: schema.appName || 'App Creator',
-        config: schema,
-        slug: slug,
-        is_active: true,
-        status: 'trial',
-        trial_ends_at: trialEndsAt.toISOString(),
-        client_active: true,
-        client_email: tenantEmail,
-        auth_mode: 'supabase',
-        // Prezzo di resell di default = quota minima ZeusX corrente, scritto
-        // esplicitamente invece di affidarsi al default della colonna SQL:
-        // se ZEUSX_MINIMUM_FEE_EUR cambia, le nuove app lo erediteranno subito.
-        client_price: ZEUSX_MINIMUM_FEE_EUR,
-        client_subscription_price: ZEUSX_MINIMUM_FEE_EUR,
-      })
-      .select('id, name, slug, status, trial_ends_at, client_email, auth_mode, client_price')
-      .single();
-    
-    if (appError) {
-      console.error('[Creator] App insert error:', appError);
-      return NextResponse.json({
-        success: false,
-        error: 'Errore salvataggio app: ' + appError.message,
-        code: 'DB_ERROR'
-      }, { status: 500 });
-    }
-
-    // Incrementa il contatore permanente di app create (non si libera mai),
-    // stesso meccanismo di frontend/app/api/apps/route.ts.
-    if (user.id !== ADMIN_USER_ID) {
-      await supabase
-        .from('tenants')
-        .update({ total_apps_created: (tenant?.total_apps_created || 0) + 1 })
-        .eq('id', tenantId);
-    }
-
+    // Nessun accesso al DB qui: l'anteprima è "gratuita" da rigenerare finché
+    // l'utente non conferma esplicitamente su /api/creator/create.
     return NextResponse.json({
       success: true,
       data: {
-        projectId: app.id,
-        schema: schema,
-        app: app,
+        schema: blueprint,
       }
     });
-    
+
   } catch (err) {
     console.error('[creator/generate] error:', err);
+    if (err instanceof AiRouterConfigError) {
+      return NextResponse.json({
+        success: false,
+        error: 'Servizio AI non configurato correttamente. Contatta il supporto.',
+        code: 'AI_CONFIG_ERROR'
+      }, { status: 500 });
+    }
+    if (err instanceof AiRouterError) {
+      return NextResponse.json({
+        success: false,
+        error: err.message,
+        code: 'AI_PROVIDER_ERROR'
+      }, { status: 502 });
+    }
     return NextResponse.json({
       success: false,
       error: err instanceof Error ? err.message : 'Errore interno del server',

@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { NextRequest, NextResponse } from 'next/server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, serviceRoleKey);
+const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
 // ─── POST /api/a/[slug]/register ───────────────────────────────────────────
 // Registrazione self-service per il cliente designato di un'app auth_mode
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     });
 
     if (createError) {
-      const anon = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+      const anon = createClient<Database>(supabaseUrl, anonKey, { auth: { persistSession: false } });
       const { data: signIn, error: signInError } = await anon.auth.signInWithPassword({ email, password });
 
       if (signInError || !signIn.user) {

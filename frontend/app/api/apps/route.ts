@@ -190,7 +190,7 @@ export async function POST(req: Request) {
         'X-User-ID': user.id,
         'X-User-Email': user.email || '',
       },
-      body: JSON.stringify({ sector, prompt, lang: 'it', provider: 'groq' }),
+      body: JSON.stringify({ sector, prompt, lang: 'it' }),
     });
 
     if (!blueprintRes.ok) {

@@ -129,86 +129,9 @@ export interface UpdateApp {
   trial_end?: string | null;
 }
 
-// Database type for Supabase client
-export interface Database {
-  public: {
-    Tables: {
-      apps: {
-        Row: App;
-        Insert: NewApp;
-        Update: UpdateApp;
-      };
-      tenants: {
-        Row: Tenant;
-        Insert: Omit<Tenant, 'id' | 'created_at' | 'updated_at'> & { total_apps_created?: number };
-        Update: Partial<Omit<Tenant, 'id' | 'created_at' | 'updated_at'>>;
-      };
-      profiles: {
-        Row: Profile & { role?: string; subscription_plan?: string };
-        Insert: Omit<Profile, 'id' | 'created_at' | 'updated_at'> & { role?: string; subscription_plan?: string };
-        Update: Partial<Omit<Profile, 'id' | 'created_at' | 'updated_at'>> & { role?: string; subscription_plan?: string };
-      };
-      subscriptions: {
-        Row: Subscription;
-        Insert: Omit<Subscription, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Subscription, 'id' | 'created_at' | 'updated_at'>>;
-      };
-      app_registry: {
-        Row: AppRegistry;
-        Insert: Omit<AppRegistry, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<AppRegistry, 'id' | 'created_at' | 'updated_at'>>;
-      };
-      tenant_members: {
-        Row: {
-          id: string;
-          tenant_id: string;
-          user_id: string;
-          role: string;
-          created_at: string | null;
-        };
-        Insert: {
-          tenant_id: string;
-          user_id: string;
-          role?: string;
-        };
-        Update: {
-          role?: string;
-        };
-      };
-      app_users: {
-        Row: {
-          id: string;
-          user_id: string;
-          app_id: string;
-          email: string;
-          full_name?: string;
-          role: 'admin' | 'agent' | 'viewer' | 'editor' | 'reseller';
-          is_active: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          user_id: string;
-          app_id: string;
-          email: string;
-          full_name?: string;
-          role?: 'admin' | 'agent' | 'viewer' | 'editor' | 'reseller';
-          is_active?: boolean;
-        };
-        Update: {
-          email?: string;
-          full_name?: string;
-          role?: 'admin' | 'agent' | 'viewer' | 'editor' | 'reseller';
-          is_active?: boolean;
-        };
-      };
-      blueprints: {
-        Row: Blueprint;
-        Insert: Omit<Blueprint, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Blueprint, 'id' | 'created_at' | 'updated_at'>>;
-      };
-    };
-    Views: {};
-    Functions: {};
-  };
-}
+// Database type for Supabase client: fonte di verità unica, generata dalla
+// CLI Supabase direttamente dallo schema reale del DB (supabase gen types),
+// invece di questa interfaccia scritta a mano che copriva solo 8 tabelle e
+// nessuna view/funzione. Il re-export mantiene stabile `@/types/database`
+// come path di import per tutto il codice esistente.
+export type { Database } from '@/src/types/supabase';

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { getClientSubscriptionPrice, ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -11,7 +12,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 function getSupabaseAdmin() {
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createClient<Database>(supabaseUrl, supabaseServiceKey);
 }
 
 export async function POST(request: NextRequest) {

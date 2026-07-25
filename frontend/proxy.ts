@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // ============================================================================
-// Middleware - No access control for /admin (handled by client-side layout)
+// Proxy - No access control for /admin (handled by client-side layout)
 // ============================================================================
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next();
   const pathname = request.nextUrl.pathname;
 

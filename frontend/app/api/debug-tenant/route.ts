@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
     steps.serviceRoleKey = serviceRoleKey ? 'SET' : 'MISSING';
 
     // 1. Test auth con anon key
-    const authClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const authClient = createClient<Database>(supabaseUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const authHeader = req.headers.get('authorization');
     steps.hasAuthHeader = !!authHeader;
 
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
 
         // 3. Test query tenants con service role key
         if (serviceRoleKey) {
-          const dbClient = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+          const dbClient = createClient<Database>(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
           const { data: srTenants, error: srErr } = await dbClient
             .from('tenants')
             .select('id, owner_id, name, plan')

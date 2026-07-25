@@ -1,7 +1,10 @@
 'use server';
 
 import { createServerClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { cookies } from 'next/headers';
+import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -34,78 +37,16 @@ export interface GenerateAppResult {
 
 // ─── LLM Call ─────────────────────────────────────────────────────────────────
 
+// Generazione completa di una nuova app da zero: task "app-generation" ->
+// tier "advanced" dell'AI Router centralizzato (src/lib/ai-router.ts).
 async function callLLM(systemPrompt: string): Promise<string> {
-  const provider = (process.env.LLM_PROVIDER || 'groq').toLowerCase();
-  const apiKey = process.env.GROQ_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('API key LLM non configurata');
-  }
-
-  if (provider === 'openrouter') {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://zeusx.app',
-        'X-Title': 'ZeusX',
-      },
-      body: JSON.stringify({
-        model: 'anthropic/claude-3.5-sonnet',
-        messages: [{ role: 'user', content: systemPrompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore OpenRouter');
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  if (provider === 'openai') {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: systemPrompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore OpenAI');
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  if (provider === 'groq') {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: systemPrompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore Groq');
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  // No other providers supported - throw clear error
-  throw new Error(`Provider '${provider}' non supportato. Usa 'groq', 'openai' o 'openrouter'.`);
+  const { content } = await callAiRouter({
+    task: 'app-generation',
+    jsonMode: true,
+    temperature: 0.7,
+    messages: [{ role: 'user', content: systemPrompt }],
+  });
+  return content;
 }
 
 // ─── System Prompt ────────────────────────────────────────────────────────────
@@ -182,6 +123,14 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
   try {
     const cookieStore = await cookies();
     
+    // @supabase/ssr@0.6.0 (installato) non gestisce correttamente il campo
+    // `__InternalSupabase` che `supabase gen types` inietta nei tipi generati
+    // recenti: il generico <Database> passato a createServerClient collassa a
+    // `never` sulle Row. Il cast verso SupabaseClient<Database> (da
+    // @supabase/supabase-js, che gestisce correttamente questo caso) restituisce
+    // la stessa istanza runtime con la tipizzazione corretta, senza toccare la
+    // versione della dipendenza.
+
     // Use anon key for auth operations (to read user session from cookies)
     const supabaseAuth = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
@@ -203,7 +152,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
           }
         },
       },
-    });
+    }) as unknown as SupabaseClient<Database>;
 
     // Use service role key for database writes (bypasses RLS)
     const supabaseAdmin = createServerClient(supabaseUrl, supabaseServiceKey, {
@@ -222,7 +171,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
           } catch (err) {}
         },
       },
-    });
+    }) as unknown as SupabaseClient<Database>;
 
     // L'userId non viene MAI preso da input.userId: è un campo lato client e
     // questa è una Server Action, quindi chiamabile come un endpoint POST con
@@ -311,20 +260,21 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
 
     // Call LLM to generate schema (lang influenza la lingua dei label generati)
     const systemPrompt = buildSystemPrompt(input.prompt, input.appName, input.sector, input.lang);
-    const rawResponse = await callLLM(systemPrompt);
-
-
-    // Clean and parse JSON
-    const cleaned = rawResponse
-      .replace(/```json\s*/g, '')
-      .replace(/```\s*/g, '')
-      .trim();
 
     let generatedSchema: Record<string, unknown>;
     try {
-      generatedSchema = JSON.parse(cleaned);
-    } catch {
-      console.error('[generateAppAction] JSON parse error. Raw:', rawResponse);
+      const rawResponse = await callLLM(systemPrompt);
+      generatedSchema = extractJsonFromAiContent(rawResponse) as Record<string, unknown>;
+    } catch (err) {
+      if (err instanceof AiRouterConfigError) {
+        console.error('[generateAppAction] AI router config error:', err);
+        return { success: false, error: 'Servizio AI non configurato correttamente. Contatta il supporto.' };
+      }
+      if (err instanceof AiRouterError) {
+        console.error('[generateAppAction] AI provider error:', err);
+        return { success: false, error: err.message };
+      }
+      console.error('[generateAppAction] JSON parse error:', err);
       return { success: false, error: 'Il modello ha restituito un JSON non valido' };
     }
 
@@ -371,7 +321,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
           description: description,
           // Lingua attiva al momento della creazione (proveniente da LanguageContext client-side)
           lang: input.lang || 'it',
-        },
+        } as any, // config è jsonb; generatedSchema è JSON parsato da callLLM (unknown)
 
       })
       .select('id')
@@ -408,8 +358,8 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
       .upsert({
         app_id: newApp.id,
         tenant_id: tenantId,
-        schema: generatedSchema.schema,
-        ui_config: generatedSchema.ui || {},
+        schema: generatedSchema.schema as any,
+        ui_config: (generatedSchema.ui || {}) as any,
         is_published: true,
       }, { onConflict: 'app_id' });
 

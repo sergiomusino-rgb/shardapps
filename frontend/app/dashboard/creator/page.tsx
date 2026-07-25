@@ -6,6 +6,8 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { Send, Loader2, Mic, MicOff, CheckCircle2, ExternalLink, Copy, Check } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
+import DynamicAppPreview from '@/src/components/creator/DynamicAppPreview';
+import type { BlueprintJSON } from '@/src/lib/blueprint-schema';
 
 // Type declarations for SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
 declare global {
@@ -35,6 +37,9 @@ export default function CreatorPage() {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [previewSchema, setPreviewSchema] = useState<BlueprintJSON | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [isProvisioningComandi, setIsProvisioningComandi] = useState(false);
   const [comandiError, setComandiError] = useState<string | null>(null);
   const [provisionedComandiSlug, setProvisionedComandiSlug] = useState<string | null>(null);
@@ -90,6 +95,7 @@ export default function CreatorPage() {
     if (!prompt.trim()) return;
 
     setIsGenerating(true);
+    setPreviewError(null);
 
     try {
       // Get auth session
@@ -101,7 +107,8 @@ export default function CreatorPage() {
         return;
       }
 
-      // Call the creator generate API (Groq)
+      // Genera solo l'anteprima (nessun salvataggio): la persistenza avviene
+      // solo dopo conferma esplicita su handleConfirmCreate.
       const response = await fetch('/api/creator/generate', {
         method: 'POST',
         headers: {
@@ -117,17 +124,61 @@ export default function CreatorPage() {
 
       const data = await response.json();
 
-      if (data.success && data.data?.projectId) {
-        // Redirect to app-create page
-        router.push(`/dashboard/app-create?projectId=${data.data.projectId}`);
+      if (data.success && data.data?.schema) {
+        setPreviewSchema(data.data.schema);
+      } else if (data.code === 'SLOTS_EXHAUSTED') {
+        alert(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
+        router.push(data.redirectTo || '/pricing');
       } else {
-        alert('Errore nella generazione: ' + (data.error || 'Errore sconosciuto'));
+        setPreviewError(data.error || 'Errore sconosciuto');
       }
     } catch (err) {
       console.error('Errore generazione:', err);
-      alert('Errore di connessione. Riprova più tardi.');
+      setPreviewError('Errore di connessione. Riprova più tardi.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleConfirmCreate = async () => {
+    if (!previewSchema) return;
+
+    setIsCreating(true);
+    setPreviewError(null);
+
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+
+      if (!session?.access_token) {
+        alert('Devi effettuare il login per creare un\'app');
+        router.push('/login');
+        return;
+      }
+
+      const response = await fetch('/api/creator/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ schema: previewSchema })
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data?.projectId) {
+        router.push(`/dashboard/app-create?projectId=${data.data.projectId}`);
+      } else if (data.code === 'SLOTS_EXHAUSTED') {
+        alert(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
+        router.push(data.redirectTo || '/pricing');
+      } else {
+        setPreviewError(data.error || 'Errore nella creazione dell\'app');
+      }
+    } catch (err) {
+      console.error('Errore creazione app:', err);
+      setPreviewError('Errore di connessione. Riprova più tardi.');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -176,7 +227,7 @@ export default function CreatorPage() {
 
   return (
     <div className="p-8">
-      <div className="max-w-2xl mx-auto">
+      <div className={`mx-auto transition-[max-width] ${previewSchema ? 'max-w-6xl' : 'max-w-2xl'}`}>
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-4">{t('creator_title')}</h1>
@@ -309,8 +360,12 @@ export default function CreatorPage() {
               value={prompt}
               onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPrompt(e.target.value)}
               placeholder={t('creator_prompt_placeholder')}
-              className="w-full h-32 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-amber-500 resize-none p-4 pr-12"
+              maxLength={4000}
+              className="w-full h-56 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-amber-500 resize-none p-4 pr-12"
             />
+            <div className="absolute right-3 bottom-3 text-xs text-gray-500 pointer-events-none">
+              {prompt.length}/4000
+            </div>
             {/* Microphone Button */}
             <button
               type="button"
@@ -337,6 +392,34 @@ export default function CreatorPage() {
             {t('creator_generate_button')}
           </button>
         </div>
+
+        {previewError && (
+          <div className="mb-6 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+            {previewError}
+          </div>
+        )}
+
+        {/* Dynamic Preview: anteprima live dello schema generato, stile Totalum/Hercules */}
+        {previewSchema && (
+          <div className="mb-6">
+            <DynamicAppPreview
+              schema={previewSchema}
+              onRegenerate={handleGenerate}
+              onConfirm={handleConfirmCreate}
+              isCreating={isCreating}
+              labels={{
+                previewLabel: t('creator_preview_label'),
+                tablesLabel: t('creator_preview_tables'),
+                fieldsLabel: t('creator_preview_fields'),
+                dashboardLabel: t('creator_preview_dashboard'),
+                regenerateLabel: t('creator_preview_regenerate'),
+                confirmLabel: t('creator_preview_confirm'),
+                creatingLabel: t('creator_preview_creating'),
+                emptyLabel: t('creator_preview_empty'),
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

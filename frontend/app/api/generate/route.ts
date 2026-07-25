@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 // Configurazione Totalum
 const TOTALUM_API_URL = process.env.TOTALUM_API_URL || 'https://api-accounts.totalum.app';
@@ -12,7 +13,7 @@ const TOTALUM_API_KEY = process.env.TOTALUM_API_KEY;
 // Configurazione Supabase (Service Role per bypassare RLS)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const supabase = createClient(supabaseUrl, serviceRoleKey);
+const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
 // Log per debug
 console.log('[Totalum Next.js] API URL:', TOTALUM_API_URL);

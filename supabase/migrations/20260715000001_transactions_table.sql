@@ -38,8 +38,8 @@ ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ,
 ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS lemon_squeezy_product_id TEXT;
 
-COMMENT ON COLUMN app_registry.expires_at IS 'Data di scadenza dell\'app';
-COMMENT ON COLUMN app_registry.is_active IS 'Stato attivo dell\'app';
+COMMENT ON COLUMN app_registry.expires_at IS 'Data di scadenza dell''app';
+COMMENT ON COLUMN app_registry.is_active IS 'Stato attivo dell''app';
 COMMENT ON COLUMN app_registry.lemon_squeezy_product_id IS 'ID prodotto LemonSqueezy per il webhook';
 
 -- 3. RLS per transactions

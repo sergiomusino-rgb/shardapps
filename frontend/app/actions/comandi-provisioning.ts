@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { z } from 'zod';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -67,8 +68,8 @@ export async function provisionComandiAppAction(
     }
     const { accessToken } = validation.data;
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
+    const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     let userId: string | undefined;
     try {
@@ -284,8 +285,8 @@ export async function updatePosCredentialsAction(input: UpdatePosPasswordInput):
     }
     const { accessToken, newPassword } = validation.data;
 
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
+    const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     let userId: string | undefined;
     try {

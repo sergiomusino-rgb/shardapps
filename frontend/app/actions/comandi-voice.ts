@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import {
   VoiceOrderExtractionSchema,
   type VoiceOrderExtraction,
@@ -167,10 +168,10 @@ export async function extractVoiceOrderAction(
     }
 
     // Client con anon key, usato solo per validare il token passato dal client
-    const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+    const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
     // Client con service role per le query dati (bypassa RLS lato server)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     // Il tenant_id non viene MAI accettato da input: è una Server Action
     // chiamabile come un endpoint POST con payload arbitrario, quindi

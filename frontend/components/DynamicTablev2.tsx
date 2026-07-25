@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import {
   Search,
   Plus,
@@ -331,7 +332,7 @@ export default function DynamicTable({
   const supabaseAdmin = useMemo(() => {
     const url = configUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const key = configKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    return createClient(url, key);
+    return createClient<Database>(url, key);
   }, [configUrl, configKey]);
 
   // ─── State ───────────────────────────────────────────────────────────────
@@ -405,7 +406,9 @@ export default function DynamicTable({
         setInternalRecords([]);
         setTotalCount(0);
       } else {
-        setInternalRecords(data || []);
+        // `data` (colonna jsonb) arriva tipizzato Json; AppRecord.data è
+        // Record<string, unknown> per come lo usa il resto del componente.
+        setInternalRecords((data || []) as unknown as AppRecord[]);
         setTotalCount(count || 0);
       }
     } catch (err) {
@@ -446,7 +449,7 @@ export default function DynamicTable({
         app_id: appId,
         tenant_id: tenantId,
         table_name: table.name,
-        data: formData,
+        data: formData as any, // colonna jsonb, formData è già JSON-serializzabile
       });
 
       if (insertError) throw new Error(insertError.message);
@@ -469,7 +472,7 @@ export default function DynamicTable({
     try {
       const { error: updateError } = await supabaseAdmin
         .from('app_records')
-        .update({ data: formData, updated_at: new Date().toISOString() })
+        .update({ data: formData as any, updated_at: new Date().toISOString() })
         .eq('id', editingRecord.id)
         .eq('app_id', appId);
 
@@ -539,7 +542,7 @@ export default function DynamicTable({
       const csvRows = [headers.join(',')];
       for (const row of data) {
         const values = headers.map((h) => {
-          const val = row.data?.[h];
+          const val = (row.data as Record<string, unknown> | null)?.[h];
           if (val === null || val === undefined) return '';
           const str = String(val);
           // Escape quotes and wrap in quotes if contains comma or quote
@@ -625,7 +628,7 @@ export default function DynamicTable({
         data,
       }));
 
-      const { error: insertError } = await supabaseAdmin.from('app_records').insert(insertData);
+      const { error: insertError } = await supabaseAdmin.from('app_records').insert(insertData as any);
       if (insertError) throw new Error(insertError.message);
 
       setImportMsg(`${records.length} record importati con successo`);

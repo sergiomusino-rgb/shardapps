@@ -9,7 +9,7 @@ const Stripe = require('stripe');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
-const Anthropic = require('@anthropic-ai/sdk');
+const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -452,18 +452,21 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Client AI inizializzati solo se le chiavi sono presenti
+// Client AI inizializzati solo se le chiavi sono presenti — usati solo da
+// /api/vision/analyze (input multimodale, non ancora supportato dall'AI
+// Router centralizzato in ./lib/ai-router.js). /api/chat e /api/generate-app
+// usano invece callAiRouter (OpenRouter), vedi sotto.
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 
 function clientMissing(res, provider) {
   return res.status(503).json({ error: `${provider} non configurato. Aggiungi la chiave API.` });
 }
 
 // Le route AI sotto (chat, vision, generate-app) chiamano provider a pagamento
-// (Groq/OpenAI/Gemini/Anthropic) con le chiavi del proprietario del sito: senza
+// (OpenRouter via ./lib/ai-router.js per chat/generate-app; Groq/OpenAI/Gemini
+// diretti per vision) con le chiavi del proprietario del sito: senza
 // autenticazione chiunque conoscesse l'URL del backend potrebbe consumare
 // budget illimitato. Accetta sia un JWT Supabase reale (chiamata diretta dal
 // browser) sia il BACKEND_SERVICE_TOKEN condiviso + X-User-ID (stesso schema
@@ -501,54 +504,30 @@ app.get('/api/health', (_req, res) => {
 });
 
 // --- CHAT API ---
+// Assistente conversazionale generico: task "chat" -> tier "fast" dell'AI
+// Router centralizzato (./lib/ai-router.js), nessuna generazione complessa di
+// app/codice qui.
 app.post('/api/chat', requireAuth, async (req, res) => {
   try {
-    const { messages, provider = 'groq', model } = req.body;
+    const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages array richiesto' });
     }
 
-    const content = messages[messages.length - 1]?.content || '';
-
-    if (provider === 'groq') {
-      if (!groq) return clientMissing(res, 'Groq');
-      const chatModel = model || 'llama-3.3-70b-versatile';
-      const completion = await groq.chat.completions.create({
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
-        model: chatModel
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    if (provider === 'gemini') {
-      if (!genAI) return clientMissing(res, 'Gemini');
-      const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.0-flash' });
-      const result = await geminiModel.generateContent(content);
-      return res.json({ reply: result.response.text() });
-    }
-
-    if (provider === 'openai') {
-      if (!openai) return clientMissing(res, 'OpenAI');
-      const completion = await openai.chat.completions.create({
-        model: model || 'gpt-4o-mini',
-        messages: messages.map(m => ({ role: m.role, content: m.content }))
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    if (provider === 'anthropic') {
-      if (!anthropic) return clientMissing(res, 'Anthropic');
-      const msg = await anthropic.messages.create({
-        model: model || 'claude-3-5-sonnet-20240620',
-        max_tokens: 2048,
-        messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
-      });
-      return res.json({ reply: msg.content.map(c => c.type === 'text' ? c.text : '').join('') });
-    }
-
-    return res.status(400).json({ error: `Provider ${provider} non supportato` });
+    const { content: reply } = await callAiRouter({
+      task: 'chat',
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      context: { userId: req.user?.id },
+    });
+    return res.json({ reply });
   } catch (err) {
     console.error('/api/chat error:', err);
+    if (err instanceof AiRouterConfigError) {
+      return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
+    }
+    if (err instanceof AiRouterError) {
+      return res.status(502).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message || 'Errore interno' });
   }
 });
@@ -624,7 +603,6 @@ app.post('/api/generate-app', requireAuth, async (req, res) => {
     const { getDesignSystemForSector } = require('./utils/designSystemLoader');
     const designSystem = getDesignSystemForSector(sector);
     
-    const provider = 'groq';
     const prompt = `Sei un architetto software. Genera un blueprint JSON per un gestionale SaaS per il settore "${sector}".
 
 ${designSystem.designContent ? `## DESIGN SYSTEM DA APPLICARE\n${designSystem.designContent}\n` : ''}
@@ -647,32 +625,17 @@ Il JSON deve contenere:
 
 Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
 
-    console.log('[generate-app] provider:', provider, 'sector:', sector);
+    console.log('[generate-app] sector:', sector);
 
-    let raw = '';
-
-    if (provider === 'groq' && groq) {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }]
-      });
-      raw = completion.choices[0].message.content;
-    } else if (provider === 'openai' && openai) {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }]
-      });
-      raw = completion.choices[0].message.content;
-    } else if (provider === 'gemini' && genAI) {
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await geminiModel.generateContent(prompt);
-      raw = result.response.text();
-    } else {
-      return res.status(503).json({ error: 'Nessun provider AI disponibile' });
-    }
-
-    const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, raw];
-    const parsed = JSON.parse(jsonMatch[1].trim());
+    // Generazione completa di una nuova app da zero: task "app-generation" ->
+    // tier "advanced" dell'AI Router centralizzato (es. Claude Sonnet 5).
+    const { content: raw } = await callAiRouter({
+      task: 'app-generation',
+      jsonMode: true,
+      messages: [{ role: 'user', content: prompt }],
+      context: { tenantId },
+    });
+    const parsed = extractJsonFromAiContent(raw);
 
     // Normalizza al formato BlueprintJSON atteso
     const blueprint = {
@@ -698,6 +661,12 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
     return res.json({ blueprint, tenantId });
   } catch (err) {
     console.error('/api/generate-app error:', err);
+    if (err instanceof AiRouterConfigError) {
+      return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
+    }
+    if (err instanceof AiRouterError) {
+      return res.status(502).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message || 'Errore generazione blueprint' });
   }
 });

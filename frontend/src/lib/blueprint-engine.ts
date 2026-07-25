@@ -1,16 +1,17 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import {
   BlueprintJSONSchema,
   sanitizeBlueprint,
   normalizeSector,
   type BlueprintJSON,
 } from './blueprint-schema';
+import { callAiRouter, extractJsonFromAiContent } from './ai-router';
 
 interface GenerateOptions {
   sector: string;
   prompt?: string;
   lang?: string;
-  provider?: 'gemini' | 'openai' | 'groq' | 'openrouter';
 }
 
 interface BlueprintRecord {
@@ -31,7 +32,7 @@ export class BlueprintEngine {
     if (!url || !key) {
       throw new Error('Supabase service role env vars missing for BlueprintEngine');
     }
-    this.supabase = createClient(url, key);
+    this.supabase = createClient<Database>(url, key);
   }
 
   async findBlueprint(sector: string): Promise<BlueprintRecord | null> {
@@ -57,33 +58,24 @@ export class BlueprintEngine {
   }
 
   async generateBlueprint(options: GenerateOptions): Promise<BlueprintJSON> {
-    const { sector, prompt, lang = 'it', provider = 'gemini' } = options;
+    const { sector, prompt, lang = 'it' } = options;
     const normalized = normalizeSector(sector);
 
     const systemPrompt = this.buildSystemPrompt(normalized, prompt, lang);
-    let rawText = '';
 
+    // Generazione completa di un nuovo blueprint da zero: task "app-generation"
+    // -> tier "advanced" dell'AI Router (es. Claude Sonnet 5 via OpenRouter).
+    let parsed: unknown;
     try {
-      if (provider === 'openrouter') rawText = await this.callOpenRouter(systemPrompt);
-      else if (provider === 'openai') rawText = await this.callOpenAI(systemPrompt);
-      else if (provider === 'groq') rawText = await this.callGroq(systemPrompt);
-      else rawText = await this.callGemini(systemPrompt);
+      const { content } = await callAiRouter({
+        task: 'app-generation',
+        jsonMode: true,
+        messages: [{ role: 'user', content: systemPrompt }],
+      });
+      parsed = extractJsonFromAiContent(content);
     } catch (err) {
       console.error('BlueprintEngine LLM error:', err);
       throw new Error('Errore nella generazione del blueprint');
-    }
-
-    const cleaned = rawText
-      .replace(/```json\s*/g, '')
-      .replace(/```\s*/g, '')
-      .trim();
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error('BlueprintEngine JSON parse error. Raw:', rawText);
-      throw new Error('Il modello ha restituito un JSON non valido');
     }
 
     if (typeof parsed === 'object' && parsed !== null) {
@@ -189,70 +181,4 @@ Regole:
 - Output solo JSON, niente markdown, niente spiegazioni.`;
   }
 
-  private async callGemini(prompt: string): Promise<string> {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  }
-
-  private async callOpenAI(prompt: string): Promise<string> {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY || ''}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore OpenAI');
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  private async callGroq(prompt: string): Promise<string> {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore Groq');
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  private async callOpenRouter(prompt: string): Promise<string> {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY || ''}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://zeusx.app',
-        'X-Title': 'ZeusX',
-      },
-      body: JSON.stringify({
-        model: 'anthropic/claude-3.5-sonnet',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error?.message || 'Errore OpenRouter');
-    return data.choices?.[0]?.message?.content || '';
-  }
 }

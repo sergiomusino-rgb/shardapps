@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { cookies } from 'next/headers';
 
 export async function POST(request: Request) {
@@ -17,6 +19,9 @@ export async function POST(request: Request) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+    // @supabase/ssr@0.6.0 non gestisce correttamente il campo `__InternalSupabase`
+    // dei tipi generati (vedi src/lib/supabase-server.ts per il dettaglio):
+    // cast verso SupabaseClient<Database> invece del generico di createServerClient.
     const supabase = createServerClient(supabaseUrl, supabaseServiceKey, {
       cookies: {
         get(name: string) {
@@ -25,7 +30,7 @@ export async function POST(request: Request) {
         set() {},
         remove() {},
       },
-    });
+    }) as unknown as SupabaseClient<Database>;
 
     // Find app by slug and update email
     const { error } = await supabase

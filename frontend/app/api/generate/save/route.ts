@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -11,7 +12,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
 
 function getSupabaseAdmin() {
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createClient<Database>(supabaseUrl, supabaseServiceKey);
 }
 
 // Genera slug univoco
@@ -98,14 +99,24 @@ export async function POST(request: NextRequest) {
     let clientPassword = body.client_password;
     
     if (!clientEmail || !clientPassword) {
-      // Recupera l'email del tenant owner
+      // Recupera l'email del tenant owner. `tenants` non ha mai avuto colonne
+      // `owner_email`/`email` (bug pre-esistente: quella select falliva
+      // sempre silenziosamente, facendo cadere ogni volta sul fallback
+      // client-<timestamp>@zeusx.app) — l'unico modo corretto è risolvere
+      // l'email tramite owner_id su auth.users.
       const { data: tenant } = await supabase
         .from('tenants')
-        .select('owner_email, email')
+        .select('owner_id')
         .eq('id', tenantId)
         .single();
-      
-      clientEmail = tenant?.owner_email || tenant?.email || `client-${Date.now()}@zeusx.app`;
+
+      let ownerEmail: string | undefined;
+      if (tenant?.owner_id) {
+        const { data: ownerUser } = await supabase.auth.admin.getUserById(tenant.owner_id);
+        ownerEmail = ownerUser?.user?.email;
+      }
+
+      clientEmail = ownerEmail || `client-${Date.now()}@zeusx.app`;
       
       // Genera password casuale di 12 caratteri
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';

@@ -28,7 +28,7 @@ function ChatContent() {
           'Content-Type': 'application/json',
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }], provider: 'groq' })
+        body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }] })
       });
 
       const data = await response.json();

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 function getServiceSupabase() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -6,7 +7,7 @@ function getServiceSupabase() {
   if (!url || !key) {
     throw new Error('Supabase service role env vars missing');
   }
-  return createClient(url, key);
+  return createClient<Database>(url, key);
 }
 
 export interface TenantStatus {
@@ -18,7 +19,13 @@ export interface TenantStatus {
 
 export async function getUserTenantsStatus(userId: string): Promise<TenantStatus[]> {
   const supabase = getServiceSupabase();
-  const { data, error } = await supabase.rpc('check_user_tenant_status', {
+  // FIXME: la funzione `check_user_tenant_status` non esiste nello schema
+  // generato (supabase gen types) dal DB remoto collegato — non è mai stata
+  // applicata con una migrazione. Ogni chiamata a questa funzione (quindi
+  // /api/billing tramite ensureTenantAccess) sta probabilmente fallendo in
+  // produzione. Il cast bypassa solo l'errore di tipo; va creata la funzione
+  // remota (o va sostituita questa chiamata con l'equivalente logica diretta).
+  const { data, error } = await supabase.rpc('check_user_tenant_status' as any, {
     p_user_id: userId,
   });
 
@@ -70,7 +77,11 @@ export async function getTenantAppsCount(tenantId: string): Promise<number> {
 export async function canCreateApp(tenantId: string): Promise<{ allowed: boolean; reason?: string }> {
   const supabase = getServiceSupabase();
 
-  const { data, error } = await supabase.rpc('can_create_app', {
+  // FIXME: la funzione `can_create_app` non esiste nello schema generato dal
+  // DB remoto collegato — mai applicata con una migrazione. Nessun chiamante
+  // attivo nel repo oggi (funzione non importata altrove), ma va creata
+  // remotamente prima di riutilizzarla.
+  const { data, error } = await supabase.rpc('can_create_app' as any, {
     p_tenant_id: tenantId,
   });
 
@@ -99,7 +110,9 @@ export async function checkAppAccess(appId: string, userId?: string): Promise<{ 
     return { accessible: false };
   }
 
-  const accessible = !!accessibleRows?.[0]?.is_app_accessible;
+  // is_app_accessible restituisce uno scalare boolean, non una tabella di righe
+  // (bug pre-esistente: leggeva accessibleRows come se fosse un array di righe).
+  const accessible = !!accessibleRows;
 
   if (!accessible) {
     return { accessible: false };

@@ -10,10 +10,10 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 interface App {
   id: string;
   name: string;
-  slug: string;
+  slug: string | null;
   trial_ends_at: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: string | null;
   client_active: boolean;
   expires_at: string | null;
   production_url: string | null;
@@ -248,7 +248,7 @@ export default function ProjectsPage() {
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <a
-                    href={app.production_url || `/a/${app.slug}`}
+                    href={app.production_url || (app.slug ? `/a/${app.slug}` : '#')}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{

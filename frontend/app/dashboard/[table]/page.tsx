@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { getTableConfig, UITable, SECTOR_LABELS, TABLE_CATALOG } from '@/lib/table-config';
 import DynamicTable from '@/components/DynamicTablev2';
 import { ArrowLeft, AlertTriangle } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function DynamicTablePage() {
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-        const supabase = createClient(supabaseUrl, supabaseAnonKey);
+        const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
         // Ottieni l'utente corrente
         const { data: { user }, error: userError } = await supabase.auth.getUser();

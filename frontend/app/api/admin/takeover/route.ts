@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 // ============================================================================
 // Supabase Admin Client
@@ -8,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
 // Admin user ID
 const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
@@ -187,7 +188,7 @@ export async function POST(request: NextRequest) {
         // Il cliente dovrà riattivare l'abbonamento al prossimo accesso
         await supabaseAdmin
           .from('apps')
-          .update({ 
+          .update({
             is_managed_by_platform: true,
             payment_reset_required: true,
             updated_at: new Date().toISOString()
@@ -202,7 +203,7 @@ export async function POST(request: NextRequest) {
     // Set is_managed_by_platform to TRUE
     const { data, error } = await supabaseAdmin
       .from('apps')
-      .update({ 
+      .update({
         is_managed_by_platform: true,
         payment_reset_required: true,
         updated_at: new Date().toISOString()

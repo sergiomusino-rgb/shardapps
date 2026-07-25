@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 function getServiceSupabase() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -6,7 +7,7 @@ function getServiceSupabase() {
   if (!url || !key) {
     throw new Error('Supabase service role env vars missing');
   }
-  return createClient(url, key);
+  return createClient<Database>(url, key);
 }
 
 export interface Subscription {

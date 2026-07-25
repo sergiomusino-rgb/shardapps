@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 // Helper to get Stripe client (initialized inside handler to ensure env vars are available)
 function getStripe() {
@@ -23,13 +24,13 @@ function getSupabaseClients() {
     throw new Error('Variabili Supabase non configurate');
   }
 
-  const authClient = createClient(
+  const authClient = createClient<Database>(
     supabaseUrl,
     supabaseAnonKey,
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
-  const dbClient = createClient(
+  const dbClient = createClient<Database>(
     supabaseUrl,
     supabaseServiceKey || supabaseAnonKey,
     { auth: { persistSession: false, autoRefreshToken: false } }

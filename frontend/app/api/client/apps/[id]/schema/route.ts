@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
 
@@ -21,10 +22,11 @@ interface AITableDef {
 
 // Traduce una richiesta in linguaggio naturale (es. "Aggiungi la tabella
 // Storico Interventi con campi data, descrizione, costo") in una definizione
-// di tabella tramite Groq, con lo stesso schema di chiamata già usato in
-// app/api/creator/generate/route.ts (stesso GROQ_API_KEY, stesso pattern di
-// strip markdown + regex-extract del JSON).
-async function callGroq(instruction: string): Promise<AITableDef> {
+// di tabella. È un caso d'uso "schema-edit": una modifica puntuale su un'app
+// già esistente, non una generazione completa — l'AI Router la instrada quindi
+// sul tier "fast" (modello economico/veloce) invece del tier "advanced" usato
+// per generare app nuove da zero (vedi app/api/creator/generate/route.ts).
+async function generateTableDef(instruction: string, appId: string): Promise<AITableDef> {
   const systemPrompt = `Sei un assistente che traduce richieste in linguaggio naturale in una definizione di tabella per un database.
 Rispondi SOLO con un JSON valido con questa struttura, senza testo prima o dopo:
 {
@@ -39,46 +41,23 @@ Rispondi SOLO con un JSON valido con questa struttura, senza testo prima o dopo:
 Tipi di campo ammessi: ${ALLOWED_FIELD_TYPES.join(', ')}. Usa "number" per importi/quantità, "date" per date, "checkbox" per booleani, "text" per il resto.
 Non aggiungere mai un campo "id": viene gestito automaticamente dal sistema.`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY || ''}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: instruction },
-      ],
-    }),
+  const { content } = await callAiRouter({
+    task: 'schema-edit',
+    jsonMode: true,
+    temperature: 0.3,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: instruction },
+    ],
+    context: { appId },
   });
 
-  const contentType = res.headers.get('content-type');
-  if (!res.ok || !contentType?.includes('application/json')) {
-    const errorText = await res.text();
-    console.error('[AI Schema] Non-JSON response:', res.status, errorText.substring(0, 200));
-    throw new Error(`Errore Groq (${res.status}): ${res.statusText || 'risposta non valida'}`);
-  }
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || 'Errore Groq');
-
-  const content = data.choices?.[0]?.message?.content || '';
-  const cleanJson = content.replace(/```json/g, '').replace(/```/g, '').trim();
-  const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Nessun JSON valido nella risposta AI');
-
-  let parsed: any;
   try {
-    parsed = JSON.parse(jsonMatch[0]);
+    return extractJsonFromAiContent(content) as AITableDef;
   } catch (parseError) {
-    console.error('[AI Schema] JSON parse error:', parseError, jsonMatch[0]);
+    console.error('[AI Schema] JSON parse error:', parseError, content);
     throw new Error('Errore nel parsing della risposta AI');
   }
-
-  return parsed as AITableDef;
 }
 
 // Sanifica l'output dell'AI: whitelist dei campi, fallback sui default,
@@ -133,7 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Descrivi cosa vuoi aggiungere, es. "Aggiungi la tabella Fornitori con campi nome, telefono"' }, { status: 400 });
     }
 
-    const rawTableDef = await callGroq(instruction);
+    const rawTableDef = await generateTableDef(instruction, id);
     const tableDef = sanitizeTableDef(rawTableDef);
 
     // Riusa integralmente la logica di creazione/validazione/unicità-nome
@@ -151,6 +130,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json(data, { status: res.status });
   } catch (err) {
     console.error('[AI Schema] error:', err);
+    if (err instanceof AiRouterConfigError) {
+      return NextResponse.json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' }, { status: 500 });
+    }
+    if (err instanceof AiRouterError) {
+      return NextResponse.json({ error: err.message }, { status: 502 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Errore durante la generazione della tabella' },
       { status: 500 }

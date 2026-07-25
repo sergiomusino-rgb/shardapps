@@ -3,29 +3,30 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { Copy, Check, CreditCard, AlertCircle, Settings, Wallet, TrendingUp, LayoutGrid } from 'lucide-react';
 import { getClientSubscriptionPrice, ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 interface App {
   id: string;
   name: string;
-  slug: string;
+  slug: string | null;
   totalum_app_id: string | null;
   stripe_connect_id: string | null;
-  client_subscription_price: number;
+  client_subscription_price: number | null;
   client_price?: number | null;
-  status: 'trial' | 'active' | 'expired' | 'past_due' | 'canceled';
+  status: string | null;
   trial_ends_at: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: string | null;
   client_active: boolean;
   expires_at: string | null;
-  client_email?: string;
+  client_email?: string | null;
   client_password?: string;
 }
 
@@ -106,7 +107,7 @@ export default function ManagementConsolePage() {
     const { data: appsData, error: appsError } = await supabase
       .from('apps')
       .select('id, name, slug, totalum_app_id, stripe_connect_id, client_subscription_price, client_price, status, trial_ends_at, is_active, client_active, expires_at, client_email, created_at')
-      .eq('tenant_id', tenantId)
+      .eq('tenant_id', tenantId || '')
       .order('created_at', { ascending: false });
 
     if (appsError) {
@@ -230,7 +231,7 @@ export default function ManagementConsolePage() {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | null) => {
     const styles = {
       trial: 'bg-yellow-500/20 text-yellow-300',
       active: 'bg-green-500/20 text-green-300',

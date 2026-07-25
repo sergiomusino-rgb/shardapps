@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -34,7 +35,7 @@ export async function GET(
 
     const token = authHeader.slice(7);
 
-    const authClient = createClient(supabaseUrl, anonKey, {
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
@@ -46,7 +47,7 @@ export async function GET(
 
     const { id } = await params;
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -98,7 +99,7 @@ export async function DELETE(
     const token = authHeader.slice(7);
 
     // Usa anon key per autenticare l'utente
-    const authClient = createClient(supabaseUrl, anonKey, {
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
@@ -111,7 +112,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Usa service role per bypassare RLS e verificare ownership
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -199,7 +200,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -235,7 +236,9 @@ export async function PATCH(
 
     const { data: app, error: updateError } = await adminClient
       .from('apps')
-      .update(updates)
+      // updates è costruito dinamicamente da una whitelist (CLIENT_PROFILE_FIELDS):
+      // il cast bypassa la corrispondenza esatta col tipo Update generato.
+      .update(updates as any)
       .eq('id', id)
       .eq('tenant_id', tenantId)
       .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
