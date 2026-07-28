@@ -251,13 +251,13 @@ export default function DynamicRecordModal({
           )}
 
           {/* Aggiungi nuovo campo dinamico */}
-          <div className="flex items-center gap-2 rounded-lg border border-dashed border-tenant-border bg-tenant-card/50 p-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-tenant-border bg-tenant-card/50 p-3">
             <input
               type="text"
               value={newKey}
               onChange={(e) => setNewKey(e.target.value)}
               placeholder="Nome campo (es. sconto_fedelta)"
-              className="w-40 shrink-0 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 font-mono text-[13px] text-tenant-text outline-none focus:border-tenant-primary"
+              className="w-full shrink-0 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 font-mono text-[13px] text-tenant-text outline-none focus:border-tenant-primary sm:w-40"
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
             />
             <input

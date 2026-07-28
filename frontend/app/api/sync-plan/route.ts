@@ -22,7 +22,7 @@ const PLAN_SLOTS: Record<string, number> = {
   free: 0,
   starter: 1,
   pro: 5,
-  business: 20,
+  business: 50,
 };
 
 // Mappa piani -> crediti Vision inclusi (setup una tantum). "credit_topup"
@@ -32,7 +32,7 @@ const PLAN_CREDITS: Record<string, number> = {
   free: 0,
   starter: 20,
   pro: 100,
-  business: 400,
+  business: 500,
 };
 
 const CREDIT_TOPUP_CREDITS = 50;

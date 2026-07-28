@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/src/lib/LanguageContext";
@@ -21,6 +21,19 @@ export const metadata: Metadata = {
   icons: {
     icon: '/favicon.png',
   },
+};
+
+// Esplicito invece di affidarsi al default di Next: senza width=device-width
+// i browser mobili renderizzano a una viewport desktop (~980px) e poi
+// rimpiccioliscono tutto, vanificando qualunque classe responsive. Il
+// theme-color qui è solo il fallback prima dell'idratazione: ogni app
+// generata (Comandi incluso, vedi hooks/usePwaSetup) lo sovrascrive
+// client-side col proprio colore di brand.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#020617',
 };
 
 export default function RootLayout({

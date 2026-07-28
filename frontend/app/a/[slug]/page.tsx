@@ -64,7 +64,7 @@ function LandingPublic() {
 
   const displayName = companyInfo?.ragione_sociale || appName;
 
-  usePwaSetup(slug, designTokens.colors.primary);
+  usePwaSetup(slug, designTokens.colors.primary, companyInfo?.logo || '/icons/icon-192x192.png', displayName);
 
   // Spezza la tagline sulla keyword di settore per evidenziarla in corsivo/colore primario
   const [taglineBefore, taglineAfter] = hero.tagline.split('{keyword}');
@@ -605,7 +605,7 @@ export default function AppRootPageEntry() {
   const appInfo = useAppInfo();
 
   if (appInfo.appType === 'comandi_ai') {
-    return <ComandiInstanceLanding slug={appInfo.slug} appName={appInfo.appName} />;
+    return <ComandiInstanceLanding slug={appInfo.slug} />;
   }
 
   return <GeneratedAppRootPage />;

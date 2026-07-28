@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import ComandiHeaderBrand from './ComandiHeaderBrand';
+import ComandiSidebar from './ComandiSidebar';
+import HeaderClock from '@/components/HeaderClock';
+import LanguageSelector from '@/components/LanguageSelector';
 import {
   AlertCircle,
   Check,
@@ -13,12 +16,15 @@ import {
   ChevronDown,
   CreditCard,
   Download,
-  ExternalLink,
   FileSpreadsheet,
   KeyRound,
   Loader2,
   LogOut,
+  Mail,
+  Menu,
+  MessageCircle,
   Mic,
+  Pencil,
   Plus,
   QrCode,
   ShieldAlert,
@@ -34,18 +40,24 @@ import { supabase } from '@/src/lib/supabase';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
 import { updateOrderStatusAction, getOrderAudioSignedUrlAction } from '@/app/actions/comandi-orders';
 import { useComandiRole } from '@/src/lib/useComandiRole';
+import { usePwaSetup } from '@/hooks/usePwaSetup';
+import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 import { useAppInfo } from '@/app/a/[slug]/AppInfoContext';
 import { daysRemaining } from '@/app/a/[slug]/app/subscription-status';
-import type { CatalogItem, Order, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
+import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
 
-type Tab = 'catalog' | 'company' | 'orders';
+// Esportati per riuso nella pagina Agente (app/a/[slug]/app/agente), che
+// mostra la stessa lista tab sotto l'header per coerenza di navigazione con
+// il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
+// (i link puntano alla Dashboard con ?tab=...).
+export type Tab = 'catalog' | 'customers' | 'company' | 'orders';
 
 // Tab visibili per ruolo: 'agent' vede solo il catalogo (in sola lettura, vedi
 // CatalogTab readOnly più sotto) — niente dati aziendali né incassi, come da
 // requisito RBAC del ruolo. Tutti gli altri ruoli (owner/admin/member) vedono
 // tutto, invariato.
-const ALL_TABS: Tab[] = ['catalog', 'company', 'orders'];
-const AGENT_TABS: Tab[] = ['catalog'];
+export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'company'];
+export const AGENT_TABS: Tab[] = ['catalog'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -119,11 +131,23 @@ function TrialNudgeBanner({ slug }: { slug: string }) {
 export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInstanceDashboardProps) {
   const { t } = useLanguage();
   const router = useRouter();
+  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
   const { role } = useComandiRole(tenantId);
   const isAgent = role === 'agent';
   const visibleTabs = isAgent ? AGENT_TABS : ALL_TABS;
 
   const [tab, setTab] = useState<Tab>('catalog');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Deep-link diretto a una tab (es. dalla lista tab della pagina Agente, che
+  // punta a /dashboard?tab=customers): letto da window.location invece di
+  // useSearchParams per evitare il vincolo di Suspense boundary, come da
+  // convenzione già in uso in app/a/[slug]/layout.tsx.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const requestedTab = new URLSearchParams(window.location.search).get('tab') as Tab | null;
+    if (requestedTab && ALL_TABS.includes(requestedTab)) setTab(requestedTab);
+  }, []);
 
   // Un agente non deve mai restare su un tab non autorizzato: se il ruolo
   // viene risolto dopo il mount (fetch async) e il tab corrente non è più
@@ -137,72 +161,102 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
     router.push(`/a/${slug}`);
   };
 
-  return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <TrialNudgeBanner slug={slug} />
+  const handleSelectTab = (nextTab: Tab) => {
+    setTab(nextTab);
+    setMobileMenuOpen(false);
+  };
 
-      <header className="border-b border-gray-800 bg-gray-900/60">
-        <div className="max-w-5xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <div />
-          <ComandiHeaderBrand />
-          <div className="flex items-center justify-end gap-3">
-            {!isAgent && (
+  return (
+    <div className="flex h-screen overflow-hidden bg-gray-950 text-white">
+      {/* Sidebar desktop */}
+      <div className="hidden md:block">
+        <ComandiSidebar
+          visibleTabs={visibleTabs}
+          tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
+          activeTab={tab}
+          onSelectTab={handleSelectTab}
+          dashboardHref={`/a/${slug}/dashboard`}
+          agentHref={`/a/${slug}/app/agente`}
+          agentLabel={t('comandi_dashboard_go_to_console')}
+          showAgentEntry={!isAgent}
+          onLogout={handleLogout}
+          logoutLabel={t('comandi_dashboard_logout')}
+        />
+      </div>
+
+      {/* Sidebar mobile (drawer) */}
+      <div className="md:hidden">
+        <div
+          className={`fixed inset-0 z-40 transition-opacity duration-200 ${
+            mobileMenuOpen ? 'bg-black/60 backdrop-blur-sm opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+        <div
+          className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 ${
+            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <ComandiSidebar
+            visibleTabs={visibleTabs}
+            tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
+            activeTab={tab}
+            onSelectTab={handleSelectTab}
+            dashboardHref={`/a/${slug}/dashboard`}
+            agentHref={`/a/${slug}/app/agente`}
+            agentLabel={t('comandi_dashboard_go_to_console')}
+            showAgentEntry={!isAgent}
+            onLogout={handleLogout}
+            logoutLabel={t('comandi_dashboard_logout')}
+            onClose={() => setMobileMenuOpen(false)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <TrialNudgeBanner slug={slug} />
+
+        <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-800 bg-gray-900/60 px-4 md:justify-end md:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
+            aria-label="Apri menu"
+          >
+            <Menu size={22} />
+          </button>
+          <div className="md:hidden">
+            <ComandiHeaderBrand />
+          </div>
+          <div className="flex items-center gap-3">
+            <HeaderClock textColor="#e5e7eb" mutedColor="#6b7280" />
+            <LanguageSelector />
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto px-4 py-8 md:px-8">
+          {isAgent && (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-700/50 bg-amber-900/20 p-4">
+              <div className="flex items-start gap-2 text-sm text-amber-300">
+                <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{t('comandi_dashboard_agent_restricted_banner')}</span>
+              </div>
               <Link
                 href={`/a/${slug}/app/agente`}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
               >
-                <Mic className="w-4 h-4" />
-                {t('comandi_dashboard_go_to_console')}
+                <Mic className="w-3.5 h-3.5" />
+                {t('comandi_dashboard_agent_go_to_orders')}
               </Link>
-            )}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-red-400 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              {t('comandi_dashboard_logout')}
-            </button>
-          </div>
-        </div>
-        <div className="max-w-5xl mx-auto px-4 flex gap-1">
-          {visibleTabs.map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-                tab === key
-                  ? 'border-amber-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {t(`comandi_dashboard_tab_${key}`)}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        {isAgent && (
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-700/50 bg-amber-900/20 p-4">
-            <div className="flex items-start gap-2 text-sm text-amber-300">
-              <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{t('comandi_dashboard_agent_restricted_banner')}</span>
             </div>
-            <Link
-              href={`/a/${slug}/app/agente`}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
-            >
-              <Mic className="w-3.5 h-3.5" />
-              {t('comandi_dashboard_agent_go_to_orders')}
-            </Link>
-          </div>
-        )}
-        {tab === 'catalog' && <CatalogTab tenantId={tenantId} readOnly={isAgent} role={role} />}
-        {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
-        {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
-      </main>
+          )}
+          {tab === 'catalog' && <CatalogTab tenantId={tenantId} readOnly={isAgent} role={role} />}
+          {tab === 'customers' && !isAgent && <CustomersTab tenantId={tenantId} />}
+          {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
+          {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
+        </main>
+      </div>
     </div>
   );
 }
@@ -698,6 +752,334 @@ function CatalogTab({
   );
 }
 
+// ─── Tab Clienti ────────────────────────────────────────────────────────────
+// Rubrica clienti del tenant: scheda in stile "Azienda" (stessi campi
+// anagrafici: nome, P.IVA/CF, indirizzo, città, telefono, vedi CompanyTab più
+// sotto) per inserire/modificare un cliente, più la tabella di tutti i
+// clienti registrati. La stessa scheda serve sia per "Nuovo Cliente" (form
+// vuoto) sia per la modifica (click su "Modifica" in tabella la precompila),
+// invece di due form separati.
+
+const EMPTY_CUSTOMER_FORM = {
+  name: '',
+  vat_number: '',
+  address: '',
+  city: '',
+  phone: '',
+  email: '',
+  notes: '',
+};
+
+function CustomersTab({ tenantId }: { tenantId: string }) {
+  const { t } = useLanguage();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+
+  // La scheda cliente è un modale, non una sezione sempre visibile: la vista
+  // predefinita del tab è la tabella riassuntiva, la scheda si apre solo dal
+  // tasto "Nuovo Cliente" o da "Modifica" su una riga.
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(EMPTY_CUSTOMER_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadCustomers = useCallback(async () => {
+    setLoading(true);
+    setListError(null);
+    try {
+      const { data, error } = await supabase
+        .from('customers' as any)
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('name');
+      if (error) throw error;
+      setCustomers((data || []) as Customer[]);
+    } catch (err) {
+      console.error('[CustomersTab] Errore caricamento clienti:', err);
+      setListError(t('comandi_dashboard_customers_error_generic'));
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId, t]);
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
+
+  const closeForm = useCallback(() => {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_CUSTOMER_FORM);
+    setFormError(null);
+  }, []);
+
+  const handleOpenNew = useCallback(() => {
+    setEditingId(null);
+    setForm(EMPTY_CUSTOMER_FORM);
+    setFormError(null);
+    setShowForm(true);
+  }, []);
+
+  const handleEdit = useCallback((customer: Customer) => {
+    setEditingId(customer.id);
+    setForm({
+      name: customer.name || '',
+      vat_number: customer.vat_number || '',
+      address: customer.address || '',
+      city: customer.city || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+      notes: customer.notes || '',
+    });
+    setFormError(null);
+    setShowForm(true);
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = form.name.trim();
+    if (!name) {
+      setFormError(t('comandi_dashboard_customers_error_name_required'));
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      const payload = {
+        name,
+        vat_number: form.vat_number.trim() || null,
+        address: form.address.trim() || null,
+        city: form.city.trim() || null,
+        phone: form.phone.trim() || null,
+        email: form.email.trim() || null,
+        notes: form.notes.trim() || null,
+      };
+
+      if (editingId) {
+        const { error } = await (supabase as any).from('customers').update(payload).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await (supabase as any).from('customers').insert({ ...payload, tenant_id: tenantId });
+        if (error) throw error;
+      }
+
+      closeForm();
+      await loadCustomers();
+    } catch (err) {
+      console.error('[CustomersTab] Errore salvataggio cliente:', err);
+      setFormError(t('comandi_dashboard_customers_error_generic'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm(t('comandi_dashboard_customers_delete_confirm'))) return;
+    const { error } = await supabase.from('customers' as any).delete().eq('id', id);
+    if (error) {
+      console.error('[CustomersTab] Errore eliminazione cliente:', error);
+      setListError(t('comandi_dashboard_customers_error_generic'));
+      return;
+    }
+    if (editingId === id) closeForm();
+    setCustomers((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {t('comandi_dashboard_customers_list_title').replace('{count}', String(customers.length))}
+        </p>
+        <button
+          type="button"
+          onClick={handleOpenNew}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          {t('comandi_dashboard_customers_new_button')}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-gray-800 bg-gray-900 p-5">
+            <form onSubmit={handleSave} className="flex flex-col gap-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {editingId ? t('comandi_dashboard_customers_form_title_edit') : t('comandi_dashboard_customers_form_title_new')}
+                </p>
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="flex items-center justify-center w-9 h-9 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {formError && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {t('comandi_dashboard_customers_field_name')}
+                </label>
+                <input
+                  value={form.name}
+                  onChange={(e) => setForm((v) => ({ ...v, name: e.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {t('comandi_dashboard_customers_field_vat')}
+                </label>
+                <input
+                  value={form.vat_number}
+                  onChange={(e) => setForm((v) => ({ ...v, vat_number: e.target.value }))}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    {t('comandi_dashboard_customers_field_address')}
+                  </label>
+                  <input
+                    value={form.address}
+                    onChange={(e) => setForm((v) => ({ ...v, address: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    {t('comandi_dashboard_customers_field_city')}
+                  </label>
+                  <input
+                    value={form.city}
+                    onChange={(e) => setForm((v) => ({ ...v, city: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    {t('comandi_dashboard_customers_field_phone')}
+                  </label>
+                  <input
+                    value={form.phone}
+                    onChange={(e) => setForm((v) => ({ ...v, phone: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    {t('comandi_dashboard_customers_field_email')}
+                  </label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {t('comandi_dashboard_customers_field_notes')}
+                </label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm((v) => ({ ...v, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving || !form.name.trim()}
+                className="self-start flex items-center gap-1.5 px-5 py-3 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {editingId ? t('comandi_dashboard_customers_save_button_edit') : t('comandi_dashboard_customers_save_button_new')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {listError && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{listError}</span>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-gray-500">…</p>
+      ) : customers.length === 0 ? (
+        <p className="text-sm text-gray-500">{t('comandi_dashboard_customers_empty')}</p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-800 bg-gray-900/60">
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_name')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_vat')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_city')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_phone')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_email')}</th>
+                <th className="px-4 py-2.5 font-medium text-right">{t('comandi_dashboard_customers_col_actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map((customer) => (
+                <tr key={customer.id} className="border-b border-gray-800/60 last:border-b-0">
+                  <td className="px-4 py-2.5 text-white">{customer.name}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{customer.vat_number || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{customer.city || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{customer.phone || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{customer.email || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(customer)}
+                        title={t('comandi_dashboard_customers_action_edit')}
+                        className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:border-gray-600"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(customer.id)}
+                        title={t('comandi_dashboard_customers_action_delete')}
+                        className="flex items-center justify-center w-9 h-9 rounded-lg border border-gray-700 text-gray-500 hover:bg-red-500/15 hover:text-red-400 hover:border-gray-600"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab Azienda ────────────────────────────────────────────────────────────
 
 function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
@@ -770,7 +1152,9 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
 
   return (
     <>
-    <form onSubmit={handleSave} className="max-w-lg flex flex-col gap-4">
+    <div className="grid lg:grid-cols-2 gap-6 items-start">
+    <div className="flex flex-col gap-6">
+    <form onSubmit={handleSave} className="flex flex-col gap-4">
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -845,9 +1229,13 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
         {t('comandi_dashboard_company_save_button')}
       </button>
     </form>
-    <MyAccountSection />
-    <ShareAppSection tenantId={tenantId} />
     <SubscriptionSection slug={slug} />
+    </div>
+    <div className="flex flex-col gap-6">
+      <MyAccountSection />
+      <ShareAppSection tenantId={tenantId} />
+    </div>
+    </div>
     </>
   );
 }
@@ -947,7 +1335,7 @@ function MyAccountSection() {
   };
 
   return (
-    <div className="max-w-lg mt-8 rounded-xl border border-gray-800 bg-gray-900/60 p-5">
+    <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-5">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
         <KeyRound className="w-3.5 h-3.5" />
         {t('comandi_dashboard_myaccount_title')}
@@ -1042,7 +1430,7 @@ function ShareAppSection({ tenantId }: { tenantId: string }) {
   if (loading || !url) return null;
 
   return (
-    <div className="max-w-lg mt-8 rounded-xl border border-gray-800 bg-gray-900/60 p-5">
+    <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-5">
       <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
         <QrCode className="w-3.5 h-3.5" />
         {t('comandi_dashboard_share_title')}
@@ -1063,12 +1451,9 @@ function ShareAppSection({ tenantId }: { tenantId: string }) {
   );
 }
 
-// ─── Abbonamento (stato, annullamento, link a Gestione) ─────────────────────
+// ─── Abbonamento (stato, annullamento) ──────────────────────────────────────
 // Raggiungibile solo da qui (tab Azienda, non agente): mostrare "Disdici
-// abbonamento" a un ruolo 'member'/cassa non ha senso. Il link punta a
-// /dashboard/management, l'area ZeusX dove il titolare gestisce fatturazione
-// e Stripe Connect per le proprie app — /management è una pagina diversa e
-// più vecchia, non quella giusta qui (vedi ricerca in app/dashboard/management).
+// abbonamento" a un ruolo 'member'/cassa non ha senso.
 
 function SubscriptionSection({ slug }: { slug: string }) {
   const { t } = useLanguage();
@@ -1130,14 +1515,6 @@ function SubscriptionSection({ slug }: { slug: string }) {
 
       {cancelled && <p className="text-sm text-green-400 mb-3">{t('comandi_dashboard_subscription_cancel_success')}</p>}
       {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
-
-      <Link
-        href={`/dashboard/management?appId=${appInfo.appId}`}
-        className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300"
-      >
-        <ExternalLink className="w-3.5 h-3.5" />
-        {t('comandi_dashboard_subscription_management_link')}
-      </Link>
     </div>
   );
 }
@@ -1167,6 +1544,17 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
 
+  // ── N. Bolla / N. Fattura (editabili inline) ─────────────────────────────
+  const [savingDocsOrderId, setSavingDocsOrderId] = useState<string | null>(null);
+
+  // ── Esportazione (CSV/Excel, download/email/WhatsApp) ────────────────────
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | 'whatsapp' | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
   useEffect(() => {
     (async () => {
       const { data } = await supabase
@@ -1179,6 +1567,136 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
       setLoading(false);
     })();
   }, [tenantId]);
+
+  const handleUpdateDocumentField = async (
+    orderId: string,
+    field: 'delivery_note_number' | 'invoice_number',
+    value: string
+  ) => {
+    const previous = orders.find((o) => o.id === orderId)?.[field] ?? null;
+    const nextValue = value.trim() || null;
+    if (nextValue === previous) return;
+
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, [field]: nextValue } : o)));
+    setSavingDocsOrderId(orderId);
+    const { error } = await (supabase as any).from('orders').update({ [field]: nextValue }).eq('id', orderId);
+    setSavingDocsOrderId(null);
+    if (error) {
+      console.error('[OrdersTab] Errore salvataggio documento ordine:', error);
+      setActionError(t('comandi_dashboard_orders_action_error_generic'));
+      // Ripristina il valore precedente: l'update ottimistico sopra non è andato a buon fine.
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, [field]: previous } : o)));
+    }
+  };
+
+  const getExportAuthToken = async (): Promise<string | null> => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const fetchExportBlob = async (format: 'csv' | 'xlsx'): Promise<Blob | null> => {
+    const token = await getExportAuthToken();
+    if (!token) {
+      setExportError(t('comandi_dashboard_orders_export_error_session'));
+      return null;
+    }
+    const res = await fetch(`/api/comandi/orders-export?format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      setExportError(t('comandi_dashboard_orders_export_error_generic'));
+      return null;
+    }
+    return res.blob();
+  };
+
+  const handleDownloadExport = async (format: 'csv' | 'xlsx') => {
+    setExportError(null);
+    setExporting(format);
+    try {
+      const blob = await fetchExportBlob(format);
+      if (blob) downloadBlob(blob, format === 'xlsx' ? 'ordini.xlsx' : 'ordini.csv');
+    } catch (err) {
+      console.error('[OrdersTab] Errore download esportazione:', err);
+      setExportError(t('comandi_dashboard_orders_export_error_generic'));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // Nessuna Business API WhatsApp collegata (richiederebbe un account Twilio/
+  // Meta a pagamento): usa la Web Share API nativa del browser, che passa il
+  // file reale all'app scelta dall'utente (inclusa WhatsApp) nel foglio di
+  // condivisione del sistema operativo. Se non supportata (tipicamente
+  // desktop), scarica il file e apre WhatsApp Web con un messaggio pronto —
+  // l'allegato va aggiunto a mano perché i link wa.me non supportano file.
+  const handleShareWhatsApp = async () => {
+    setExportError(null);
+    setExporting('whatsapp');
+    try {
+      const blob = await fetchExportBlob('xlsx');
+      if (!blob) return;
+      const file = new File([blob], 'ordini.xlsx', { type: blob.type });
+      const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean };
+      if (nav.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Ordini', text: t('comandi_dashboard_orders_export_whatsapp_share_text') });
+      } else {
+        downloadBlob(blob, 'ordini.xlsx');
+        window.open(`https://wa.me/?text=${encodeURIComponent(t('comandi_dashboard_orders_export_whatsapp_fallback_text'))}`, '_blank');
+      }
+    } catch (err) {
+      // AbortError: l'utente ha chiuso il foglio di condivisione senza scegliere nulla, non è un errore da segnalare.
+      if (err instanceof Error && err.name === 'AbortError') return;
+      console.error('[OrdersTab] Errore condivisione WhatsApp:', err);
+      setExportError(t('comandi_dashboard_orders_export_error_generic'));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleSendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setExportError(null);
+    setEmailSent(false);
+    setSendingEmail(true);
+    try {
+      const token = await getExportAuthToken();
+      if (!token) {
+        setExportError(t('comandi_dashboard_orders_export_error_session'));
+        return;
+      }
+      const res = await fetch('/api/comandi/orders-export/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ format: 'xlsx', recipientEmail: emailRecipient.trim() }),
+      });
+      const json = await res.json().catch(() => ({ success: false }));
+      if (!res.ok || !json.success) {
+        setExportError(json.error || t('comandi_dashboard_orders_export_error_generic'));
+        return;
+      }
+      setEmailSent(true);
+      setEmailRecipient('');
+    } catch (err) {
+      console.error('[OrdersTab] Errore invio email esportazione:', err);
+      setExportError(t('comandi_dashboard_orders_export_error_generic'));
+    } finally {
+      setSendingEmail(false);
+    }
+  };
 
   const handleUpdateStatus = async (orderId: string, status: 'CONFIRMED' | 'CANCELLED') => {
     setActionError(null);
@@ -1269,6 +1787,73 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
         </div>
       </div>
 
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_orders_export_title')}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleDownloadExport('csv')}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-gray-600 hover:text-white disabled:opacity-50 transition-colors"
+          >
+            {exporting === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            {t('comandi_dashboard_orders_export_csv_button')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDownloadExport('xlsx')}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-gray-600 hover:text-white disabled:opacity-50 transition-colors"
+          >
+            {exporting === 'xlsx' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+            {t('comandi_dashboard_orders_export_excel_button')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowEmailForm((v) => !v);
+              setEmailSent(false);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-gray-600 hover:text-white transition-colors"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            {t('comandi_dashboard_orders_export_email_button')}
+          </button>
+          <button
+            type="button"
+            onClick={handleShareWhatsApp}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-gray-600 hover:text-white disabled:opacity-50 transition-colors"
+          >
+            {exporting === 'whatsapp' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MessageCircle className="w-3.5 h-3.5" />}
+            {t('comandi_dashboard_orders_export_whatsapp_button')}
+          </button>
+        </div>
+
+        {showEmailForm && (
+          <form onSubmit={handleSendEmail} className="flex flex-wrap items-center gap-2">
+            <input
+              type="email"
+              required
+              value={emailRecipient}
+              onChange={(e) => setEmailRecipient(e.target.value)}
+              placeholder={t('comandi_dashboard_orders_export_email_placeholder')}
+              className="flex-1 min-w-[220px] rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder:text-gray-500"
+            />
+            <button
+              type="submit"
+              disabled={sendingEmail || !emailRecipient.trim()}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 transition-colors"
+            >
+              {sendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              {t('comandi_dashboard_orders_export_email_send_button')}
+            </button>
+          </form>
+        )}
+        {emailSent && <p className="text-xs text-green-400">{t('comandi_dashboard_orders_export_email_success')}</p>}
+        {exportError && <p className="text-xs text-red-400">{exportError}</p>}
+      </div>
+
       {actionError && (
         <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
@@ -1287,6 +1872,8 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_customer')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_status')}</th>
                 <th className="px-4 py-2.5 font-medium text-right">{t('comandi_dashboard_orders_col_total')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_delivery_note')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_invoice')}</th>
                 <th className="px-4 py-2.5 font-medium text-right">{t('comandi_dashboard_orders_col_actions')}</th>
               </tr>
             </thead>
@@ -1303,13 +1890,31 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
                     </td>
                     <td className="px-4 py-2.5 text-right text-white font-medium">{formatCurrency(Number(order.total_amount))}</td>
                     <td className="px-4 py-2.5">
+                      <input
+                        defaultValue={order.delivery_note_number || ''}
+                        onBlur={(e) => handleUpdateDocumentField(order.id, 'delivery_note_number', e.target.value)}
+                        disabled={savingDocsOrderId === order.id}
+                        placeholder="—"
+                        className="w-24 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder:text-gray-600 disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <input
+                        defaultValue={order.invoice_number || ''}
+                        onBlur={(e) => handleUpdateDocumentField(order.id, 'invoice_number', e.target.value)}
+                        disabled={savingDocsOrderId === order.id}
+                        placeholder="—"
+                        className="w-24 rounded-lg border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white placeholder:text-gray-600 disabled:opacity-60"
+                      />
+                    </td>
+                    <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
                         {order.audio_url && (
                           <button
                             type="button"
                             onClick={() => handleToggleAudio(order)}
                             title={t('comandi_dashboard_orders_action_listen')}
-                            className={`flex items-center justify-center w-7 h-7 rounded-lg border transition-colors ${
+                            className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
                               audioOrderId === order.id
                                 ? 'border-amber-500 bg-amber-500/15 text-amber-300'
                                 : 'border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
@@ -1353,7 +1958,7 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
                   </tr>
                   {audioOrderId === order.id && (
                     <tr className="border-b border-gray-800/60 last:border-b-0 bg-gray-950/40">
-                      <td colSpan={5} className="px-4 py-3">
+                      <td colSpan={7} className="px-4 py-3">
                         {audioError ? (
                           <p className="text-xs text-red-400">{audioError}</p>
                         ) : audioUrl ? (

@@ -15,9 +15,52 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
   const { data: app } = await supabase
     .from('apps')
-    .select('id, name, config')
+    .select('id, name, config, app_type, tenant_id')
     .eq('slug', slug)
     .single();
+
+  // Comandi ha uno schema/dashboard fisso (niente app_records/config.branding,
+  // quelli sono del motore a schema generato da AI): il nome reale è quello
+  // compilato dal titolare in tenants.name (tab Azienda), palette e icona sono
+  // fisse sul brand ambra di Comandi invece di passare per getDesignTokens
+  // (pensato per i settori oculista/officina/ristorante del motore generico).
+  if ((app as { app_type?: string } | null)?.app_type === 'comandi_ai') {
+    const tenantId = (app as { tenant_id?: string }).tenant_id;
+    let tenantName: string | null = null;
+    if (tenantId) {
+      const { data: tenant } = await supabase.from('tenants').select('name').eq('id', tenantId).single();
+      tenantName = (tenant as { name?: string } | null)?.name || null;
+    }
+    const appName = tenantName || app?.name || 'Comandi AI';
+
+    const manifest = {
+      name: appName,
+      short_name: appName.length > 14 ? `${appName.slice(0, 13)}…` : appName,
+      description: `Gestionale ordini di ${appName}, powered by Comandi AI`,
+      start_url: `/a/${slug}/dashboard`,
+      scope: `/a/${slug}`,
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#030712',
+      theme_color: '#d97706',
+      icons: [
+        { src: '/icons/comandi-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icons/comandi-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icons/comandi-icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+      screenshots: [],
+      prefer_related_applications: false,
+      categories: ['business', 'productivity'],
+    };
+
+    return NextResponse.json(manifest, {
+      headers: {
+        'Content-Type': 'application/manifest+json',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300, must-revalidate',
+      },
+    });
+  }
 
   const config = (app?.config || {}) as Record<string, unknown>;
   const branding = (config.branding || {}) as Record<string, unknown>;

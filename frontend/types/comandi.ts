@@ -51,6 +51,9 @@ export interface Customer {
   name: string;
   phone: string | null;
   address: string | null;
+  city: string | null;
+  vat_number: string | null; // Partita IVA o Codice Fiscale
+  email: string | null;
   notes: string | null;
   created_at: string; // TIMESTAMPTZ
   updated_at: string; // TIMESTAMPTZ
@@ -72,6 +75,8 @@ export interface Order {
   extracted_items: unknown; // JSONB: snapshot grezzo dell'estrazione AI, vedi ParsedOrderItem[]/DiscardedItem[]
   audio_url: string | null; // path nel bucket privato comandi-agent-audio, non un URL pubblico
   notes: string | null;
+  delivery_note_number: string | null; // N. Bolla di Accompagnamento
+  invoice_number: string | null; // N. Fattura
   created_at: string; // TIMESTAMPTZ
   updated_at: string; // TIMESTAMPTZ
 }

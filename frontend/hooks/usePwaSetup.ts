@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 // dell'app generata. Usato sia dalla landing pubblica sia dalla dashboard
 // autenticata, cosi' l'installazione PWA e' disponibile da entrambi i punti
 // di ingresso di /a/[slug].
-export function usePwaSetup(slug: string, themeColor?: string) {
+export function usePwaSetup(slug: string, themeColor?: string, appleTouchIcon?: string, appName?: string) {
   useEffect(() => {
     if (!slug) return;
 
@@ -37,5 +37,21 @@ export function usePwaSetup(slug: string, themeColor?: string) {
     if (themeColor) setMeta('theme-color', themeColor);
     setMeta('apple-mobile-web-app-capable', 'yes');
     setMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');
-  }, [slug, themeColor]);
+    // Safari ignora "short_name" dal manifest per l'etichetta sotto l'icona in
+    // Home, legge solo questo meta — senza, userebbe il <title> della pagina.
+    if (appName) setMeta('apple-mobile-web-app-title', appName);
+
+    // iOS ignora del tutto il campo "icons" del manifest per l'icona in Home:
+    // legge solo <link rel="apple-touch-icon">, altrimenti usa uno screenshot
+    // della pagina come icona.
+    if (appleTouchIcon) {
+      let appleIconLink = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+      if (!appleIconLink) {
+        appleIconLink = document.createElement('link');
+        appleIconLink.rel = 'apple-touch-icon';
+        document.head.appendChild(appleIconLink);
+      }
+      appleIconLink.href = appleTouchIcon;
+    }
+  }, [slug, themeColor, appleTouchIcon, appName]);
 }

@@ -378,7 +378,7 @@ router.post('/sync-plan', async (req, res) => {
     const planConfig = {
       starter: { appLimit: 1, credits: 20 },
       pro: { appLimit: 5, credits: 100 },
-      business: { appLimit: 20, credits: 400 }
+      business: { appLimit: 50, credits: 500 }
     };
 
     // Il piano scelto è già salvato correttamente in metadata.plan_id al

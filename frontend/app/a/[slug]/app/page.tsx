@@ -27,6 +27,7 @@ import {
   import { useAppInfo, type SubscriptionStatus } from '../AppInfoContext';
   import { useRouter, usePathname } from 'next/navigation';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
+  import InstallAppBanner from '@/components/InstallAppBanner';
   import { getDatiAziendaliTable } from './table-definitions';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
@@ -1366,7 +1367,7 @@ function ViewerProFinal() {
 
   // ─── Registra service worker + manifest PWA dinamico ─────────────────────
 
-  usePwaSetup(slug, designTokens.colors.primary);
+  usePwaSetup(slug, designTokens.colors.primary, logoUrl || '/icons/icon-192x192.png', companyName);
 
   // ─── Detect mobile viewport ──────────────────────────────────────────────
 
@@ -2227,6 +2228,14 @@ function ViewerProFinal() {
         />
       )}
     </div>
+    <InstallAppBanner
+      appName={companyName}
+      slug={slug}
+      primaryColor={colors.primary}
+      textColor={colors.text}
+      surfaceColor={colors.cardBg}
+      borderColor={colors.border}
+    />
     </>
   );
 }

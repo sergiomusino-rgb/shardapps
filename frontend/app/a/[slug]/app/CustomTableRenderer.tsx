@@ -149,10 +149,10 @@ export default function CustomTableRenderer({
                       ))}
                       <td className="px-4 py-3 text-center">
                         <div className="flex justify-center gap-2">
-                          <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica" className="h-8 w-8">
+                          <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica">
                             <Pencil size={15} />
                           </Button>
-                          <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina" className="h-8 w-8">
+                          <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina">
                             <Trash2 size={15} />
                           </Button>
                         </div>

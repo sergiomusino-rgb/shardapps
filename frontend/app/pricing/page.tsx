@@ -108,7 +108,7 @@ export default function PricingPage() {
     {
       id: 'starter',
       name: 'STARTER',
-      setupPrice: '9.99',
+      setupPrice: '10',
       monthlyFee: '25',
       slots: '1',
       credits: '20',
@@ -124,7 +124,7 @@ export default function PricingPage() {
     {
       id: 'pro',
       name: 'PRO',
-      setupPrice: '49',
+      setupPrice: '50',
       monthlyFee: '25',
       slots: '5',
       credits: '100',
@@ -141,13 +141,13 @@ export default function PricingPage() {
     {
       id: 'business',
       name: 'BUSINESS',
-      setupPrice: '199',
+      setupPrice: '250',
       monthlyFee: '25',
-      slots: '20',
-      credits: '400',
+      slots: '50',
+      credits: '500',
       features: [
-        '20 ' + t('pricing_slots_included'),
-        `400 ${t('pricing_credits_included')}`,
+        '50 ' + t('pricing_slots_included'),
+        `500 ${t('pricing_credits_included')}`,
         t('pricing_per_app').replace('{fee}', '25€'),
         'Supporto dedicato 24/7',
         'API illimitate',

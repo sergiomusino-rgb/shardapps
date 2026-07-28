@@ -11,14 +11,13 @@
 // (Firefox, molte versioni di Safari iOS), al costo di un giro server in più.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
-  ArrowLeft,
-  Calendar,
   Check,
   ChevronDown,
   Loader2,
+  Menu,
   Mic,
   Package,
   Plus,
@@ -28,10 +27,16 @@ import {
   X,
 } from 'lucide-react';
 import ComandiHeaderBrand from '@/components/comandi/ComandiHeaderBrand';
+import ComandiSidebar from '@/components/comandi/ComandiSidebar';
+import HeaderClock from '@/components/HeaderClock';
+import LanguageSelector from '@/components/LanguageSelector';
+import { ALL_TABS, AGENT_TABS, type Tab } from '@/components/comandi/ComandiInstanceDashboard';
 import { useAppInfo } from '../../AppInfoContext';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useComandiRole } from '@/src/lib/useComandiRole';
+import { usePwaSetup } from '@/hooks/usePwaSetup';
+import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 import type { Customer, ParsedOrderItem, DiscardedItem } from '@/types/comandi';
 
 interface AgentOrderResult {
@@ -67,7 +72,19 @@ function formatCurrency(value: number): string {
 export default function ComandiAgentPage() {
   const appInfo = useAppInfo();
   const { t } = useLanguage();
+  const router = useRouter();
+  usePwaSetup(appInfo.slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
+  // Voci sidebar, come nella Dashboard. Un ruolo 'agent' vede solo Catalogo
+  // (in sola lettura nella Dashboard), coerente con l'RBAC definito in
+  // ComandiInstanceDashboard (AGENT_TABS).
   const { role } = useComandiRole(appInfo.tenantId);
+  const navTabs: Tab[] = role === 'agent' ? AGENT_TABS : ALL_TABS;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await supabaseBrowser.auth.signOut();
+    router.push(`/a/${appInfo.slug}`);
+  };
 
   // ── Rubrica clienti ──────────────────────────────────────────────────────
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -133,8 +150,7 @@ export default function ComandiAgentPage() {
     }
   }, [newCustomerName, newCustomerPhone, appInfo.tenantId, t, handlePickCustomer]);
 
-  // ── Data consegna / note ─────────────────────────────────────────────────
-  const [deliveryDate, setDeliveryDate] = useState('');
+  // ── Note ──────────────────────────────────────────────────────────────────
   const [notes, setNotes] = useState('');
 
   // ── Registrazione audio (MediaRecorder) ──────────────────────────────────
@@ -188,7 +204,6 @@ export default function ComandiAgentPage() {
         form.append('audio', blob, `order.${extensionForMimeType(mimeTypeRef.current)}`);
         if (customerName.trim()) form.append('customerName', customerName.trim());
         if (selectedCustomerId) form.append('customerId', selectedCustomerId);
-        if (deliveryDate) form.append('deliveryDate', deliveryDate);
         if (notes.trim()) form.append('notes', notes.trim());
 
         const res = await fetch('/api/agent-voice-order', {
@@ -212,7 +227,7 @@ export default function ComandiAgentPage() {
         setIsProcessing(false);
       }
     },
-    [customerName, selectedCustomerId, deliveryDate, notes, t]
+    [customerName, selectedCustomerId, notes, t]
   );
 
   const startRecording = useCallback(async () => {
@@ -280,32 +295,75 @@ export default function ComandiAgentPage() {
     setRecordError(null);
     setCustomerName('');
     setSelectedCustomerId(null);
-    setDeliveryDate('');
     setNotes('');
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white pb-10">
-      <header className="border-b border-gray-800 bg-gray-900/60 sticky top-0 z-10 backdrop-blur-sm">
-        <div className="max-w-lg mx-auto px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <div className="flex items-center">
-            <Link href={`/a/${appInfo.slug}/dashboard`} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              {t('comandi_agent_back_to_console')}
-            </Link>
-          </div>
-          <ComandiHeaderBrand />
-          <div className="flex items-center justify-end">
-            {role && (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/15 border border-amber-700/50 text-amber-400 capitalize">
-                {role}
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
+    <div className="flex h-screen overflow-hidden bg-gray-950 text-white">
+      <div className="hidden md:block">
+        <ComandiSidebar
+          visibleTabs={navTabs}
+          tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
+          activeTab={null}
+          dashboardHref={`/a/${appInfo.slug}/dashboard`}
+          agentHref={`/a/${appInfo.slug}/app/agente`}
+          agentLabel={t('comandi_dashboard_go_to_console')}
+          showAgentEntry={navTabs.length > 0}
+          isOnAgentPage
+          onLogout={handleLogout}
+          logoutLabel={t('comandi_dashboard_logout')}
+        />
+      </div>
 
-      <main className="max-w-lg mx-auto px-4 py-6 flex flex-col gap-6">
+      <div className="md:hidden">
+        <div
+          className={`fixed inset-0 z-40 transition-opacity duration-200 ${
+            mobileMenuOpen ? 'bg-black/60 backdrop-blur-sm opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+        <div
+          className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 ${
+            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <ComandiSidebar
+            visibleTabs={navTabs}
+            tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
+            activeTab={null}
+            dashboardHref={`/a/${appInfo.slug}/dashboard`}
+            agentHref={`/a/${appInfo.slug}/app/agente`}
+            agentLabel={t('comandi_dashboard_go_to_console')}
+            showAgentEntry={navTabs.length > 0}
+            isOnAgentPage
+            onLogout={handleLogout}
+            logoutLabel={t('comandi_dashboard_logout')}
+            onClose={() => setMobileMenuOpen(false)}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-800 bg-gray-900/60 px-4 md:justify-end md:px-6">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white md:hidden"
+            aria-label="Apri menu"
+          >
+            <Menu size={22} />
+          </button>
+          <div className="md:hidden">
+            <ComandiHeaderBrand />
+          </div>
+          <div className="flex items-center gap-3">
+            <HeaderClock textColor="#e5e7eb" mutedColor="#6b7280" />
+            <LanguageSelector />
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full flex flex-col gap-6">
         <div>
           <h1 className="text-2xl font-bold">{t('comandi_agent_page_title')}</h1>
           <p className="text-gray-400 text-sm mt-1">{t('comandi_agent_page_subtitle')}</p>
@@ -393,20 +451,8 @@ export default function ComandiAgentPage() {
               )}
             </section>
 
-            {/* Data consegna + note */}
+            {/* Note */}
             <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-3">
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {t('comandi_agent_delivery_date_label')}
-                </label>
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark]"
-                />
-              </div>
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 block">
                   {t('comandi_agent_notes_label')}
@@ -478,6 +524,7 @@ export default function ComandiAgentPage() {
           </>
         )}
       </main>
+      </div>
     </div>
   );
 }

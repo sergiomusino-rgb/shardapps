@@ -16,6 +16,7 @@ interface App {
   id: string;
   name: string;
   slug: string | null;
+  app_type: string | null;
   totalum_app_id: string | null;
   stripe_connect_id: string | null;
   client_subscription_price: number | null;
@@ -106,7 +107,7 @@ export default function ManagementConsolePage() {
     // Recupera le app del tenant
     const { data: appsData, error: appsError } = await supabase
       .from('apps')
-      .select('id, name, slug, totalum_app_id, stripe_connect_id, client_subscription_price, client_price, status, trial_ends_at, is_active, client_active, expires_at, client_email, created_at')
+      .select('id, name, slug, app_type, totalum_app_id, stripe_connect_id, client_subscription_price, client_price, status, trial_ends_at, is_active, client_active, expires_at, client_email, created_at')
       .eq('tenant_id', tenantId || '')
       .order('created_at', { ascending: false });
 
@@ -443,13 +444,23 @@ export default function ManagementConsolePage() {
                           {t('mgmt_checkout_link')}
                         </button>
                       )}
-                      <a
-                        href={`/dashboard/projects/${app.id}`}
-                        className="px-3 py-1 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center gap-1"
-                      >
-                        <Settings size={14} />
-                        {t('mgmt_details')}
-                      </a>
+                      {app.app_type === 'comandi_ai' && app.slug ? (
+                        <a
+                          href={`/a/${app.slug}`}
+                          className="px-3 py-1 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center gap-1"
+                        >
+                          <Settings size={14} />
+                          {t('mgmt_go')}
+                        </a>
+                      ) : (
+                        <a
+                          href={`/dashboard/projects/${app.id}`}
+                          className="px-3 py-1 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center gap-1"
+                        >
+                          <Settings size={14} />
+                          {t('mgmt_details')}
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -512,13 +523,23 @@ export default function ManagementConsolePage() {
                     {t('mgmt_checkout_link')}
                   </button>
                 )}
-                <a
-                  href={`/dashboard/projects/${app.id}`}
-                  className="w-full px-3 py-2 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center justify-center gap-1"
-                >
-                  <Settings size={14} />
-                  {t('mgmt_details')}
-                </a>
+                {app.app_type === 'comandi_ai' && app.slug ? (
+                  <a
+                    href={`/a/${app.slug}`}
+                    className="w-full px-3 py-2 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center justify-center gap-1"
+                  >
+                    <Settings size={14} />
+                    {t('mgmt_go')}
+                  </a>
+                ) : (
+                  <a
+                    href={`/dashboard/projects/${app.id}`}
+                    className="w-full px-3 py-2 bg-slate-700 text-white rounded text-sm hover:bg-slate-600 flex items-center justify-center gap-1"
+                  >
+                    <Settings size={14} />
+                    {t('mgmt_details')}
+                  </a>
+                )}
               </div>
             </div>
           ))}

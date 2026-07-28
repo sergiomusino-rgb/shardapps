@@ -93,12 +93,12 @@ async function upsertSubscription(supabase, tenantId, data) {
   }
 }
 
-const PLAN_SLOTS = { starter: 1, pro: 5, business: 20, basic: 1, vip: 100 };
+const PLAN_SLOTS = { starter: 1, pro: 5, business: 50, basic: 1, vip: 100 };
 
 // Crediti Vision inclusi in ogni piano (setup una tantum) e nella ricarica
 // extra "credit_topup" (ex "extra_slot", ora accredita crediti invece di uno
 // slot app — stesso Price Stripe da 15€, vedi routes/stripe.js).
-const PLAN_CREDITS = { starter: 20, pro: 100, business: 400, credit_topup: 50 };
+const PLAN_CREDITS = { starter: 20, pro: 100, business: 500, credit_topup: 50 };
 
 // Rango dei piani: gli eventi Stripe (checkout.session.completed,
 // payment_intent.succeeded) non arrivano garantiti in ordine cronologico.

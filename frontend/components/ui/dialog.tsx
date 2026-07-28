@@ -20,12 +20,12 @@ function Dialog({ open, onClose, children, maxWidthClassName = 'max-w-[560px]' }
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className={cn(
-          'max-h-[85vh] w-full overflow-auto rounded-2xl border border-tenant-border bg-tenant-card p-8 shadow-2xl',
+          'max-h-[85vh] w-full overflow-auto rounded-2xl border border-tenant-border bg-tenant-card p-5 shadow-2xl sm:p-8',
           maxWidthClassName
         )}
       >

@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Mic, Package, ShoppingCart } from 'lucide-react';
+import { Mic, Package, Share2 } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { usePwaSetup } from '@/hooks/usePwaSetup';
+import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 
 export interface ComandiInstanceLandingProps {
   slug: string;
-  appName?: string;
 }
 
 // Landing pubblica per una singola istanza Comandi AI provisionata da slot
@@ -16,8 +17,9 @@ export interface ComandiInstanceLandingProps {
 // login. Una volta autenticato, l'operatore atterra direttamente in cassa
 // (vedi app/a/[slug]/login/page.tsx), da cui la dashboard di gestione resta
 // comunque raggiungibile tramite il menu nella console operativa.
-export default function ComandiInstanceLanding({ slug, appName }: ComandiInstanceLandingProps) {
+export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingProps) {
   const { t } = useLanguage();
+  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
 
   const features = [
     {
@@ -26,9 +28,9 @@ export default function ComandiInstanceLanding({ slug, appName }: ComandiInstanc
       desc: t('comandi_landing_feature_voice_desc'),
     },
     {
-      icon: ShoppingCart,
-      title: t('comandi_landing_feature_pos_title'),
-      desc: t('comandi_landing_feature_pos_desc'),
+      icon: Share2,
+      title: t('comandi_landing_feature_share_title'),
+      desc: t('comandi_landing_feature_share_desc'),
     },
     {
       icon: Package,
@@ -39,21 +41,15 @@ export default function ComandiInstanceLanding({ slug, appName }: ComandiInstanc
 
   return (
     <div className="bg-slate-950 text-white min-h-screen w-full font-sans">
-      <header className="pt-10 pb-4 flex justify-center">
-        <span className="text-4xl md:text-5xl font-black tracking-tighter text-white">
-          Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
-        </span>
-      </header>
-
       <main className="flex flex-col items-center px-6 pb-24">
-        <section className="max-w-4xl w-full text-center flex flex-col items-center gap-6 pt-8">
-          <div className="px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">
-            <p className="text-sm text-amber-400 font-semibold">{appName || t('comandi_landing_tagline')}</p>
-          </div>
-
-          <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight">
-            {t('comandi_landing_hero_title')}
+        <section className="max-w-4xl w-full text-center flex flex-col items-center gap-6 pt-16">
+          <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-tight">
+            Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
           </h1>
+
+          <div className="px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">
+            <p className="text-sm text-amber-400 font-semibold">{t('comandi_landing_tagline')}</p>
+          </div>
 
           <p className="text-lg md:text-xl text-slate-400 max-w-2xl font-light leading-relaxed">
             {t('comandi_landing_hero_subtitle')}

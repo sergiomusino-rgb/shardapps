@@ -28,7 +28,7 @@ function getSlotsForPlan(planId: string): number {
     free: 0,
     starter: 1,
     pro: 5,
-    business: 20,
+    business: 50,
     credit_topup: 0,
   };
   return slotsMap[planId] || 0;
@@ -45,7 +45,7 @@ function getCreditsForPlan(planId: string): number {
     free: 0,
     starter: 20,
     pro: 100,
-    business: 400,
+    business: 500,
     credit_topup: 50,
   };
   return creditsMap[planId] || 0;

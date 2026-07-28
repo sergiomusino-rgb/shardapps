@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Loader2, AlertTriangle, CheckCircle, Mic, ShoppingCart, Package, X } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertTriangle, CheckCircle, Mic, Share2, Package, X } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
 import { supabase } from '@/src/lib/supabase';
@@ -184,9 +184,9 @@ export default function ComandiLandingPage() {
       desc: t('comandi_landing_feature_voice_desc'),
     },
     {
-      icon: ShoppingCart,
-      title: t('comandi_landing_feature_pos_title'),
-      desc: t('comandi_landing_feature_pos_desc'),
+      icon: Share2,
+      title: t('comandi_landing_feature_share_title'),
+      desc: t('comandi_landing_feature_share_desc'),
     },
     {
       icon: Package,
