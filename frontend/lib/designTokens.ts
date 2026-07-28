@@ -833,6 +833,8 @@ const SECTOR_TO_DESIGN_KEY: Record<string, string> = {
   cause: 'volunteerhub',
 
   // Sanità / Healthcare
+  oculista: 'cliniclife',
+  ottica: 'cliniclife',
   sanita: 'cliniclife',
   'sanità': 'cliniclife',
   clinica: 'cliniclife',
@@ -887,7 +889,7 @@ const SECTOR_TO_DESIGN_KEY: Record<string, string> = {
 const SECTOR_KEYWORD_FALLBACK: Array<{ keywords: string[]; designKey: string }> = [
   {
     designKey: 'cliniclife',
-    keywords: ['sanit', 'clinic', 'ambulator', 'ospedal', 'hospital', 'medic', 'dentist', 'odontoiatr', 'veterinari', 'fisioterap', 'farmac', 'poliambulator', 'dottor'],
+    keywords: ['sanit', 'clinic', 'ambulator', 'ospedal', 'hospital', 'medic', 'dentist', 'odontoiatr', 'veterinari', 'fisioterap', 'farmac', 'poliambulator', 'dottor', 'ocul', 'ottic', 'optometr'],
   },
   {
     designKey: 'bistromenu',

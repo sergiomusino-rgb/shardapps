@@ -8,7 +8,7 @@ import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { useAppInfo } from './AppInfoContext';
 import { getDesignTokens, getDesignKeyForSector } from '@/lib/designTokens';
-import { getHeroContentForDesignKey } from '@/lib/landingHero';
+import { getHeroContentForSector } from '@/lib/landingHero';
 import { resolveIcon } from './app/iconResolver';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import InstallAppBanner from '@/components/InstallAppBanner';
@@ -48,7 +48,7 @@ function LandingPublic() {
   const sectorSignal = `${appName || ''} ${description || ''}`;
   const designKey = getDesignKeyForSector(sector, sectorSignal);
   const designTokens = getDesignTokens(sector, sectorSignal);
-  const hero = getHeroContentForDesignKey(designKey);
+  const hero = getHeroContentForSector(sector, designKey);
 
   // Dati aziendali reali (compilati dal titolare dopo la generazione AI):
   // quando presenti sostituiscono il nome generico creato alla generazione,

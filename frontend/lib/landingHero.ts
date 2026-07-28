@@ -125,3 +125,37 @@ const DEFAULT_HERO: HeroContent = HERO_CONTENT.wandermap;
 export function getHeroContentForDesignKey(designKey: string): HeroContent {
   return HERO_CONTENT[designKey] || DEFAULT_HERO;
 }
+
+// ─── Override per settore ────────────────────────────────────────────────
+// Alcuni settori condividono la palette/design key di una categoria più ampia
+// (es. oculista → cliniclife, stessa palette "sanità") ma meritano
+// un'immagine hero davvero specifica invece di quella generica della
+// categoria (un ambulatorio oculistico non è genericamente "un medico con un
+// paziente"). Va controllato PRIMA del design key.
+const SECTOR_HERO_OVERRIDES: Record<string, HeroContent> = {
+  oculista: {
+    image: 'https://images.unsplash.com/photo-1577401239170-897942555fb3?auto=format&fit=crop&w=1200&q=80',
+    imageAlt: 'Esame della vista con strumentazione oculistica',
+    badgeLabel: 'GESTIONE AZIENDALE · OTTICA E OCULISTICA',
+    keyword: 'pazienti',
+    tagline: 'Cartelle, appuntamenti e prescrizioni dei tuoi {keyword}, sempre organizzati.',
+  },
+};
+
+// Normalizzato come in resolveDesignKey (lib/designTokens.ts): il sector
+// generato liberamente può essere "Studio Oculistico", "oculistica", ecc.
+function findSectorOverride(sector?: string): HeroContent | null {
+  const normalized = (sector || '').toLowerCase().trim();
+  if (!normalized) return null;
+  for (const [key, hero] of Object.entries(SECTOR_HERO_OVERRIDES)) {
+    if (normalized.includes(key)) return hero;
+  }
+  return null;
+}
+
+// Da preferire a getHeroContentForDesignKey nella landing pubblica: prova
+// prima l'override specifico di settore, poi cade sul design key (che copre
+// già la maggior parte dei casi con un'immagine adeguata).
+export function getHeroContentForSector(sector: string | undefined, designKey: string): HeroContent {
+  return findSectorOverride(sector) || getHeroContentForDesignKey(designKey);
+}
