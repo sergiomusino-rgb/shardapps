@@ -56,10 +56,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets - cache first (only GET + ok requests)
+  // Static assets - network first, come navigazioni/API. Prima era
+  // cache-first: senza un CACHE_NAME che cambia ad ogni deploy, un chunk
+  // richiesto una volta restava servito dalla cache per sempre anche dopo
+  // un aggiornamento del codice (riprodotto durante un test: il dev server
+  // veniva riavviato con codice nuovo ma il browser continuava a eseguire i
+  // vecchi bundle JS). La cache resta comunque popolata (cachePut) e serve
+  // da fallback per il funzionamento offline.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      return cached || fetch(request).then(cachePut);
-    })
+    fetch(request)
+      .then(cachePut)
+      .catch(() => caches.match(request))
   );
 });

@@ -7,6 +7,7 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import LanguageSelector from '@/components/LanguageSelector';
 import HeaderClock from '@/components/HeaderClock';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import Sidebar from '@/components/layout/Sidebar';
 import { Menu, X } from 'lucide-react';
 
@@ -181,6 +182,7 @@ export default function ManagementLayout({
           <div className="flex items-center gap-4">
             <HeaderClock textColor="#e2e8f0" mutedColor="#64748b" />
             <LanguageSelector />
+            <FullscreenToggle color="#e2e8f0" hoverBackground="rgba(148,163,184,0.15)" />
           </div>
         </header>
 

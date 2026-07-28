@@ -8,6 +8,7 @@ import ComandiHeaderBrand from './ComandiHeaderBrand';
 import ComandiSidebar from './ComandiSidebar';
 import HeaderClock from '@/components/HeaderClock';
 import LanguageSelector from '@/components/LanguageSelector';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import {
   AlertCircle,
   Check,
@@ -232,6 +233,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           <div className="flex items-center gap-3">
             <HeaderClock textColor="#e5e7eb" mutedColor="#6b7280" />
             <LanguageSelector />
+            <FullscreenToggle color="#e5e7eb" hoverBackground="rgba(107,114,128,0.2)" />
           </div>
         </header>
 

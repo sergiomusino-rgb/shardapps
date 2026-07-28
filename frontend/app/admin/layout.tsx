@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import Sidebar from '@/components/layout/Sidebar';
 import LanguageSelector from '@/components/LanguageSelector';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { Menu } from 'lucide-react';
 
@@ -169,6 +170,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   <div className="flex items-center gap-4">
              <LanguageSelector />
+             <FullscreenToggle color="#e2e8f0" hoverBackground="rgba(148,163,184,0.15)" />
            </div>
         </header>
 

@@ -30,6 +30,7 @@ import ComandiHeaderBrand from '@/components/comandi/ComandiHeaderBrand';
 import ComandiSidebar from '@/components/comandi/ComandiSidebar';
 import HeaderClock from '@/components/HeaderClock';
 import LanguageSelector from '@/components/LanguageSelector';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import { ALL_TABS, AGENT_TABS, type Tab } from '@/components/comandi/ComandiInstanceDashboard';
 import { useAppInfo } from '../../AppInfoContext';
 import { useLanguage } from '@/src/lib/LanguageContext';
@@ -360,6 +361,7 @@ export default function ComandiAgentPage() {
           <div className="flex items-center gap-3">
             <HeaderClock textColor="#e5e7eb" mutedColor="#6b7280" />
             <LanguageSelector />
+            <FullscreenToggle color="#e5e7eb" hoverBackground="rgba(107,114,128,0.2)" />
           </div>
         </header>
 
