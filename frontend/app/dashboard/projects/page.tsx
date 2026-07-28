@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { Trash2, Plus, Loader2, AlertCircle, ExternalLink, Settings, Clock } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 interface App {
@@ -273,17 +273,6 @@ export default function ProjectsPage() {
                     <ExternalLink size={16} />
                     {t('projects_open')}
                   </a>
-                  <Link
-                    href={`/dashboard/projects/${app.id}`}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '10px 16px', borderRadius: '10px', border: '1px solid #334155',
-                      background: 'transparent', color: '#94a3b8', fontSize: '14px', fontWeight: 600,
-                      cursor: 'pointer', textDecoration: 'none',
-                    }}
-                  >
-                    <Settings size={16} />
-                  </Link>
                   <button
                     onClick={() => setDeleteModal({ open: true, appId: app.id, appName: app.name })}
                     style={{
