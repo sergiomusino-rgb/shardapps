@@ -1,10 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextRequest, NextResponse } from 'next/server';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
+
+// Comandi AI è un'app omaggio inclusa di default per ogni tenant (non
+// consuma slot, vedi comandi-provisioning.ts), fatturata comunque 25€/mese
+// dopo 30gg di trial tramite lo stesso paywall standard delle altre app.
+// Best-effort: se il provisioning fallisce non deve mai far fallire la
+// creazione/lookup del tenant, che resta il compito primario di questa
+// route. provisionComandiAppAction è idempotente (verifica prima se il
+// tenant ha già un'istanza comandi_ai), quindi richiamarla ad ogni accesso
+// è sicuro — serve anche a "retro-attivare" Comandi per i tenant esistenti.
+async function ensureComandiProvisioned(accessToken: string) {
+  try {
+    const result = await provisionComandiAppAction({ accessToken });
+    if (!result.success) {
+      console.error('[API tenants/create] Provisioning Comandi AI non riuscito:', result.error);
+    }
+  } catch (err) {
+    console.error('[API tenants/create] Errore provisioning Comandi AI:', err);
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -85,11 +105,13 @@ export async function POST(req: NextRequest) {
     // Se l'utente ha già un tenant (come owner o tramite membership), ritorna quello
     if (existingTenant) {
       console.log('[API tenants/create] Found existing tenant as owner');
+      await ensureComandiProvisioned(token);
       return NextResponse.json({ tenant: existingTenant }, { status: 200 });
     }
-    
+
     if (existingTenantFromMembership) {
       console.log('[API tenants/create] Found existing tenant via membership');
+      await ensureComandiProvisioned(token);
       return NextResponse.json({ tenant: existingTenantFromMembership }, { status: 200 });
     }
 
@@ -126,6 +148,7 @@ export async function POST(req: NextRequest) {
     }
 
     console.log('[API tenants/create] Created new tenant:', tenant.id);
+    await ensureComandiProvisioned(token);
     return NextResponse.json({ tenant }, { status: 201 });
   } catch (error) {
     console.error('[API tenants/create] Errore:', error);

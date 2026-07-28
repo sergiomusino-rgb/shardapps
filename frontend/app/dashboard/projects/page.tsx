@@ -17,6 +17,7 @@ interface App {
   client_active: boolean;
   expires_at: string | null;
   production_url: string | null;
+  app_type: string | null;
 }
 
 export default function ProjectsPage() {
@@ -86,7 +87,7 @@ export default function ProjectsPage() {
       // Get apps for this tenant
       const { data: appsData, error: appsError } = await supabaseBrowser
         .from('apps')
-        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at, production_url')
+        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at, production_url, app_type')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 
@@ -248,7 +249,18 @@ export default function ProjectsPage() {
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <a
-                    href={app.production_url || (app.slug ? `/a/${app.slug}` : '#')}
+                    href={
+                      // Per Comandi AI ignora sempre production_url: è una
+                      // colonna generica condivisa con le app a schema
+                      // generato (dove può legittimamente essere un dominio
+                      // esterno) e per righe Comandi risalenti a
+                      // provisioning precedenti può non essere allineata
+                      // alla landing pubblica reale — "Apri" deve portare
+                      // sempre e solo lì, mai altrove.
+                      app.app_type === 'comandi_ai'
+                        ? (app.slug ? `/a/${app.slug}` : '#')
+                        : app.production_url || (app.slug ? `/a/${app.slug}` : '#')
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{

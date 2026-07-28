@@ -67,6 +67,7 @@ export default function DashboardPage() {
   const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
   const [chatInput, setChatInput] = useState('');
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [visionCredits, setVisionCredits] = useState<number | null>(null);
   const { t } = useLanguage();
 
   useEffect(() => {
@@ -81,14 +82,86 @@ export default function DashboardPage() {
     checkAdmin();
   }, []);
 
-  const coreFeatures = [
-    { 
+  // Saldo crediti Vision per la card dashboard: letto direttamente (RLS
+  // "profiles_select_own" consente all'utente di leggere solo la propria riga)
+  // e tenuto sincronizzato in tempo reale così la card riflette subito ogni
+  // addebito/rimborso avvenuto in /vision o altrove.
+  useEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabaseBrowser.channel> | null = null;
+
+    async function loadCredits() {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId || cancelled) return;
+
+      const { data } = await supabaseBrowser
+        .from('profiles')
+        .select('credits')
+        .eq('user_id', userId)
+        .single();
+
+      if (cancelled) return;
+      if (data) setVisionCredits(data.credits ?? 0);
+
+      const topic = `dashboard-credits-${userId}`;
+      // supabase-js RIUSA un canale già esistente con lo stesso topic invece
+      // di crearne uno nuovo: in dev, il doppio invoke degli effect in React
+      // Strict Mode fa sì che la seconda chiamata a .channel(topic) recuperi
+      // il canale già sottoscritto dalla prima, e il successivo .on() fallisca
+      // con "cannot add postgres_changes callbacks ... after subscribe()".
+      // Rimuoviamo qualunque canale residuo con lo stesso topic prima di
+      // crearne uno nuovo, per essere sicuri di partire sempre da uno pulito.
+      const stale = supabaseBrowser.getChannels().find((c) => c.topic === `realtime:${topic}`);
+      if (stale) await supabaseBrowser.removeChannel(stale);
+      if (cancelled) return;
+
+      channel = supabaseBrowser
+        .channel(topic)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${userId}` },
+          (payload) => setVisionCredits((payload.new as { credits: number }).credits ?? 0)
+        )
+        .subscribe();
+    }
+
+    loadCredits();
+    return () => {
+      cancelled = true;
+      if (channel) supabaseBrowser.removeChannel(channel);
+    };
+  }, []);
+
+  const coreFeatures: Array<{
+    title: string;
+    desc: string;
+    link: string;
+    color: string;
+    icon: string;
+    highlighted: boolean;
+    showCredits?: boolean;
+  }> = [
+    {
       title: t('dashboard_create_app_title'),
       desc: t('dashboard_create_app_desc'),
       link: "/dashboard/creator",
       color: "bg-gradient-to-br from-indigo-600 to-purple-600",
       icon: "✨",
       highlighted: true
+    },
+    // Vision Studio subito dopo Creator AI (non in fondo all'elenco): sono i
+    // due strumenti di generazione principali e la griglia a 3 colonne li
+    // mette automaticamente fianco a fianco su desktop e in sequenza diretta
+    // su mobile, senza bisogno di una struttura a griglia separata.
+    {
+      title: t('dashboard_vision_title'),
+      desc: t('dashboard_vision_desc'),
+      link: "/vision",
+      color: "bg-gradient-to-br from-fuchsia-600 to-indigo-600",
+      icon: "🎬",
+      highlighted: true,
+      showCredits: true,
     },
     {
       title: t('dashboard_projects_title'),
@@ -106,10 +179,10 @@ export default function DashboardPage() {
       icon: "🎙️",
       highlighted: false
     },
-    { 
-      title: t('dashboard_agenda_title'), 
+    {
+      title: t('dashboard_agenda_title'),
       desc: t('dashboard_agenda_desc'),
-      link: "/dashboard/vision", 
+      link: "/dashboard/vision",
       color: "bg-emerald-600",
       icon: "📅",
       highlighted: false
@@ -165,12 +238,18 @@ export default function DashboardPage() {
                   ? 'border-indigo-500/50 bg-gradient-to-br from-indigo-950/50 to-purple-950/50 shadow-lg shadow-indigo-500/20' 
                   : 'border-gray-800 bg-gray-900 hover:border-gray-500'
               }`}>
-                <div className={`w-24 h-24 ${item.color} rounded-xl mb-6 flex items-center justify-center shadow-lg`}>
-                  <span className="text-4xl">{item.icon}</span>
+                <div className="flex items-start justify-between mb-6">
+                  <div className={`w-24 h-24 ${item.color} rounded-xl flex items-center justify-center shadow-lg`}>
+                    <span className="text-4xl">{item.icon}</span>
+                  </div>
+                  {item.showCredits && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-xs font-semibold text-fuchsia-300">
+                      ⚡ {visionCredits === null ? '…' : visionCredits} {t('dashboard_vision_credits')}
+                    </span>
+                  )}
                 </div>
                 <h2 className="text-xl font-bold mb-2">{item.title}</h2>
                 <p className="text-gray-400 mb-6 flex-1">{item.desc}</p>
-                <span className="text-blue-400 font-semibold group-hover:underline">{t('dashboard_card_access')}</span>
               </div>
             </Link>
           ))}

@@ -111,6 +111,13 @@ const HERO_CONTENT: Record<string, HeroContent> = {
     keyword: 'magazzino',
     tagline: 'Tieni traccia di scorte, spedizioni e fornitori del tuo {keyword} in tempo reale.',
   },
+  autodrive: {
+    image: 'https://images.unsplash.com/photo-1494976388531-d1058494cdd8?auto=format&fit=crop&w=1600&q=80',
+    imageAlt: 'Showroom di un concessionario con auto in esposizione',
+    badgeLabel: 'GESTIONE AZIENDALE · AUTOMOTIVE',
+    keyword: 'autosalone',
+    tagline: 'Gestisci veicoli, appuntamenti e clienti del tuo {keyword} in un\'unica piattaforma.',
+  },
 };
 
 const DEFAULT_HERO: HeroContent = HERO_CONTENT.wandermap;

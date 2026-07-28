@@ -192,10 +192,11 @@ function ComandiLoginForm() {
         return;
       }
 
-      // Dritto in cassa: la landing è ora una pagina statica senza scelta
-      // Cassa/Dashboard. La dashboard di gestione resta comunque
-      // raggiungibile dal menu nella console operativa.
-      router.push(`/a/${slug}/app?t=${Date.now()}`);
+      // Dopo il login si atterra sulla dashboard di gestione (non più sulla
+      // console operativa/cassa): la console con il microfono resta
+      // comunque raggiungibile dal menu della dashboard quando serve
+      // registrare un ordine a voce.
+      router.push(`/a/${slug}/dashboard?t=${Date.now()}`);
     } catch {
       setError(t('login_error_connection'));
       setLoading(false);

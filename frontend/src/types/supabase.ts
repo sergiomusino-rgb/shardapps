@@ -745,6 +745,39 @@ export type Database = {
           },
         ]
       }
+      credit_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          metadata: Json
+          reference_id: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          metadata?: Json
+          reference_id?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          metadata?: Json
+          reference_id?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       fatture: {
         Row: {
           anno: number
@@ -758,6 +791,7 @@ export type Database = {
           numero_fattura: string
           stato: string | null
           tenant_id: string
+          tipo_documento: string
           updated_at: string | null
         }
         Insert: {
@@ -772,6 +806,7 @@ export type Database = {
           numero_fattura: string
           stato?: string | null
           tenant_id: string
+          tipo_documento?: string
           updated_at?: string | null
         }
         Update: {
@@ -786,6 +821,7 @@ export type Database = {
           numero_fattura?: string
           stato?: string | null
           tenant_id?: string
+          tipo_documento?: string
           updated_at?: string | null
         }
         Relationships: [
@@ -1197,6 +1233,7 @@ export type Database = {
         Row: {
           company_id: string | null
           created_at: string | null
+          credits: number
           email: string | null
           full_name: string | null
           id: string
@@ -1210,6 +1247,7 @@ export type Database = {
         Insert: {
           company_id?: string | null
           created_at?: string | null
+          credits?: number
           email?: string | null
           full_name?: string | null
           id?: string
@@ -1223,6 +1261,7 @@ export type Database = {
         Update: {
           company_id?: string | null
           created_at?: string | null
+          credits?: number
           email?: string | null
           full_name?: string | null
           id?: string
@@ -1609,6 +1648,20 @@ export type Database = {
         }[]
       }
       count_tenant_apps: { Args: { p_tenant_id: string }; Returns: number }
+      deduct_credits: {
+        Args: {
+          p_amount: number
+          p_description?: string | null
+          p_metadata?: Json
+          p_reference_id?: string | null
+          p_type: string
+          p_user_id: string
+        }
+        Returns: {
+          new_balance: number
+          transaction_id: string
+        }[]
+      }
       exec_sql: { Args: { sql: string }; Returns: undefined }
       execute_sql: { Args: { sql_query: string }; Returns: undefined }
       get_app_client_credentials: {
@@ -1682,6 +1735,20 @@ export type Database = {
         }[]
       }
       get_zeusx_total_due: { Args: { p_reseller_id: string }; Returns: number }
+      grant_credits: {
+        Args: {
+          p_amount: number
+          p_description?: string | null
+          p_metadata?: Json
+          p_reference_id?: string | null
+          p_type?: string
+          p_user_id: string
+        }
+        Returns: {
+          new_balance: number
+          transaction_id: string
+        }[]
+      }
       has_feature_access: { Args: { feature_name: string }; Returns: boolean }
       has_table_access: { Args: { table_name: string }; Returns: boolean }
       is_app_accessible: { Args: { p_app_id: string }; Returns: boolean }
@@ -1696,6 +1763,19 @@ export type Database = {
       mark_reseller_transactions_paid: {
         Args: { p_reseller_id: string }
         Returns: undefined
+      }
+      refund_credits: {
+        Args: {
+          p_amount: number
+          p_description?: string | null
+          p_metadata?: Json
+          p_reference_id?: string | null
+          p_user_id: string
+        }
+        Returns: {
+          new_balance: number
+          transaction_id: string
+        }[]
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

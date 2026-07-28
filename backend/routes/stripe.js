@@ -29,6 +29,10 @@ function planRank(plan) {
   return PLAN_RANK[plan] ?? 0;
 }
 
+// Crediti Vision accreditati da una "Ricarica Extra" (credit_topup), vedi
+// anche PLAN_CREDITS.credit_topup in backend/server.js.
+const CREDIT_TOPUP_CREDITS = 50;
+
 async function getUser(req) {
   const authHeader = req.headers.authorization;
   const serviceToken = process.env.BACKEND_SERVICE_TOKEN;
@@ -48,7 +52,7 @@ async function getUser(req) {
   return user;
 }
 
-async function getOrCreateTenant(supabase, user) {
+async function getOrCreateTenant(supabase, user, accessToken) {
   const { data: membership } = await supabase
     .from('tenant_members')
     .select('tenant_id')
@@ -74,7 +78,33 @@ async function getOrCreateTenant(supabase, user) {
 
   await supabase.from('tenant_members').insert({ tenant_id: tenant.id, user_id: user.id, role: 'owner' });
 
+  ensureComandiProvisioned(accessToken);
+
   return tenant.id;
+}
+
+// Comandi AI è un'app omaggio inclusa di default in ogni tenant (non
+// consuma slot, vedi frontend/app/actions/comandi-provisioning.ts). Questo
+// backend Express è un processo separato dal frontend Next.js: non può
+// importare la Server Action direttamente, quindi la invoca via HTTP sul
+// wrapper dedicato (frontend/app/api/comandi/provision/route.ts).
+// Fire-and-forget: un fallimento non deve mai bloccare la creazione del
+// tenant/checkout, che è il compito primario di questa route.
+function ensureComandiProvisioned(accessToken) {
+  const frontendUrl = process.env.FRONTEND_URL;
+  if (!frontendUrl || !accessToken) return;
+
+  fetch(`${frontendUrl}/api/comandi/provision`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error('[getOrCreateTenant] Provisioning Comandi AI non riuscito:', res.status, body);
+      }
+    })
+    .catch((err) => console.error('[getOrCreateTenant] Errore provisioning Comandi AI:', err));
 }
 
 // Setup (one-time) price ID per piano. Non fidarsi mai del priceId passato
@@ -90,7 +120,11 @@ function getSetupPriceId(planId) {
   return setupPrices[planId] || null;
 }
 
-const EXTRA_SLOT_PRICE_ID = process.env.EXTRA_SLOT_PRICE_ID || process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
+// Nome storico della env var (il bottone si chiamava "Slot Extra" e dava +1
+// slot app): stesso Price Stripe da 15€, ora "Ricarica Extra" accredita
+// crediti Vision invece di uno slot, quindi non serve un nuovo Price né
+// rinominare la env var.
+const CREDIT_TOPUP_PRICE_ID = process.env.EXTRA_SLOT_PRICE_ID || process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
 
 // POST /api/create-checkout-session
 router.post('/create-checkout-session', async (req, res) => {
@@ -99,11 +133,13 @@ router.post('/create-checkout-session', async (req, res) => {
 
   try {
     const { planId, quantity = 1 } = req.body;
-    const priceId = planId === 'extra_slot' ? EXTRA_SLOT_PRICE_ID : getSetupPriceId(planId);
+    const priceId = planId === 'credit_topup' ? CREDIT_TOPUP_PRICE_ID : getSetupPriceId(planId);
     if (!priceId) return res.status(400).json({ error: 'Piano non riconosciuto' });
 
     const supabase = getSupabase();
-    const tenantId = await getOrCreateTenant(supabase, user);
+    const authHeader = req.headers.authorization;
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const tenantId = await getOrCreateTenant(supabase, user, accessToken);
 
     const stripe = getStripe();
 
@@ -128,8 +164,8 @@ router.post('/create-checkout-session', async (req, res) => {
     const feePriceId = getFeePriceId(planId);
     const lineItems = [];
 
-    // Handle extra slot purchase
-    if (planId === 'extra_slot') {
+    // Handle credit top-up purchase ("Ricarica Extra")
+    if (planId === 'credit_topup') {
       lineItems.push({ price: priceId, quantity: quantity });
     } else {
       // Regular plan: setup + monthly fee
@@ -146,7 +182,10 @@ router.post('/create-checkout-session', async (req, res) => {
       success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl}/pricing`,
       client_reference_id: tenantId,
-      metadata: { tenant_id: tenantId, plan_id: planId || 'starter' },
+      // supabase_user_id: i crediti Vision (grant_credits) sono legati
+      // all'utente che paga (profiles.user_id), non al tenant/workspace —
+      // senza questo campo il webhook non saprebbe a chi accreditarli.
+      metadata: { tenant_id: tenantId, plan_id: planId || 'starter', supabase_user_id: user.id },
       subscription_data: {
         metadata: { tenant_id: tenantId },
       },
@@ -278,13 +317,68 @@ router.post('/sync-plan', async (req, res) => {
     if (!membership) return res.status(403).json({ error: 'Tenant non autorizzato' });
 
     if (session.payment_status !== 'paid') {
-      return res.json({ paid: false, plan: 'free', appLimit: 0 });
+      return res.json({ paid: false, plan: 'free', appLimit: 0, creditsAdded: 0 });
+    }
+
+    const metadataPlan = session.metadata?.plan_id;
+    // I crediti Vision sono legati all'utente che ha pagato (profiles.user_id):
+    // per sessioni create da questa stessa route i metadata contengono sempre
+    // supabase_user_id; per compatibilità con sessioni più vecchie che ne
+    // fossero prive, l'utente autenticato che chiama /sync-plan (verificato
+    // come membro del tenant sopra) è comunque un fallback ragionevole.
+    const supabaseUserId = session.metadata?.supabase_user_id || user.id;
+
+    // "Ricarica Extra" (credit_topup, ex "extra_slot"): accredita crediti
+    // Vision, zero slot, non è un "piano" — gestita a parte perché altrimenti
+    // finirebbe nel fallback sotto e verrebbe trattata erroneamente come
+    // acquisto del piano 'starter'.
+    if (metadataPlan === 'credit_topup') {
+      const lineItems = await stripe.checkout.sessions.listLineItems(sessionId, { limit: 10 });
+      const quantity = lineItems.data[0]?.quantity || 1;
+      const creditsToAdd = CREDIT_TOPUP_CREDITS * quantity;
+
+      const { error: insertError } = await supabase
+        .from('processed_checkout_sessions')
+        .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: 0 });
+
+      if (insertError && insertError.code !== '23505') {
+        console.error('[sync-plan] errore idempotenza (credit_topup):', insertError);
+        return res.status(500).json({ error: 'Errore ricarica crediti' });
+      }
+
+      if (!insertError) {
+        const { error: creditsError } = await supabase.rpc('grant_credits', {
+          p_user_id: supabaseUserId,
+          p_amount: creditsToAdd,
+          p_type: 'purchase',
+          p_description: 'Ricarica Extra crediti Vision',
+          p_reference_id: sessionId,
+          p_metadata: { plan_id: 'credit_topup', session_id: sessionId },
+        });
+        if (creditsError) {
+          console.error('[sync-plan] errore grant_credits:', creditsError);
+          return res.status(500).json({ error: 'Errore ricarica crediti' });
+        }
+      }
+
+      const { data: tenantRow } = await supabase
+        .from('tenants')
+        .select('plan, app_limit')
+        .eq('id', tenantId)
+        .single();
+
+      return res.json({
+        paid: true,
+        plan: tenantRow?.plan ?? null,
+        appLimit: tenantRow?.app_limit ?? 0,
+        creditsAdded: creditsToAdd,
+      });
     }
 
     const planConfig = {
-      starter: { appLimit: 1 },
-      pro: { appLimit: 5 },
-      business: { appLimit: 100 }
+      starter: { appLimit: 1, credits: 20 },
+      pro: { appLimit: 5, credits: 100 },
+      business: { appLimit: 20, credits: 400 }
     };
 
     // Il piano scelto è già salvato correttamente in metadata.plan_id al
@@ -295,9 +389,9 @@ router.post('/sync-plan', async (req, res) => {
     // salvato come "pro", sovrascrivendo il valore corretto già scritto dal
     // webhook. Il match sul nome resta solo come fallback per sessioni
     // vecchie prive di questo metadata.
-    const metadataPlan = session.metadata?.plan_id;
     let plan = planConfig[metadataPlan] ? metadataPlan : 'starter';
     let appLimit = planConfig[plan]?.appLimit ?? 1;
+    let creditsToAdd = planConfig[plan]?.credits ?? 0;
 
     if (!metadataPlan) {
       const lineItems = await stripe.checkout.sessions.listLineItems(sessionId, { limit: 10 });
@@ -313,14 +407,13 @@ router.post('/sync-plan', async (req, res) => {
 
           if (name.includes('business')) {
             plan = 'business';
-            appLimit = planConfig.business.appLimit;
           } else if (name.includes('pro')) {
             plan = 'pro';
-            appLimit = planConfig.pro.appLimit;
           } else if (name.includes('starter')) {
             plan = 'starter';
-            appLimit = planConfig.starter.appLimit;
           }
+          appLimit = planConfig[plan]?.appLimit ?? 1;
+          creditsToAdd = planConfig[plan]?.credits ?? 0;
         }
       }
     }
@@ -341,6 +434,18 @@ router.post('/sync-plan', async (req, res) => {
     }
 
     if (!insertError) {
+      if (creditsToAdd > 0) {
+        const { error: creditsError } = await supabase.rpc('grant_credits', {
+          p_user_id: supabaseUserId,
+          p_amount: creditsToAdd,
+          p_type: 'purchase',
+          p_description: `Acquisto piano ${plan}`,
+          p_reference_id: sessionId,
+          p_metadata: { plan_id: plan, session_id: sessionId },
+        });
+        if (creditsError) console.error('[sync-plan] errore grant_credits:', creditsError);
+      }
+
       const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
         tenant_id: tenantId,
         slots_to_add: appLimit,
@@ -381,6 +486,7 @@ router.post('/sync-plan', async (req, res) => {
       paid: true,
       plan: tenantRow?.plan ?? plan,
       appLimit: tenantRow?.app_limit ?? appLimit,
+      creditsAdded: creditsToAdd,
     });
   } catch (err) {
     console.error('[sync-plan] errore:', err);

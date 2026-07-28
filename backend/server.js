@@ -93,7 +93,12 @@ async function upsertSubscription(supabase, tenantId, data) {
   }
 }
 
-const PLAN_SLOTS = { starter: 1, pro: 5, business: 100, basic: 1, vip: 100 };
+const PLAN_SLOTS = { starter: 1, pro: 5, business: 20, basic: 1, vip: 100 };
+
+// Crediti Vision inclusi in ogni piano (setup una tantum) e nella ricarica
+// extra "credit_topup" (ex "extra_slot", ora accredita crediti invece di uno
+// slot app — stesso Price Stripe da 15€, vedi routes/stripe.js).
+const PLAN_CREDITS = { starter: 20, pro: 100, business: 400, credit_topup: 50 };
 
 // Rango dei piani: gli eventi Stripe (checkout.session.completed,
 // payment_intent.succeeded) non arrivano garantiti in ordine cronologico.
@@ -105,16 +110,23 @@ function planRank(plan) {
   return PLAN_RANK[plan] ?? 0;
 }
 
-// Somma slot e (opzionalmente) aggiorna il piano del tenant una sola volta per
-// checkout session, indipendentemente da quale dei 3 punti di sync (webhook,
-// pagina /success, banner dashboard) la processa per primo o se Stripe
-// re-invia lo stesso evento webhook. Il modello degli slot è cumulativo
+// Somma slot/crediti e (opzionalmente) aggiorna il piano del tenant una sola
+// volta per checkout session, indipendentemente da quale dei punti di sync
+// (webhook, pagina /success, banner dashboard) la processa per primo o se
+// Stripe re-invia lo stesso evento webhook. Il modello degli slot è cumulativo
 // (vedi supabase_migrations/20260722_update_tenants_slots_cumulative.sql),
-// quindi senza questa guardia una stessa sessione sommerebbe gli slot più volte.
-async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slotsToAdd) {
+// quindi senza questa guardia una stessa sessione sommerebbe slot/crediti più
+// volte.
+// `creditsToAdd`/`userId`: i crediti Vision sono legati all'utente che ha
+// pagato (profiles.user_id), non al tenant/workspace — coerenti con come
+// vengono spesi in frontend/app/api/generate-video. Se creditsToAdd > 0 ma
+// userId manca (non dovrebbe succedere: create-checkout-session imposta
+// sempre supabase_user_id nei metadata) si salta solo l'accredito invece di
+// far fallire l'intera sincronizzazione di slot/piano.
+async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slotsToAdd, creditsToAdd = 0, userId = null) {
   const { error: insertError } = await supabase
     .from('processed_checkout_sessions')
-    .insert({ session_id: sessionId, tenant_id: tenantId, plan: plan || 'extra_slot', slots_added: slotsToAdd });
+    .insert({ session_id: sessionId, tenant_id: tenantId, plan: plan || 'credit_topup', slots_added: slotsToAdd });
 
   if (insertError) {
     if (insertError.code === '23505') {
@@ -124,11 +136,33 @@ async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slo
     throw insertError;
   }
 
-  const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
-    tenant_id: tenantId,
-    slots_to_add: slotsToAdd,
-  });
-  if (rpcError) throw rpcError;
+  if (creditsToAdd > 0) {
+    if (userId) {
+      const { error: creditsError } = await supabase.rpc('grant_credits', {
+        p_user_id: userId,
+        p_amount: creditsToAdd,
+        p_type: 'purchase',
+        p_description: `Acquisto piano ${plan || 'credit_topup'}`,
+        p_reference_id: sessionId,
+        p_metadata: { plan_id: plan || 'credit_topup', session_id: sessionId },
+      });
+      if (creditsError) {
+        console.error('[Stripe Webhook] errore accredito crediti Vision:', creditsError);
+      } else {
+        console.log(`[Stripe Webhook] accreditati ${creditsToAdd} crediti Vision a utente ${userId}`);
+      }
+    } else {
+      console.error(`[Stripe Webhook] impossibile accreditare crediti: supabase_user_id mancante nei metadata (session ${sessionId})`);
+    }
+  }
+
+  if (slotsToAdd > 0) {
+    const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
+      tenant_id: tenantId,
+      slots_to_add: slotsToAdd,
+    });
+    if (rpcError) throw rpcError;
+  }
 
   if (plan) {
     const { data: currentTenant } = await supabase
@@ -233,6 +267,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         const planId = session.metadata?.plan_id || 'starter';
         const quantity = parseInt(session.metadata?.quantity || '1', 10);
+        const supabaseUserId = session.metadata?.supabase_user_id || null;
 
         // Verifica che il tenant esista
         const { data: tenant, error: tenantError } = await supabase
@@ -246,22 +281,25 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
-        // Handle extra slot purchase - somma slot (cumulativo)
-        if (planId === 'extra_slot') {
-          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, quantity);
+        // Handle "Ricarica Extra" (ex slot extra) - accredita crediti Vision
+        // invece di slot app (0 slot, quantity * 50 crediti).
+        if (planId === 'credit_topup') {
+          const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
+          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, 0, creditsToAdd, supabaseUserId);
           if (applied) {
-            console.log(`[Stripe Webhook] +${quantity} slot extra per tenant ${tenantId}`);
+            console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision (ricarica extra) per tenant ${tenantId}`);
           }
         } else {
-          // Regular plan - risolve il piano e somma gli slot (cumulativo),
-          // il campo "plan" mostra sempre l'ultimo piano acquistato
+          // Regular plan - risolve il piano e somma slot + crediti Vision
+          // (cumulativo), il campo "plan" mostra sempre l'ultimo piano acquistato
           const plan = await resolvePlanFromSession(stripe, session);
           console.log(`[Stripe Webhook] piano risolto: ${plan}`);
 
           const slotsToAdd = PLAN_SLOTS[plan] || 1;
-          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, plan, slotsToAdd);
+          const creditsToAdd = PLAN_CREDITS[plan] || 0;
+          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, plan, slotsToAdd, creditsToAdd, supabaseUserId);
           if (applied) {
-            console.log(`[Stripe Webhook] tenant ${tenantId} aggiornato: plan=${plan}, +${slotsToAdd} slot`);
+            console.log(`[Stripe Webhook] tenant ${tenantId} aggiornato: plan=${plan}, +${slotsToAdd} slot, +${creditsToAdd} crediti`);
           }
         }
 
@@ -283,10 +321,10 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         console.log(`[Stripe Webhook] Subscription attivata per tenant ${tenantId}`);
 
-        // Crea automaticamente la fee subscription per le app (skip for extra_slot)
+        // Crea automaticamente la fee subscription per le app (skip for credit_topup)
         const feePriceId = getFeePriceId(planId);
-        
-        if (planId !== 'extra_slot' && feePriceId) {
+
+        if (planId !== 'credit_topup' && feePriceId) {
           try {
             const feeSubscription = await stripe.subscriptions.create({
               customer: session.customer,
@@ -389,6 +427,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         const planId = paymentIntent.metadata?.plan_id;
         const quantity = parseInt(paymentIntent.metadata?.quantity || '1', 10);
         const feePriceId = paymentIntent.metadata?.fee_price_id;
+        const supabaseUserId = paymentIntent.metadata?.supabase_user_id || null;
 
         if (!tenantId) {
           break;
@@ -408,15 +447,17 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
-        // Handle extra slot purchase - somma slot (cumulativo), idempotente su paymentIntent.id
-        if (planId === 'extra_slot') {
+        // Handle "Ricarica Extra" (ex slot extra) - accredita crediti Vision,
+        // idempotente su paymentIntent.id
+        if (planId === 'credit_topup') {
           try {
-            const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, quantity);
+            const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
+            const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, 0, creditsToAdd, supabaseUserId);
             if (applied) {
-              console.log(`[Stripe Webhook] +${quantity} slot extra per tenant ${tenantId}`);
+              console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision (ricarica extra) per tenant ${tenantId}`);
             }
           } catch (err) {
-            console.error(`[Stripe Webhook] errore aggiornamento app_limit per extra_slot`, err);
+            console.error(`[Stripe Webhook] errore accredito crediti per credit_topup`, err);
           }
         } else {
           // Regular plan upgrade - create subscription

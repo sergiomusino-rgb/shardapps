@@ -74,6 +74,13 @@ export default function AppLayout({ children }: PropsWithChildren) {
     pathname.startsWith(`/a/${slug}/dashboard`) ||
     pathname.startsWith(`/a/${slug}/app`) ||
     pathname.startsWith(`/a/${slug}/fatture`);
+  // Solo la shell app/dashboard (sidebar + topbar + contenuto) ha bisogno di
+  // restare bloccata all'altezza del viewport: sidebar e footer fissi, scroll
+  // solo nell'area contenuto. Le altre route (fatture, settings, admin, ecc.)
+  // restano a scroll di pagina naturale come prima.
+  const isAppShellRoute =
+    pathname.startsWith(`/a/${slug}/dashboard`) ||
+    pathname.startsWith(`/a/${slug}/app`);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +102,13 @@ export default function AppLayout({ children }: PropsWithChildren) {
             client_subscription_price: 25,
             client_price: 25,
             auth_mode: 'supabase',
-            config: { sector: demo.sector, description: demo.description, schema: { tables: demo.tables } },
+            config: {
+              sector: demo.sector,
+              description: demo.description,
+              appName: demo.name,
+              branding: { company_name: demo.name },
+              schema: { tables: demo.tables },
+            },
             tenant_id: '',
             app_type: null,
           });
@@ -222,6 +235,40 @@ export default function AppLayout({ children }: PropsWithChildren) {
     return () => { cancelled = true; };
   }, [slug, pathname, isOwnerOnly, isClientProtected, router]);
 
+  // ─── Ripristino da bfcache ──────────────────────────────────────────────
+  // I browser moderni possono ripristinare questa pagina dalla back/forward
+  // cache quando l'utente torna indietro (tasto Indietro, o un link) da
+  // un'altra pagina (es. /dashboard/management dopo aver cambiato il
+  // prezzo, o dopo un checkout Stripe) SENZA rieseguire alcun JS: lo stato
+  // React resta congelato com'era PRIMA di uscire da questa pagina, quindi
+  // `appInfo` mostrerebbe dati ormai superati (prezzo, stato abbonamento)
+  // finché non si ricarica manualmente. L'evento `pageshow` con
+  // `event.persisted === true` è il segnale standard di un ripristino da
+  // bfcache: a quel punto rileggiamo solo i campi che possono cambiare "da
+  // fuori" — non l'intera init() sopra, per non ripetere redirect/gate.
+  useEffect(() => {
+    if (!appInfo?.id) return;
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      supabase
+        .from('apps')
+        .select('status, trial_ends_at, stripe_subscription_id, client_subscription_price, client_price')
+        .eq('id', appInfo.id)
+        .single()
+        .then(({ data }) => {
+          const fresh = data as unknown as Pick<
+            AppInfo,
+            'status' | 'trial_ends_at' | 'stripe_subscription_id' | 'client_subscription_price' | 'client_price'
+          > | null;
+          if (fresh) setAppInfo((prev) => (prev ? { ...prev, ...fresh } : prev));
+        });
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, [appInfo?.id]);
+
   // ─── LOGICA DI BLOCCO ACCESSO ──────────────────────────────────────────────
   // L'app viene bloccata se:
   // 1. Lo status è 'expired' (trial scaduto e nessun abbonamento attivo)
@@ -309,8 +356,8 @@ export default function AppLayout({ children }: PropsWithChildren) {
   // Nessun banner trial, nessun link "Torna alla Dashboard", nessun
   // ZeusXBrandingFooter, nessun ThemeProvider/AuthProvider (concetti legati
   // al motore a schema dinamico/app_users, qui non pertinenti): solo il
-  // contenitore full-screen per la console Comandi, che gestisce da sé
-  // loading/gate tramite ComandiOperativeConsole.
+  // contenitore full-screen, ogni pagina figlia (dashboard, agente, login)
+  // gestisce da sé il proprio loading/gate.
   if (appInfo?.app_type === 'comandi_ai') {
     return (
       <LanguageProvider>
@@ -359,7 +406,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
             }}
           >
             <div
-              className="flex flex-col min-h-screen"
+              className={isAppShellRoute ? 'flex h-screen flex-col overflow-hidden' : 'flex flex-col min-h-screen'}
               style={{ background: designTokens.colors.bg, fontFamily: designTokens.fonts.body }}
             >
               {showTrialBanner && appInfo?.trial_ends_at && (
@@ -379,10 +426,14 @@ export default function AppLayout({ children }: PropsWithChildren) {
                   </Link>
                 </div>
               )}
-              <div className="flex-1">
+              <div className={isAppShellRoute ? 'flex-1 overflow-hidden' : 'flex-1'}>
                 {children}
               </div>
-              <ZeusXBrandingFooter />
+              {/* La shell app/dashboard mostra già il brand ZeusX nel footer
+                  della sidebar (icona + "ZeusX by MUSINO"): niente striscia
+                  duplicata in fondo alla pagina. Nelle altre route (fatture,
+                  settings, admin...) resta invariata. */}
+              {!isAppShellRoute && <ZeusXBrandingFooter />}
             </div>
           </AppInfoProvider>
         </AuthProvider>

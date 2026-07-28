@@ -19,7 +19,7 @@ export default function AppDashboardPage() {
   const appInfo = useAppInfo();
 
   if (appInfo.appType === 'comandi_ai') {
-    return <ComandiInstanceDashboard slug={appInfo.slug} tenantId={appInfo.tenantId} appName={appInfo.appName} />;
+    return <ComandiInstanceDashboard slug={appInfo.slug} tenantId={appInfo.tenantId} />;
   }
 
   return <GeneratedAppDashboardPage />;

@@ -16,6 +16,7 @@ interface App {
   created_at: string;
   blueprint_id: string;
   tenant_id: string;
+  app_type?: string | null;
   slug?: string;
   client_password?: string;
   client_email?: string;
@@ -59,6 +60,21 @@ export default function AppDetailPage() {
   const [buyerSaved, setBuyerSaved] = useState(false);
 
   function applyLoadedApp(loaded: App) {
+    // Questa pagina è costruita per le app a schema generato (Creator AI):
+    // "credenziali" qui sono client_email/client_password dell'app stessa,
+    // per Comandi AI invece quei campi appartengono all'account cassa/POS
+    // sintetico, non al login del titolare — mostrarli qui come "le
+    // credenziali dell'app" è fuorviante, e il link URL/QR mostrato non è
+    // quello corretto per il modulo Comandi. Reindirizza alla landing
+    // pubblica dell'istanza (/a/[slug]), lo stesso punto d'ingresso di
+    // qualunque altra app: da lì il titolare prosegue verso login/dashboard
+    // come già sa fare, invece di finire su una pagina di gestione generica
+    // con dati parzialmente sbagliati.
+    if (loaded.app_type === 'comandi_ai' && loaded.slug) {
+      router.replace(`/a/${loaded.slug}`);
+      return;
+    }
+
     setApp(loaded);
     setBuyerForm({
       client_full_name: loaded.client_full_name || '',
@@ -93,7 +109,7 @@ export default function AppDetailPage() {
       // Prima prova a cercare per ID (UUID)
       const { data, error } = await supabase
         .from('apps')
-        .select('id, name, config, trial_ends_at, is_active, created_at, blueprint_id, tenant_id, slug, client_email, client_active, expires_at, auth_mode, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
+        .select('id, name, config, trial_ends_at, is_active, created_at, blueprint_id, tenant_id, app_type, slug, client_email, client_active, expires_at, auth_mode, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
         .eq('id', idOrSlug)
         .single();
 
@@ -101,7 +117,7 @@ export default function AppDetailPage() {
       if (error || !data) {
         const { data: slugData, error: slugError } = await supabase
           .from('apps')
-          .select('id, name, config, trial_ends_at, is_active, created_at, blueprint_id, tenant_id, slug, client_email, client_active, expires_at, auth_mode, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
+          .select('id, name, config, trial_ends_at, is_active, created_at, blueprint_id, tenant_id, app_type, slug, client_email, client_active, expires_at, auth_mode, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
           .eq('slug', idOrSlug)
           .single();
 

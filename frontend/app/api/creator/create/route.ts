@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Ri-verifica gli slot al momento della conferma (difesa contro il caso in
     // cui siano stati consumati da un'altra tab/richiesta tra l'anteprima e
     // la conferma).
-    const tenantId = await getOrCreateTenant(supabase, user);
+    const tenantId = await getOrCreateTenant(supabase, user, token);
     const { allowed, reason, tenant } = await canCreateApp(supabase, tenantId, user.id);
 
     if (!allowed) {

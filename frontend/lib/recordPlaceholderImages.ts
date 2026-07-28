@@ -6,11 +6,14 @@
 // contestuale al settore/tipo di tabella — deterministica per record (stesso
 // id → sempre la stessa foto, niente "sfarfallio" tra un render e l'altro).
 //
-// Applicata SOLO a categorie di prodotto/oggetto (veicoli, immobili, prodotti,
-// piatti): mai a persone (pazienti, clienti, dipendenti) per non attribuire
-// volti reali di sconosciuti a identità fittizie nei dati demo.
+// Applicata SOLO a categorie di prodotto/oggetto/servizio impersonale
+// (veicoli, immobili, prodotti, piatti, corsi, eventi, attrezzature, servizi):
+// mai a persone (pazienti, clienti, dipendenti) per non attribuire volti reali
+// di sconosciuti a identità fittizie nei dati demo.
 
-export type PlaceholderCategory = 'veicoli' | 'immobili' | 'prodotti' | 'piatti';
+export type PlaceholderCategory =
+  | 'veicoli' | 'immobili' | 'prodotti' | 'piatti'
+  | 'corsi' | 'eventi' | 'attrezzature' | 'servizi';
 
 const CATEGORY_IMAGES: Record<PlaceholderCategory, string[]> = {
   veicoli: [
@@ -39,6 +42,28 @@ const CATEGORY_IMAGES: Record<PlaceholderCategory, string[]> = {
     '1571997478779-2adcbbe9ab2f',
     '1550547660-d9450f859349',
   ],
+  corsi: [
+    '1523240795612-9a054b0db644',
+    '1522202176988-66273c2fd55f',
+    '1524995997946-a1c2e315a42f',
+    '1503676260728-1c00da094a0b',
+  ],
+  eventi: [
+    '1511578314322-379afb476865',
+    '1470229722913-7c0e2dbbafd3',
+    '1519671482749-fd09be7ccebf',
+    '1552664730-d307ca884978',
+  ],
+  attrezzature: [
+    '1581091226825-a6a2a5aee158',
+    '1504328345606-18bbc8c9d7d1',
+    '1571019613454-1cb2f99b2d8b',
+  ],
+  servizi: [
+    '1560250097-0b93528c311a',
+    '1454165804606-c3d57bc86b40',
+    '1516321318423-f06f85e504b3',
+  ],
 };
 
 // Nomi tabella (in minuscolo) → categoria. Match per sottostringa, come per
@@ -48,6 +73,10 @@ const TABLE_NAME_CATEGORY: Array<{ keywords: string[]; category: PlaceholderCate
   { category: 'immobili', keywords: ['immobil', 'propriet', 'appartament', 'cas', 'stanz', 'camer', 'annunci'] },
   { category: 'piatti', keywords: ['piatt', 'menu', 'ricett', 'pizz', 'dish'] },
   { category: 'prodotti', keywords: ['prodott', 'articol', 'magazzin', 'ricambi', 'inventario', 'catalogo'] },
+  { category: 'corsi', keywords: ['corsi', 'corso', 'lezioni', 'formazione', 'workshop', 'seminari'] },
+  { category: 'eventi', keywords: ['eventi', 'evento', 'concert', 'spettacol', 'fiera'] },
+  { category: 'attrezzature', keywords: ['attrezzatur', 'strumenti', 'utensili', 'macchinari', 'equipment', 'noleggio'] },
+  { category: 'servizi', keywords: ['servizi', 'pacchetti', 'abbonamenti'] },
 ];
 
 /** Determina se una tabella è "visiva" (merita foto/griglia) in base al nome. */

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
 import type { Database } from '@/types/database';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -15,18 +16,18 @@ function getServiceSupabase() {
 async function getUserFromRequest(req: Request) {
   const authHeader = req.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return null;
+  if (!token) return { user: null, token: null };
 
   const supabase = createClient<Database>(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  return user;
+  if (error || !user) return { user: null, token: null };
+  return { user, token };
 }
 
-async function getOrCreateTenant(supabase: any, user: { id: string; email?: string }) {
+async function getOrCreateTenant(supabase: any, user: { id: string; email?: string }, accessToken?: string | null) {
   const { data: memberships, error: membershipError } = await supabase
     .from('tenant_members')
     .select('tenant_id')
@@ -61,6 +62,21 @@ async function getOrCreateTenant(supabase: any, user: { id: string; email?: stri
     user_id: user.id,
     role: 'owner',
   } as any);
+
+  // Comandi AI è un'app omaggio inclusa di default in ogni tenant (non
+  // consuma slot, vedi comandi-provisioning.ts). Best-effort, solo al
+  // momento della creazione del tenant: un fallimento qui non deve mai
+  // impedire la creazione dell'app che l'utente ha effettivamente richiesto.
+  if (accessToken) {
+    try {
+      const result = await provisionComandiAppAction({ accessToken });
+      if (!result.success) {
+        console.error('[getOrCreateTenant] Provisioning Comandi AI non riuscito:', result.error);
+      }
+    } catch (err) {
+      console.error('[getOrCreateTenant] Errore provisioning Comandi AI:', err);
+    }
+  }
 
   return tenant.id;
 }
@@ -149,7 +165,7 @@ function generatePassword(): string {
 
 export async function POST(req: Request) {
   try {
-    const user = await getUserFromRequest(req);
+    const { user, token } = await getUserFromRequest(req);
     if (!user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
@@ -162,7 +178,7 @@ export async function POST(req: Request) {
     }
 
     const supabase = getServiceSupabase();
-    const tenantId = await getOrCreateTenant(supabase, user);
+    const tenantId = await getOrCreateTenant(supabase, user, token);
 
     // Controlla limite 5 app
     const { allowed, reason, tenant } = await canCreateApp(supabase, tenantId, user.id);

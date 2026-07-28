@@ -24,7 +24,7 @@ import {
   BarChart3,
   BookOpen,
   LogOut,
-  Mic,
+  Clapperboard,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -108,10 +108,10 @@ export default function Sidebar({
         isActive: isPathActive(pathname, '/dashboard/generator'),
       },
       {
-        label: t('nav_comandi'),
-        href: '/dashboard/comandi',
-        icon: <Mic size={18} />,
-        isActive: isPathActive(pathname, '/dashboard/comandi'),
+        label: t('nav_vision'),
+        href: '/vision',
+        icon: <Clapperboard size={18} />,
+        isActive: isPathActive(pathname, '/vision'),
       },
       {
         label: t('nav_projects'),

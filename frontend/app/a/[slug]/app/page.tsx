@@ -10,12 +10,11 @@ import EditTableModal from './EditTableModal';
 import CustomTableRenderer from './CustomTableRenderer';
 import CustomRecordModal from './CustomRecordModal';
 import {
-  LayoutDashboard, Settings, LogOut, Search, Plus, Pencil, Trash2,
+  LayoutDashboard, Search, Plus, Pencil, Trash2, LogOut,
   X, ChevronDown, TrendingUp,
-  AlertTriangle, Calendar, CheckCircle, Clock, XCircle, Menu,
+  AlertTriangle, Calendar, CheckCircle, Clock, XCircle,
   Download, Upload, Download as InstallIcon, MessageSquare, Mail, MessageCircle,
-  Settings2, FileText, FileSpreadsheet, File as FileIcon, Database, CreditCard,
-  Sparkles,
+  FileText, FileSpreadsheet, File as FileIcon, Database, CreditCard,
 } from 'lucide-react';
   import { QRCodeCanvas } from 'qrcode.react';
   import { useLanguage } from '@/src/lib/LanguageContext';
@@ -27,10 +26,18 @@ import {
   import { supabaseBrowser } from '@/src/lib/supabase-browser';
   import { useAppInfo, type SubscriptionStatus } from '../AppInfoContext';
   import { useRouter, usePathname } from 'next/navigation';
-  import FullscreenToggle from '@/components/FullscreenToggle';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
-  import { sortTablesForSidebar, getDatiAziendaliTable } from './table-definitions';
-  import ComandiOperativeConsole from '@/components/comandi/ComandiOperativeConsole';
+  import { getDatiAziendaliTable } from './table-definitions';
+  import AppTopBar from './AppTopBar';
+  import ViewerSidebar from './ViewerSidebar';
+  import { tenantThemeVars } from './tenant-theme';
+  import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+  import { Button } from '@/components/ui/button';
+  import { Input } from '@/components/ui/input';
+  import { cn } from '@/lib/utils';
+  import { Dialog, DialogHeader } from '@/components/ui/dialog';
+  import { Label } from '@/components/ui/label';
+  import AgendaCalendar from './AgendaCalendar';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -160,21 +167,75 @@ function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
 // CreateCustomTableModal, AITableModal, EditTableModal, CustomRecordModal,
 // SettingsModal, ecc.) ottengono la palette del settore senza alcuna modifica
 // al loro codice interno — cambia solo come `colors` viene calcolato qui sotto.
-function designTokensToThemeVars(tokens: DesignTokens, primaryColorOverride?: string) {
+// Schiarisce (percent > 0) o scurisce (percent < 0) un colore esadecimale,
+// mescolandolo verso il bianco o il nero. Usata per derivare la sidebar dal
+// colore primario scelto in Impostazioni (vedi designTokensToThemeVars).
+function shadeHex(hex: string, percent: number): string {
+  const clean = hex.replace('#', '');
+  const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
+  const num = parseInt(full, 16);
+  if (isNaN(num)) return hex;
+  const target = percent < 0 ? 0 : 255;
+  const p = Math.min(Math.abs(percent), 1);
+  const channel = (shift: number) => {
+    const v = (num >> shift) & 255;
+    return Math.round((target - v) * p) + v;
+  };
+  const toHex = (v: number) => v.toString(16).padStart(2, '0');
+  return `#${toHex(channel(16))}${toHex(channel(8))}${toHex(channel(0))}`;
+}
+
+// Contenuto principale generico per il tema scuro/chiaro forzato dall'utente,
+// quando disaccorda con la luminosità nativa della palette di settore (es.
+// sceglie "Scuro" su un settore progettato chiaro come cliniclife). Stessi
+// valori già usati altrove in questo motore (DynamicRecordModal, ecc.) per
+// coerenza visiva tra i due percorsi.
+const FORCED_THEME_BASE = {
+  dark: { bg: '#0a0e1a', cardBg: '#161f32', cardBgAlt: '#1c273d', text: '#f1f5f9', textSecondary: '#94a3b8', border: '#2c3a52', inputBg: '#111a2c', inputBorder: '#2c3a52' },
+  light: { bg: '#f8fafc', cardBg: '#ffffff', cardBgAlt: '#f1f5f9', text: '#0f172a', textSecondary: '#64748b', border: '#e2e8f0', inputBg: '#f8fafc', inputBorder: '#e2e8f0' },
+} as const;
+
+function designTokensToThemeVars(tokens: DesignTokens, primaryColorOverride?: string, themeOverride?: 'dark' | 'light') {
   const c = tokens.colors;
   const primary = primaryColorOverride || c.primary;
+  // Col colore primario di default del settore, la sidebar resta sulla
+  // palette dedicata (design.md). Appena l'utente sceglie un colore
+  // personalizzato in Impostazioni, la sidebar si ritinge di conseguenza:
+  // è il "brand" dell'app, deve seguire il colore scelto, non restare fissa.
+  const sidebar = primaryColorOverride
+    ? {
+        bg: shadeHex(primaryColorOverride, -0.55),
+        text: '#f8fafc',
+        hover: shadeHex(primaryColorOverride, -0.4),
+      }
+    : { bg: c['sidebar-bg'], text: c['sidebar-text'], hover: c['sidebar-hover'] };
+
+  // Il contenuto principale (sfondo/card/testo) segue invece la scelta
+  // Scuro/Chiaro dell'utente: se coincide con la luminosità nativa del
+  // settore, usiamo la palette design.md (più curata); solo quando l'utente
+  // la ribalta esplicitamente passiamo a una base scura/chiara generica,
+  // mantenendo comunque il colore primario/sidebar del brand.
+  const sectorIsDark = isColorDark(c.bg);
+  const forceDark = themeOverride === 'dark' && !sectorIsDark;
+  const forceLight = themeOverride === 'light' && sectorIsDark;
+  const base = forceDark
+    ? FORCED_THEME_BASE.dark
+    : forceLight
+      ? FORCED_THEME_BASE.light
+      : { bg: c.bg, cardBg: c['card-bg'], cardBgAlt: c['card-bg-alt'], text: c.text, textSecondary: c['text-secondary'], border: c.border, inputBg: c['input-bg'], inputBorder: c.border };
+
   return {
-    bg: c.bg,
-    text: c.text,
-    textSecondary: c['text-secondary'],
-    cardBg: c['card-bg'],
-    cardBgAlt: c['card-bg-alt'],
-    border: c.border,
-    sidebarBg: c['sidebar-bg'],
-    sidebarText: c['sidebar-text'],
-    sidebarHover: c['sidebar-hover'],
-    inputBg: c['input-bg'],
-    inputBorder: c.border,
+    bg: base.bg,
+    text: base.text,
+    textSecondary: base.textSecondary,
+    cardBg: base.cardBg,
+    cardBgAlt: base.cardBgAlt,
+    border: base.border,
+    sidebarBg: sidebar.bg,
+    sidebarText: sidebar.text,
+    sidebarHover: sidebar.hover,
+    inputBg: base.inputBg,
+    inputBorder: base.inputBorder,
     primary,
     primaryHover: primaryColorOverride ? primaryColorOverride + 'dd' : c['primary-hover'],
     danger: c.error,
@@ -202,68 +263,22 @@ interface KpiCardProps {
   title: string;
   value: string;
   icon: React.ReactNode;
-  trend?: string;
-  trendUp?: boolean;
-  colors: ReturnType<typeof getThemeVars>;
-  radius: string;
 }
 
-function KpiCard({ title, value, icon, trend, trendUp, colors, radius }: KpiCardProps) {
+function KpiCard({ title, value, icon }: KpiCardProps) {
   return (
-    <div
-      className={`relative overflow-hidden ${radius} ${LAYOUT_CONFIG.corporate.shadow} transition-all duration-300 hover:-translate-y-1`}
-      style={{
-        background: `linear-gradient(160deg, ${colors.cardBg}, ${colors.primary}0d)`,
-        border: `1px solid ${colors.primary}33`,
-        padding: '24px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-      }}
-    >
-      {/* Bagliore decorativo in alto a destra */}
-      <div
-        className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full"
-        style={{ background: colors.primary, opacity: 0.12, filter: 'blur(20px)' }}
-      />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative' }}>
-        <span style={{ color: colors.textSecondary, fontSize: '14px', fontWeight: 500 }}>{title}</span>
-        <div
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            width: '36px', height: '36px', borderRadius: '10px',
-            background: `${colors.primary}1F`, color: colors.primary,
-          }}
-        >
-          {icon}
+    <Card className="relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(16,24,40,0.1)]">
+      <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-tenant-primary opacity-10 blur-2xl" />
+      <CardContent className="relative flex flex-col gap-3 p-6">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-tenant-text-secondary">{title}</span>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-tenant-primary/12 text-tenant-primary">
+            {icon}
+          </div>
         </div>
-      </div>
-      <span style={{ color: colors.text, fontSize: '28px', fontWeight: 700, position: 'relative' }}>{value}</span>
-
-      {trend ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', position: 'relative' }}>
-          <TrendingUp
-            size={14}
-            style={{ color: trendUp ? colors.success : colors.danger, transform: trendUp ? 'none' : 'rotate(180deg)' }}
-          />
-          <span style={{ color: trendUp ? colors.success : colors.danger }}>{trend}</span>
-          <span style={{ color: colors.textSecondary }}>vs mese scorso</span>
-        </div>
-      ) : (
-        <svg width="100%" height="28" viewBox="0 0 120 28" preserveAspectRatio="none" style={{ position: 'relative' }}>
-          <polyline
-            points="0,20 15,17 30,21 45,12 60,16 75,8 90,13 105,6 120,10"
-            fill="none"
-            stroke={colors.primary}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.35"
-          />
-        </svg>
-      )}
-    </div>
+        <span className="text-[28px] font-bold leading-none text-tenant-text">{value}</span>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -275,6 +290,16 @@ interface RecentActivityItem {
   icon: React.ReactNode;
   recordLabel: string;
   timestamp: string | null;
+  statusValue: string | null;
+}
+
+interface AgendaItem {
+  tableName: string;
+  tableLabel: string;
+  icon: React.ReactNode;
+  recordLabel: string;
+  date: string;
+  timeLabel: string | null;
   statusValue: string | null;
 }
 
@@ -294,9 +319,6 @@ function formatRelativeTime(iso: string | null): string {
 }
 
 interface DashboardProps {
-  colors: ReturnType<typeof getThemeVars>;
-  radius: string;
-  shadow: string;
   companyName: string;
   tables: TableDef[];
   appId?: string;
@@ -304,11 +326,12 @@ interface DashboardProps {
   onQuickAdd: (tableName: string) => void;
 }
 
-function Dashboard({ colors, radius, shadow, companyName, tables, appId, authToken, onQuickAdd }: DashboardProps) {
+function Dashboard({ companyName, tables, appId, authToken, onQuickAdd }: DashboardProps) {
   const { t } = useLanguage();
   const [totalRecords, setTotalRecords] = useState(0);
   const [tableCounts, setTableCounts] = useState<Record<string, number>>({});
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -322,6 +345,7 @@ function Dashboard({ colors, radius, shadow, companyName, tables, appId, authTok
         let total = 0;
         const counts: Record<string, number> = {};
         const activity: RecentActivityItem[] = [];
+        const agenda: AgendaItem[] = [];
 
         for (const table of tables) {
           try {
@@ -336,6 +360,11 @@ function Dashboard({ colors, radius, shadow, companyName, tables, appId, authTok
 
               const textField = table.fields.find((f) => ['text', 'email', 'tel'].includes(f.type) && fieldName(f) !== 'id');
               const statusField = table.fields.find((f) => f.type === 'select');
+              // Tabella "agenda" = ha un campo data/datetime (appuntamenti,
+              // prenotazioni, ordini con scadenza, ecc.) — generico per
+              // qualsiasi settore, non solo per chi genera un'app medica.
+              const dateField = table.fields.find((f) => (f.type === 'date' || f.type === 'datetime') && fieldName(f) !== 'id');
+              const timeField = table.fields.find((f) => f.type === 'text' && /^(ora|orario|time|ora_inizio)$/i.test(fieldName(f)));
 
               for (const r of recs) {
                 const ts = (r.updated_at || r.created_at) as string | undefined;
@@ -348,6 +377,19 @@ function Dashboard({ colors, radius, shadow, companyName, tables, appId, authTok
                   timestamp: ts || null,
                   statusValue: statusField ? (r.data?.[fieldName(statusField)] ? String(r.data[fieldName(statusField)]) : null) : null,
                 });
+
+                const dateValue = dateField ? r.data?.[fieldName(dateField)] : null;
+                if (dateValue && !isNaN(new Date(dateValue).getTime())) {
+                  agenda.push({
+                    tableName: table.name,
+                    tableLabel: table.labelPlural || table.label,
+                    icon: resolveIcon(table.icon || '', table.name),
+                    recordLabel: label || `#${String(r.id).slice(0, 6)}`,
+                    date: String(dateValue),
+                    timeLabel: timeField ? String(r.data?.[fieldName(timeField)] ?? '').trim() || null : null,
+                    statusValue: statusField ? (r.data?.[fieldName(statusField)] ? String(r.data[fieldName(statusField)]) : null) : null,
+                  });
+                }
               }
             }
           } catch { /* skip table */ }
@@ -355,6 +397,11 @@ function Dashboard({ colors, radius, shadow, companyName, tables, appId, authTok
 
         activity.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
         setRecentActivity(activity.slice(0, 6));
+
+        // Tutti gli item con data (passati e futuri): il casellario calendario
+        // naviga i mesi da sé, quindi non filtriamo/tronchiamo qui.
+        setAgendaItems(agenda);
+
         setTableCounts(counts);
         setTotalRecords(total);
       } catch { /* ignore */ }
@@ -365,697 +412,125 @@ function Dashboard({ colors, radius, shadow, companyName, tables, appId, authTok
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div className="flex flex-col gap-6">
         <div>
-          <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '28px', fontWeight: 700, margin: 0 }}>
-            {t('nav_dashboard')}
-          </h1>
-          <p style={{ color: colors.textSecondary, fontSize: '14px', marginTop: '4px' }}>
-            {t('dashboard_overview')} {companyName}
-          </p>
+          <h1 className="m-0 text-[28px] font-bold text-tenant-text">{t('nav_dashboard')}</h1>
+          <p className="mt-1 text-sm text-tenant-text-secondary">{t('dashboard_overview')} {companyName}</p>
         </div>
-        <div style={{ color: colors.textSecondary, textAlign: 'center', padding: '60px' }}>
-          Caricamento...
-        </div>
+        <div className="py-16 text-center text-tenant-text-secondary">Caricamento...</div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="flex flex-col gap-6">
       <div>
-          <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '28px', fontWeight: 700, margin: 0 }}>
-          {t('nav_dashboard')}
-        </h1>
-        <p style={{ color: colors.textSecondary, fontSize: '14px', marginTop: '4px' }}>
-          {t('dashboard_overview')} {companyName}
-        </p>
+        <h1 className="m-0 text-[28px] font-bold text-tenant-text">{t('nav_dashboard')}</h1>
+        <p className="mt-1 text-sm text-tenant-text-secondary">{t('dashboard_overview')} {companyName}</p>
       </div>
 
       {tables.length === 0 ? (
-        <div
-          style={{
-            background: colors.cardBg,
-            border: `1px solid ${colors.border}`,
-            borderRadius: '8px',
-            padding: '60px 40px',
-            textAlign: 'center',
-          }}
-        >
-          <LayoutDashboard size={48} style={{ color: colors.primary, marginBottom: '16px' }} />
-          <h2 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '22px', fontWeight: 700, margin: '0 0 12px 0' }}>
-            Benvenuto in {companyName}!
-          </h2>
-          <p style={{ color: colors.textSecondary, fontSize: '14px', lineHeight: 1.6, maxWidth: '500px', margin: '0 auto' }}>
+        <Card className="px-10 py-16 text-center">
+          <LayoutDashboard size={48} className="mx-auto mb-4 text-tenant-primary" />
+          <h2 className="m-0 mb-3 text-[22px] font-bold text-tenant-text">Benvenuto in {companyName}!</h2>
+          <p className="mx-auto max-w-[500px] text-sm leading-relaxed text-tenant-text-secondary">
             La tua app è pronta per essere utilizzata. Crea tabelle e record per iniziare a gestire i tuoi dati.
           </p>
-        </div>
+        </Card>
       ) : (
         <>
-          {/* Dynamic KPI Cards based on real data */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-            <KpiCard
-              title="Tabelle"
-              value={String(tables.length)}
-              icon={<LayoutDashboard size={22} />}
-              colors={colors}
-              radius={radius}
-            />
-            <KpiCard
-              title="Record Totali"
-              value={String(totalRecords)}
-              icon={<Database size={22} />}
-              colors={colors}
-              radius={radius}
-            />
+          {/* KPI reali (nessun dato finto) */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-5">
+            <KpiCard title="Tabelle" value={String(tables.length)} icon={<LayoutDashboard size={20} />} />
+            <KpiCard title="Record Totali" value={String(totalRecords)} icon={<Database size={20} />} />
             <KpiCard
               title="Ultima Attività"
               value={recentActivity[0] ? formatRelativeTime(recentActivity[0].timestamp) || '—' : '—'}
-              icon={<Clock size={22} />}
-              colors={colors}
-              radius={radius}
+              icon={<Clock size={20} />}
             />
           </div>
 
           {/* Azioni rapide */}
-          <div
-            style={{
-              background: colors.cardBg,
-              border: `1px solid ${colors.border}`,
-              borderRadius: '8px',
-              padding: '20px 24px',
-            }}
-          >
-            <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '16px', fontWeight: 600, margin: '0 0 14px 0' }}>
-              Azioni Rapide
-            </h3>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Azioni Rapide</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2.5 pt-0">
               {tables.slice(0, 4).map((table) => (
-                <button
-                  key={table.name}
-                  onClick={() => onQuickAdd(table.name)}
-                  className="transition-all duration-200 hover:-translate-y-0.5"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '10px 16px', borderRadius: '10px', border: `1px solid ${colors.primary}33`,
-                    background: `${colors.primary}12`, color: colors.primary,
-                    fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                  }}
-                >
-                  <Plus size={14} />
-                  Nuovo {table.label}
-                </button>
+                <Button key={table.name} variant="soft" onClick={() => onQuickAdd(table.name)}>
+                  <Plus size={14} /> Nuovo {table.label}
+                </Button>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', alignItems: 'start' }}>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] items-start gap-5">
             {/* Tables overview con breakdown record per tabella */}
-            <div
-              style={{
-                background: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '8px',
-                padding: '24px',
-              }}
-            >
-              <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '16px', fontWeight: 600, margin: '0 0 16px 0' }}>
-                Le tue Tabelle
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Le tue Tabelle</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 pt-0">
                 {tables.map((table) => (
                   <div
                     key={table.name}
-                    className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '12px 16px', borderRadius: '10px',
-                      background: colors.cardBg, border: `1px solid ${colors.primary}22`,
-                    }}
+                    className="flex items-center justify-between rounded-xl border border-tenant-primary/15 px-4 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div
-                        style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '32px', height: '32px', borderRadius: '8px',
-                          background: `${colors.primary}1A`, color: colors.primary,
-                        }}
-                      >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-tenant-primary/10 text-tenant-primary">
                         {resolveIcon(table.icon || '', table.name)}
                       </div>
-                      <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '14px', fontWeight: 500 }}>
-                        {table.labelPlural || table.label}
-                      </span>
+                      <span className="text-sm font-medium text-tenant-text">{table.labelPlural || table.label}</span>
                     </div>
-                    <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
-                      {tableCounts[table.name] ?? 0} record
-                    </span>
+                    <span className="text-[13px] text-tenant-text-secondary">{tableCounts[table.name] ?? 0} record</span>
                   </div>
                 ))}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Feed attività recenti */}
-            <div
-              style={{
-                background: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '8px',
-                padding: '24px',
-              }}
-            >
-              <h3 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: colors.text, fontSize: '16px', fontWeight: 600, margin: '0 0 16px 0' }}>
-                Attività Recente
-              </h3>
-              {recentActivity.length === 0 ? (
-                <p style={{ color: colors.textSecondary, fontSize: '13px' }}>Nessuna attività ancora registrata.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {recentActivity.map((item, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '12px',
-                        padding: '10px 12px', borderRadius: '10px',
-                        background: colors.cardBgAlt,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '28px', height: '28px', borderRadius: '8px', flexShrink: 0,
-                          background: `${colors.primary}1A`, color: colors.primary,
-                        }}
-                      >
-                        {item.icon}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ color: colors.text, fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.recordLabel}
+            <Card>
+              <CardHeader>
+                <CardTitle>Attività Recente</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {recentActivity.length === 0 ? (
+                  <p className="text-[13px] text-tenant-text-secondary">Nessuna attività ancora registrata.</p>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {recentActivity.map((item, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl bg-tenant-card-alt px-3 py-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-tenant-primary/10 text-tenant-primary">
+                          {item.icon}
                         </div>
-                        <div style={{ color: colors.textSecondary, fontSize: '12px' }}>
-                          {item.tableLabel} · {formatRelativeTime(item.timestamp) || 'data sconosciuta'}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[13px] font-medium text-tenant-text">{item.recordLabel}</div>
+                          <div className="text-xs text-tenant-text-secondary">
+                            {item.tableLabel} · {formatRelativeTime(item.timestamp) || 'data sconosciuta'}
+                          </div>
                         </div>
+                        {item.statusValue && <StatusBadge value={item.statusValue} />}
                       </div>
-                      {item.statusValue && <StatusBadge value={item.statusValue} />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
+
+          {/* Agenda: casellario calendario mensile con i record che hanno una
+              data (appuntamenti/prenotazioni/scadenze), da qualsiasi tabella
+              — non solo per i gestionali medici. */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Agenda</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <AgendaCalendar items={agendaItems} />
+            </CardContent>
+          </Card>
         </>
       )}
-    </div>
-  );
-}
-
-// ─── DataTable Component ──────────────────────────────────────────────────────
-
-interface DataTableProps {
-  table: TableDef;
-  records: AppRecord[];
-  loading: boolean;
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
-  onEdit: (record: AppRecord) => void;
-  onDelete: (recordId: string) => void;
-  onAddNew: () => void;
-  colors: ReturnType<typeof getThemeVars>;
-  radius: string;
-  shadow: string;
-}
-
-function DataTable({
-  table, records, loading, searchQuery, onSearchChange,
-  onEdit, onDelete, onAddNew, colors, radius, shadow,
-  appId, password,
-}: DataTableProps & { appId?: string; password?: string }) {
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState('');
-  const [exporting, setExporting] = useState(false);
-  const handleExport = async () => {
-    if (!appId || !password) return;
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/client/apps/${appId}/export?table=${table.name}`, {
-        headers: { Authorization: `Bearer ${password}` },
-      });
-      if (!res.ok) throw new Error('Errore esportazione');
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${table.name}-${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Errore esportazione');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !appId || !password) return;
-
-    setImporting(true);
-    setImportMsg('');
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('table', table.name);
-
-      const res = await fetch(`/api/client/apps/${appId}/import`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${password}` },
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || 'Errore importazione');
-      }
-
-      setImportMsg(`${data.imported} record importati`);
-      e.target.value = '';
-    } catch (err) {
-      setImportMsg(err instanceof Error ? err.message : 'Errore importazione');
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const filteredRecords = useMemo(() => {
-    if (!searchQuery.trim()) return records;
-    const q = searchQuery.toLowerCase();
-    return records.filter((r) =>
-      table.fields.some((f) => {
-        const fn = fieldName(f);
-        const val = r.data?.[fn];
-        return val != null && String(val).toLowerCase().includes(q);
-      })
-    );
-  }, [records, searchQuery, table.fields]);
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <h2 style={{ color: colors.text, fontSize: '24px', fontWeight: 700, margin: 0 }}>
-          {table.labelPlural}
-        </h2>
-        <button
-          onClick={onAddNew}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '10px 18px', borderRadius: '10px', border: 'none',
-            background: colors.primary, color: '#fff', fontSize: '14px',
-            fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-        >
-          <Plus size={16} /> Nuovo
-        </button>
-      </div>
-
-      {/* Search Bar */}
-      <div
-        className={`${radius}`}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          padding: '10px 16px',
-        }}
-      >
-        <Search size={18} style={{ color: colors.textSecondary }} />
-        <input
-          type="text"
-          placeholder={`Cerca in ${table.labelPlural}...`}
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          style={{
-            flex: 1, border: 'none', outline: 'none', background: 'transparent',
-            color: colors.text, fontSize: '14px',
-          }}
-        />
-        {searchQuery && (
-          <button
-            onClick={() => onSearchChange('')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '2px' }}
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
-
-      {/* Table */}
-      <div
-        className={`${radius} ${shadow}`}
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-              <tr style={{ background: colors.cardBgAlt }}>
-                {table.fields.map((field) => (
-                  <th
-                    key={fieldName(field)}
-                    style={{
-                      textAlign: 'left', padding: '12px 16px',
-                      borderBottom: `2px solid ${colors.border}`,
-                      color: colors.textSecondary, fontSize: '12px',
-                      fontWeight: 600, textTransform: 'uppercase',
-                      letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {field.label}
-                  </th>
-                ))}
-                <th
-                  style={{
-                    textAlign: 'center', padding: '12px 16px',
-                    borderBottom: `2px solid ${colors.border}`,
-                    color: colors.textSecondary, fontSize: '12px',
-                    fontWeight: 600, textTransform: 'uppercase',
-                    letterSpacing: '0.05em', width: '100px',
-                  }}
-                >
-                  Azioni
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={table.fields.length + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
-                    Caricamento records...
-                  </td>
-                </tr>
-              ) : filteredRecords.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={table.fields.length + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
-                    {searchQuery ? 'Nessun risultato per la ricerca' : 'Nessun record presente'}
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords.map((record, idx) => (
-                  <tr
-                    key={record.id || idx}
-                    style={{
-                      borderBottom: `1px solid ${colors.border}`,
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = colors.cardBgAlt; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {table.fields.map((field) => (
-                      <td
-                        key={fieldName(field)}
-                        style={{
-                          padding: '12px 16px', color: colors.text,
-                          fontSize: '14px', whiteSpace: 'nowrap',
-                          maxWidth: '200px', overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {field.type === 'checkbox'
-                          ? ((record.data?.[fieldName(field)]) ? 'Si' : 'No')
-                          : field.type === 'select'
-                            ? String(record.data?.[fieldName(field)] ?? '')
-                            : String(record.data?.[fieldName(field)] ?? '')}
-                      </td>
-                    ))}
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                        <button
-                          onClick={() => onEdit(record)}
-                          title="Modifica"
-                          style={{
-                            background: colors.primary + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: colors.primary, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = colors.primary + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary + '20'; }}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          onClick={() => onDelete(record.id)}
-                          title="Elimina"
-                          style={{
-                            background: colors.danger + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: colors.danger, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer counter */}
-        <div
-          style={{
-            padding: '12px 16px', borderTop: `1px solid ${colors.border}`,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}
-        >
-          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
-            {filteredRecords.length} di {records.length} record
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── RecordModal Component ────────────────────────────────────────────────────
-
-interface RecordModalProps {
-  table: TableDef;
-  record: AppRecord | null; // null = new record
-  onSave: (data: Record<string, unknown>) => void;
-  onClose: () => void;
-  saving: boolean;
-  colors: ReturnType<typeof getThemeVars>;
-}
-
-function RecordModal({ table, record, onSave, onClose, saving, colors }: RecordModalProps) {
-  const isEdit = record !== null;
-  const [formData, setFormData] = useState<Record<string, unknown>>(() => {
-    if (record) {
-      const data: Record<string, unknown> = {};
-      table.fields.forEach((f) => { const fn = fieldName(f); data[fn] = record.data?.[fn] ?? ''; });
-      return data;
-    }
-    const data: Record<string, unknown> = {};
-    table.fields.forEach((f) => {
-      data[fieldName(f)] = f.type === 'checkbox' ? false : '';
-    });
-    return data;
-  });
-
-  const handleChange = (fieldName: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, [fieldName]: value }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData);
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-    color: colors.text, fontSize: '14px', outline: 'none',
-    transition: 'border-color 0.2s', boxSizing: 'border-box',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block', marginBottom: '6px', fontSize: '13px',
-    fontWeight: 600, color: colors.textSecondary,
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="rounded-2xl"
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          width: '100%', maxWidth: '560px', maxHeight: '85vh',
-          overflow: 'auto', padding: '32px',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ color: colors.text, fontSize: '20px', fontWeight: 700, margin: 0 }}>
-            {isEdit ? `Modifica ${table.label}` : `Nuovo ${table.label}`}
-          </h2>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: colors.textSecondary, padding: '4px',
-            }}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {table.fields.map((field) => {
-            const fn = fieldName(field);
-            return (
-            <div key={fn}>
-              <label style={labelStyle}>
-                {field.label}
-                {field.required && <span style={{ color: colors.danger, marginLeft: '4px' }}>*</span>}
-              </label>
-
-              {field.type === 'textarea' ? (
-                <textarea
-                  value={String(formData[fn] ?? '')}
-                  onChange={(e) => handleChange(fn, e.target.value)}
-                  rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                />
-              ) : field.type === 'select' ? (
-                <div style={{ position: 'relative' }}>
-                  <select
-                    value={String(formData[fn] ?? '')}
-                    onChange={(e) => handleChange(fn, e.target.value)}
-                    style={{ ...inputStyle, appearance: 'none', paddingRight: '36px' }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                    onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                  >
-                    <option value="">Seleziona...</option>
-                    {(field.options || []).map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    style={{
-                      position: 'absolute', right: '12px', top: '50%',
-                      transform: 'translateY(-50%)', color: colors.textSecondary,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                </div>
-              ) : field.type === 'checkbox' ? (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formData[fn])}
-                    onChange={(e) => handleChange(fn, e.target.checked)}
-                    style={{ width: '18px', height: '18px', accentColor: colors.primary }}
-                  />
-                  <span style={{ color: colors.text, fontSize: '14px' }}>
-                    {formData[fn] ? 'Attivo' : 'Non attivo'}
-                  </span>
-                </label>
-              ) : field.type === 'number' ? (
-                <input
-                  type="number"
-                  value={String(formData[fn] ?? '')}
-                  onChange={(e) => handleChange(fn, e.target.value)}
-                  style={inputStyle}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                />
-              ) : field.type === 'date' ? (
-                <input
-                  type="date"
-                  value={String(formData[fn] ?? '')}
-                  onChange={(e) => handleChange(fn, e.target.value)}
-                  style={inputStyle}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                />
-              ) : (
-                <input
-                  type="text"
-                  value={String(formData[fn] ?? '')}
-                  onChange={(e) => handleChange(fn, e.target.value)}
-                  style={inputStyle}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                />
-              )}
-            </div>
-            );
-          })}
-
-          {/* Buttons */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '10px 20px', borderRadius: '10px',
-                border: `1px solid ${colors.border}`, background: 'transparent',
-                color: colors.textSecondary, fontSize: '14px', fontWeight: 600,
-                cursor: 'pointer', transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.cardBgAlt; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              Annulla
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              style={{
-                padding: '10px 24px', borderRadius: '10px', border: 'none',
-                background: saving ? colors.textSecondary : colors.primary,
-                color: '#fff', fontSize: '14px', fontWeight: 600,
-                cursor: saving ? 'not-allowed' : 'pointer', transition: 'opacity 0.2s',
-              }}
-              onMouseEnter={(e) => { if (!saving) e.currentTarget.style.opacity = '0.85'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-            >
-              {saving ? 'Salvataggio...' : 'Salva'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
@@ -1067,7 +542,7 @@ interface ColorPickerProps {
   onChange: (color: string) => void;
 }
 
-function ColorPicker({ value, onChange, colors = getThemeVars('dark', '#6366f1') }: ColorPickerProps & { colors?: ReturnType<typeof getThemeVars> }) {
+function ColorPicker({ value, onChange }: ColorPickerProps) {
   const [hue, setHue] = useState(0);
   const [saturation, setSaturation] = useState(100);
   const [lightness, setLightness] = useState(50);
@@ -1145,27 +620,15 @@ function ColorPicker({ value, onChange, colors = getThemeVars('dark', '#6366f1')
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-        <div
-          style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '8px',
-            background: value,
-            border: '2px solid rgba(255,255,255,0.2)',
-          }}
-        />
-        <div style={{ flex: 1 }}>
-          <div style={{ color: colors.text, fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>
-            Colore Attuale
-          </div>
-          <div style={{ color: colors.textSecondary, fontSize: '12px', fontFamily: 'monospace' }}>
-            {value.toUpperCase()}
-          </div>
+      <div className="mb-3 flex items-center gap-3">
+        <div className="h-12 w-12 rounded-lg border-2 border-white/20" style={{ background: value }} />
+        <div className="flex-1">
+          <div className="mb-1 text-sm font-semibold text-tenant-text">Colore Attuale</div>
+          <div className="font-mono text-xs text-tenant-text-secondary">{value.toUpperCase()}</div>
         </div>
       </div>
 
-      <div style={{ position: 'relative', marginBottom: '12px' }}>
+      <div className="relative mb-3">
         <canvas
           ref={canvasRef}
           width={canvasWidth}
@@ -1175,32 +638,16 @@ function ColorPicker({ value, onChange, colors = getThemeVars('dark', '#6366f1')
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
-          style={{
-            width: '100%',
-            height: '60px',
-            borderRadius: '8px',
-            cursor: 'crosshair',
-            border: `2px solid ${colors.border}`,
-          }}
+          className="h-[60px] w-full cursor-crosshair rounded-lg border-2 border-tenant-border"
         />
         <div
-          style={{
-            position: 'absolute',
-            left: `${cursorX - 10}px`,
-            top: `${cursorY - 10}px`,
-            width: '20px',
-            height: '20px',
-            borderRadius: '50%',
-            background: 'white',
-            border: '2px solid black',
-            pointerEvents: 'none',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-          }}
+          className="pointer-events-none absolute h-5 w-5 rounded-full border-2 border-black bg-white shadow-md"
+          style={{ left: `${cursorX - 10}px`, top: `${cursorY - 10}px` }}
         />
       </div>
 
       <div>
-        <label style={{ display: 'block', marginBottom: '6px', fontSize: '12px', color: colors.textSecondary }}>
+        <label className="mb-1.5 block text-xs text-tenant-text-secondary">
           Luminosità: {lightness}%
         </label>
         <input
@@ -1213,11 +660,11 @@ function ColorPicker({ value, onChange, colors = getThemeVars('dark', '#6366f1')
             setLightness(newLightness);
             updateColor(hue, saturation, newLightness);
           }}
-          style={{ width: '100%' }}
+          className="w-full accent-tenant-primary"
         />
       </div>
 
-      <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+      <div className="mt-3 flex flex-wrap gap-2">
         {COLOR_PRESETS.map((preset) => (
           <button
             key={preset}
@@ -1230,15 +677,11 @@ function ColorPicker({ value, onChange, colors = getThemeVars('dark', '#6366f1')
               setSaturation(s);
               setLightness(l);
             }}
-            style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '6px',
-              background: preset,
-              border: value === preset ? '2px solid white' : '2px solid transparent',
-              cursor: 'pointer',
-              boxShadow: value === preset ? `0 0 0 2px ${preset}` : 'none',
-            }}
+            className={cn(
+              'h-8 w-8 rounded-md border-2',
+              value === preset ? 'border-white' : 'border-transparent'
+            )}
+            style={{ background: preset, boxShadow: value === preset ? `0 0 0 2px ${preset}` : 'none' }}
           />
         ))}
       </div>
@@ -1387,408 +830,257 @@ function SettingsModal({ prefs, onPrefsChange, onClose, onLogout, onChangePasswo
     }
   };
 
-  const sectionTitle: React.CSSProperties = {
-    color: colors.text, fontSize: '15px', fontWeight: 700,
-    marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em',
-  };
-
-  const sectionBox: React.CSSProperties = {
-    background: colors.cardBgAlt, borderRadius: '12px',
-    padding: '20px', marginBottom: '20px',
-    border: `1px solid ${colors.border}`,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-    color: colors.text, fontSize: '14px', outline: 'none',
-    boxSizing: 'border-box',
-  };
-
   const layouts: Array<{ key: UserPrefs['layout']; label: string; desc: string }> = [
     { key: 'corporate', label: 'Corporate', desc: 'Ampio e spazioso' },
     { key: 'modern', label: 'Modern', desc: 'Bilanciato' },
     { key: 'compact', label: 'Compact', desc: 'Compatto e denso' },
   ];
 
+  const sectionCard = 'mb-5 rounded-xl border border-tenant-border bg-tenant-card-alt p-5';
+  const sectionTitle = 'mb-3 text-[15px] font-bold uppercase tracking-wide text-tenant-text';
+
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="rounded-2xl"
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          width: '100%', maxWidth: '640px', maxHeight: '85vh',
-          overflow: 'auto', padding: '32px',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-          <h2 style={{ color: colors.text, fontSize: '22px', fontWeight: 700, margin: 0 }}>Impostazioni</h2>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '4px' }}
-          >
-            <X size={20} />
-          </button>
-        </div>
+    <Dialog open onClose={onClose} maxWidthClassName="max-w-[640px]">
+      <DialogHeader title="Impostazioni" onClose={onClose} />
 
-        {/* Layout Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Layout</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-            {layouts.map(({ key, label, desc }) => {
-              const isActive = prefs.layout === key;
-              const cfg = LAYOUT_CONFIG[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => updatePref('layout', key)}
-                  style={{
-                    padding: '16px 12px', borderRadius: '12px', cursor: 'pointer',
-                    border: `2px solid ${isActive ? colors.primary : colors.border}`,
-                    background: isActive ? colors.primary + '15' : 'transparent',
-                    transition: 'all 0.2s', textAlign: 'center',
-                  }}
-                >
-                  {/* Thumbnail */}
+      {/* Layout Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Layout</div>
+        <div className="grid grid-cols-3 gap-3">
+          {layouts.map(({ key, label, desc }) => {
+            const isActive = prefs.layout === key;
+            return (
+              <button
+                key={key}
+                onClick={() => updatePref('layout', key)}
+                className={cn(
+                  'rounded-xl border-2 p-4 text-center transition-all',
+                  isActive ? 'border-tenant-primary bg-tenant-primary/15' : 'border-tenant-border bg-transparent'
+                )}
+              >
+                {/* Thumbnail */}
+                <div className="mb-2.5 flex h-12 w-full overflow-hidden rounded-lg border border-tenant-border bg-tenant-card">
                   <div
-                    style={{
-                      width: '100%', height: '48px', borderRadius: '8px',
-                      background: colors.cardBg, border: `1px solid ${colors.border}`,
-                      marginBottom: '10px', display: 'flex', overflow: 'hidden',
-                    }}
-                  >
-                    <div style={{
-                      width: key === 'corporate' ? '35%' : key === 'modern' ? '28%' : '22%',
-                      background: isActive ? colors.primary : colors.textSecondary + '40',
-                      borderRadius: '4px', margin: '4px',
-                    }} />
-                    <div style={{ flex: 1, padding: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      <div style={{ height: '6px', borderRadius: '3px', background: colors.border }} />
-                      <div style={{ height: '4px', borderRadius: '2px', background: colors.border, width: '70%' }} />
-                      <div style={{ height: '4px', borderRadius: '2px', background: colors.border, width: '50%' }} />
-                    </div>
+                    className={cn('m-1 rounded', isActive ? 'bg-tenant-primary' : 'bg-tenant-text-secondary/40')}
+                    style={{ width: key === 'corporate' ? '35%' : key === 'modern' ? '28%' : '22%' }}
+                  />
+                  <div className="flex flex-1 flex-col gap-[3px] p-1.5">
+                    <div className="h-1.5 rounded-sm bg-tenant-border" />
+                    <div className="h-1 w-[70%] rounded-sm bg-tenant-border" />
+                    <div className="h-1 w-1/2 rounded-sm bg-tenant-border" />
                   </div>
-                  <div style={{ color: colors.text, fontSize: '13px', fontWeight: 600 }}>{label}</div>
-                  <div style={{ color: colors.textSecondary, fontSize: '11px', marginTop: '2px' }}>{desc}</div>
-                </button>
-              );
-            })}
-          </div>
+                </div>
+                <div className="text-[13px] font-semibold text-tenant-text">{label}</div>
+                <div className="mt-0.5 text-[11px] text-tenant-text-secondary">{desc}</div>
+              </button>
+            );
+          })}
         </div>
+      </div>
 
-        {/* Theme Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Tema</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {(['dark', 'light'] as const).map((t) => {
-              const isActive = prefs.theme === t;
-              return (
-                <button
-                  key={t}
-                  onClick={() => updatePref('theme', t)}
-                  style={{
-                    padding: '14px', borderRadius: '12px', cursor: 'pointer',
-                    border: `2px solid ${isActive ? colors.primary : colors.border}`,
-                    background: isActive ? colors.primary + '15' : 'transparent',
-                    display: 'flex', alignItems: 'center', gap: '10px',
-                    transition: 'all 0.2s',
+      {/* Theme Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Tema</div>
+        <div className="grid grid-cols-2 gap-3">
+          {(['dark', 'light'] as const).map((t) => {
+            const isActive = prefs.theme === t;
+            return (
+              <button
+                key={t}
+                onClick={() => updatePref('theme', t)}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-xl border-2 p-3.5 transition-all',
+                  isActive ? 'border-tenant-primary bg-tenant-primary/15' : 'border-tenant-border bg-transparent'
+                )}
+              >
+                <div className={cn('h-8 w-8 rounded-lg border', t === 'dark' ? 'bg-[#0a0e1a] border-[#334155]' : 'bg-[#f8fafc] border-[#e2e8f0]')} />
+                <span className="text-sm font-semibold text-tenant-text">{t === 'dark' ? 'Scuro' : 'Chiaro'}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Color Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Colore Primario</div>
+        <ColorPicker
+          value={prefs.primaryColor}
+          onChange={(color) => updatePref('primaryColor', color)}
+        />
+      </div>
+
+      {/* Brand Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Brand</div>
+        <div className="flex flex-col gap-3">
+          <div>
+            <Label>Nome Azienda</Label>
+            <Input
+              type="text"
+              value={prefs.companyName}
+              onChange={(e) => updatePref('companyName', e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Logo Azienda</Label>
+            {prefs.logoUrl && (
+              <div className="mb-2">
+                <img
+                  src={prefs.logoUrl}
+                  alt="Logo preview"
+                  className="h-12 max-w-[160px] rounded-lg border border-tenant-border object-contain"
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-tenant-border bg-tenant-card px-4 py-2 text-[13px] font-medium text-tenant-text">
+                📁 Sfoglia...
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (ev) => {
+                        updatePref('logoUrl', ev.target?.result as string);
+                      };
+                      reader.readAsDataURL(file);
+                    }
                   }}
-                >
-                  <div style={{
-                    width: '32px', height: '32px', borderRadius: '8px',
-                    background: t === 'dark' ? '#0a0e1a' : '#f8fafc',
-                    border: `1px solid ${t === 'dark' ? '#334155' : '#e2e8f0'}`,
-                  }} />
-                  <span style={{ color: colors.text, fontSize: '14px', fontWeight: 600 }}>
-                    {t === 'dark' ? 'Scuro' : 'Chiaro'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Color Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Colore Primario</div>
-          <ColorPicker 
-            value={prefs.primaryColor} 
-            onChange={(color) => updatePref('primaryColor', color)} 
-            colors={colors}
-          />
-        </div>
-
-        {/* Brand Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Brand</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600, color: colors.textSecondary }}>
-                Nome Azienda
-              </label>
-              <input
-                type="text"
-                value={prefs.companyName}
-                onChange={(e) => updatePref('companyName', e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600, color: colors.textSecondary }}>
-                Logo Azienda
+                  className="hidden"
+                />
               </label>
               {prefs.logoUrl && (
-                <div style={{ marginBottom: '8px' }}>
-                  <img
-                    src={prefs.logoUrl}
-                    alt="Logo preview"
-                    style={{ height: '48px', maxWidth: '160px', objectFit: 'contain', borderRadius: '8px', border: `1px solid ${colors.border}` }}
-                  />
-                </div>
+                <Button type="button" variant="destructive" size="sm" onClick={() => updatePref('logoUrl', '')}>
+                  Rimuovi
+                </Button>
               )}
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <label
-                  style={{
-                    padding: '8px 16px', borderRadius: '8px', border: `1px solid ${colors.border}`,
-                    background: colors.cardBg, color: colors.text, fontSize: '13px', fontWeight: 500,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
-                  }}
-                >
-                  📁 Sfoglia...
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (ev) => {
-                          updatePref('logoUrl', ev.target?.result as string);
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-                {prefs.logoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => updatePref('logoUrl', '')}
-                    style={{
-                      padding: '8px 12px', borderRadius: '8px', border: 'none',
-                      background: colors.danger + '15', color: colors.danger,
-                      fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    Rimuovi
-                  </button>
-                )}
-              </div>
             </div>
           </div>
         </div>
-
-        {/* Password Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Cambia Password</div>
-          <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {!isSupabaseAuth && (
-              <input
-                type="password"
-                placeholder="Password attuale"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                autoComplete="current-password"
-                style={inputStyle}
-              />
-            )}
-            <input
-              type="password"
-              placeholder="Nuova password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-              style={inputStyle}
-            />
-            <input
-              type="password"
-              placeholder="Conferma nuova password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-              style={inputStyle}
-            />
-            {passwordMsg && (
-              <div style={{
-                padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 500,
-                background: passwordMsg.type === 'success' ? colors.success + '20' : colors.danger + '20',
-                color: passwordMsg.type === 'success' ? colors.success : colors.danger,
-              }}>
-                {passwordMsg.text}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={changingPw}
-              style={{
-                padding: '10px 20px', borderRadius: '10px', border: 'none',
-                background: changingPw ? colors.textSecondary : colors.primary,
-                color: '#fff', fontSize: '14px', fontWeight: 600,
-                cursor: changingPw ? 'not-allowed' : 'pointer', alignSelf: 'flex-end',
-              }}
-            >
-              {changingPw ? 'Salvataggio...' : 'Cambia Password'}
-            </button>
-          </form>
-        </div>
-
-        {/* Subscription Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Abbonamento</div>
-          {subscriptionStatus === 'trial' && trialEndsAt && (
-            <p style={{ color: colors.textSecondary, fontSize: '13px', marginBottom: '12px' }}>
-              Periodo di prova attivo fino al {new Date(trialEndsAt).toLocaleDateString('it-IT')}
-            </p>
-          )}
-          {(subscriptionStatus === 'trial' || subscriptionStatus === 'expired' || subscriptionStatus === 'past_due' || subscriptionStatus === 'canceled') ? (
-            <button
-              type="button"
-              onClick={handleSubscribe}
-              disabled={subscriptionLoading}
-              style={{
-                width: '100%', padding: '12px 20px', borderRadius: '10px', border: 'none',
-                background: colors.primary, color: '#fff', fontSize: '14px', fontWeight: 700,
-                cursor: subscriptionLoading ? 'not-allowed' : 'pointer', opacity: subscriptionLoading ? 0.6 : 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              }}
-            >
-              <CreditCard size={16} />
-              {subscriptionLoading ? 'Attendere...' : `${subscriptionStatus === 'expired' ? 'Rinnova Abbonamento' : 'Abbonati'} - ${subscriptionPrice}€/mese`}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleCancelSubscription}
-              disabled={subscriptionLoading}
-              style={{
-                width: '100%', padding: '12px 20px', borderRadius: '10px',
-                border: `1px solid ${colors.danger}55`, background: 'transparent', color: colors.danger,
-                fontSize: '14px', fontWeight: 700, cursor: subscriptionLoading ? 'not-allowed' : 'pointer',
-                opacity: subscriptionLoading ? 0.6 : 1,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              }}
-            >
-              <XCircle size={16} />
-              {subscriptionLoading ? 'Attendere...' : 'Disdici Abbonamento'}
-            </button>
-          )}
-          {subscriptionMsg && (
-            <div style={{
-              marginTop: '12px', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 500,
-              background: subscriptionMsg.type === 'success' ? colors.success + '20' : colors.danger + '20',
-              color: subscriptionMsg.type === 'success' ? colors.success : colors.danger,
-            }}>
-              {subscriptionMsg.text}
-            </div>
-          )}
-        </div>
-
-        {/* Reset Schema Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>Tabelle Personalizzate</div>
-          <p style={{ color: colors.textSecondary, fontSize: '13px', marginBottom: '16px' }}>
-            {customTableCount > 0
-              ? `Hai ${customTableCount} tabelle personalizzate create con l'AI o manualmente. Se qualcosa non funziona come previsto, puoi riportare l'app allo stato iniziale: verranno rimosse solo le tabelle personalizzate e i loro dati, le tabelle originali del gestionale (${'clienti, prodotti, ordini...'}) restano intatte.`
-              : 'Non hai ancora creato tabelle personalizzate.'}
-          </p>
-          <button
-            type="button"
-            onClick={onResetSchema}
-            disabled={resettingSchema || customTableCount === 0}
-            style={{
-              width: '100%', padding: '12px 20px', borderRadius: '10px',
-              border: `1px solid ${colors.danger}55`, background: 'transparent', color: colors.danger,
-              fontSize: '14px', fontWeight: 700,
-              cursor: resettingSchema || customTableCount === 0 ? 'not-allowed' : 'pointer',
-              opacity: resettingSchema || customTableCount === 0 ? 0.6 : 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            }}
-          >
-            <XCircle size={16} />
-            {resettingSchema ? 'Ripristino...' : 'Ripristina stato iniziale'}
-          </button>
-        </div>
-
-        {/* QR Code Section */}
-        <div style={sectionBox}>
-          <div style={sectionTitle}>QR Code Accesso</div>
-          <p style={{ color: colors.textSecondary, fontSize: '13px', marginBottom: '16px' }}>
-            Scansiona questo codice QR per accedere all'app da qualsiasi dispositivo
-          </p>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'center', 
-            padding: '16px', 
-            background: '#ffffff', 
-            borderRadius: '12px',
-            marginBottom: '12px'
-          }}>
-            <QRCodeCanvas 
-              value={`${typeof window !== 'undefined' ? window.location.origin : ''}/a/${slug}`}
-              size={160}
-              level="M"
-              includeMargin={false}
-            />
-          </div>
-          <div style={{ 
-            textAlign: 'center',
-            padding: '12px',
-            background: colors.cardBg,
-            borderRadius: '8px',
-            border: `1px solid ${colors.border}`
-          }}>
-            <a 
-              href={`/a/${slug}`}
-              style={{ 
-                color: colors.primary, 
-                fontSize: '14px', 
-                fontWeight: 600,
-                textDecoration: 'none',
-                wordBreak: 'break-all'
-              }}
-            >
-              {typeof window !== 'undefined' ? window.location.origin : ''}/a/{slug}
-            </a>
-          </div>
-        </div>
-
-        {/* Logout */}
-        <button
-          onClick={onLogout}
-          style={{
-            width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
-            background: colors.danger + '15', color: colors.danger,
-            fontSize: '15px', fontWeight: 700, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '30'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '15'; }}
-        >
-          <LogOut size={18} /> Logout
-        </button>
       </div>
-    </div>
+
+      {/* Password Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Cambia Password</div>
+        <form onSubmit={handlePasswordChange} className="flex flex-col gap-3">
+          {!isSupabaseAuth && (
+            <Input
+              type="password"
+              placeholder="Password attuale"
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          )}
+          <Input
+            type="password"
+            placeholder="Nuova password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          <Input
+            type="password"
+            placeholder="Conferma nuova password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          {passwordMsg && (
+            <div className={cn(
+              'rounded-lg px-3.5 py-2.5 text-[13px] font-medium',
+              passwordMsg.type === 'success' ? 'bg-tenant-success/15 text-tenant-success' : 'bg-tenant-danger/15 text-tenant-danger'
+            )}>
+              {passwordMsg.text}
+            </div>
+          )}
+          <Button type="submit" disabled={changingPw} className="self-end">
+            {changingPw ? 'Salvataggio...' : 'Cambia Password'}
+          </Button>
+        </form>
+      </div>
+
+      {/* Subscription Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Abbonamento</div>
+        {subscriptionStatus === 'trial' && trialEndsAt && (
+          <p className="mb-3 text-[13px] text-tenant-text-secondary">
+            Periodo di prova attivo fino al {new Date(trialEndsAt).toLocaleDateString('it-IT')}
+          </p>
+        )}
+        {(subscriptionStatus === 'trial' || subscriptionStatus === 'expired' || subscriptionStatus === 'past_due' || subscriptionStatus === 'canceled') ? (
+          <Button type="button" onClick={handleSubscribe} disabled={subscriptionLoading} className="w-full">
+            <CreditCard size={16} />
+            {subscriptionLoading ? 'Attendere...' : `${subscriptionStatus === 'expired' ? 'Rinnova Abbonamento' : 'Abbonati'} - ${subscriptionPrice}€/mese`}
+          </Button>
+        ) : (
+          <Button type="button" variant="destructive" onClick={handleCancelSubscription} disabled={subscriptionLoading} className="w-full">
+            <XCircle size={16} />
+            {subscriptionLoading ? 'Attendere...' : 'Disdici Abbonamento'}
+          </Button>
+        )}
+        {subscriptionMsg && (
+          <div className={cn(
+            'mt-3 rounded-lg px-3.5 py-2.5 text-[13px] font-medium',
+            subscriptionMsg.type === 'success' ? 'bg-tenant-success/15 text-tenant-success' : 'bg-tenant-danger/15 text-tenant-danger'
+          )}>
+            {subscriptionMsg.text}
+          </div>
+        )}
+      </div>
+
+      {/* Reset Schema Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>Tabelle Personalizzate</div>
+        <p className="mb-4 text-[13px] text-tenant-text-secondary">
+          {customTableCount > 0
+            ? `Hai ${customTableCount} tabelle personalizzate create con l'AI o manualmente. Se qualcosa non funziona come previsto, puoi riportare l'app allo stato iniziale: verranno rimosse solo le tabelle personalizzate e i loro dati, le tabelle originali del gestionale (${'clienti, prodotti, ordini...'}) restano intatte.`
+            : 'Non hai ancora creato tabelle personalizzate.'}
+        </p>
+        <Button
+          type="button"
+          variant="destructive"
+          onClick={onResetSchema}
+          disabled={resettingSchema || customTableCount === 0}
+          className="w-full"
+        >
+          <XCircle size={16} />
+          {resettingSchema ? 'Ripristino...' : 'Ripristina stato iniziale'}
+        </Button>
+      </div>
+
+      {/* QR Code Section */}
+      <div className={sectionCard}>
+        <div className={sectionTitle}>QR Code Accesso</div>
+        <p className="mb-4 text-[13px] text-tenant-text-secondary">
+          Scansiona questo codice QR per accedere all'app da qualsiasi dispositivo
+        </p>
+        <div className="mb-3 flex justify-center rounded-xl bg-white p-4">
+          <QRCodeCanvas
+            value={`${typeof window !== 'undefined' ? window.location.origin : ''}/a/${slug}`}
+            size={160}
+            level="M"
+            includeMargin={false}
+          />
+        </div>
+        <div className="rounded-lg border border-tenant-border p-3 text-center">
+          <a
+            href={`/a/${slug}`}
+            className="break-all text-sm font-semibold text-tenant-primary no-underline"
+          >
+            {typeof window !== 'undefined' ? window.location.origin : ''}/a/{slug}
+          </a>
+        </div>
+      </div>
+
+      {/* Logout */}
+      <Button type="button" variant="destructive" onClick={onLogout} className="w-full py-3.5 text-[15px]">
+        <LogOut size={18} /> Logout
+      </Button>
+    </Dialog>
   );
 }
 
@@ -1826,62 +1118,36 @@ function LoginScreen({ slug, appName, logoUrl, primaryColor, onLogin }: LoginScr
 
   return (
     <div
-      style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#0a0e1a', padding: '20px',
-      }}
+      className="flex min-h-screen items-center justify-center bg-[#0a0e1a] p-5"
+      style={{ '--tenant-primary': primaryColor } as React.CSSProperties}
     >
-      <div
-        className="rounded-2xl"
-        style={{
-          background: '#1e293b', border: '1px solid #334155', padding: '40px',
-          width: '100%', maxWidth: '400px', textAlign: 'center',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        }}
-      >
+      <Card className="w-full max-w-[400px] border-white/10 bg-white/[0.04] p-10 text-center shadow-2xl">
         {logoUrl && (
-          <img src={logoUrl} alt={appName} style={{ height: '48px', marginBottom: '16px', objectFit: 'contain' }} />
+          <img src={logoUrl} alt={appName} className="mx-auto mb-4 h-12 object-contain" />
         )}
-        <h1 style={{ color: '#ffffff', fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>{appName}</h1>
-        <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '28px' }}>Inserisci la password per accedere</p>
+        <h1 className="mb-2 text-2xl font-bold text-white">{appName}</h1>
+        <p className="mb-7 text-sm text-slate-400">Inserisci la password per accedere</p>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <input
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <Input
             type="password"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
-            style={{
-              width: '100%', padding: '12px 16px', borderRadius: '10px',
-              border: '1px solid #334155', background: '#0f172a',
-              color: '#ffffff', fontSize: '15px', outline: 'none',
-              boxSizing: 'border-box',
-            }}
             autoFocus
+            className="border-white/10 bg-[#0f172a] text-white placeholder:text-slate-500"
           />
           {error && (
-            <div style={{
-              padding: '10px 14px', borderRadius: '8px', fontSize: '13px',
-              background: '#ef444420', color: '#ef4444',
-            }}>
+            <div className="rounded-lg bg-tenant-danger/15 px-3.5 py-2.5 text-[13px] text-tenant-danger">
               {error}
             </div>
           )}
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              padding: '12px', borderRadius: '10px', border: 'none',
-              background: loading ? '#64748b' : primaryColor,
-              color: '#fff', fontSize: '15px', fontWeight: 600,
-              cursor: loading ? 'not-allowed' : 'pointer',
-            }}
-          >
+          <Button type="submit" disabled={loading} size="lg">
             {loading ? 'Verifica...' : 'Accedi'}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -1985,8 +1251,6 @@ function ViewerProFinal() {
   // Edit table modal
   const [editTable, setEditTable] = useState<TableDef | null>(null);
   const [editTableSaving, setEditTableSaving] = useState(false);
-  const [importazioniOpen, setImportazioniOpen] = useState(false);
-  const [comunicazioniOpen, setComunicazioniOpen] = useState(false);
 
   const [prefs, setPrefs] = useState<UserPrefs>({
     layout: 'modern',
@@ -2013,14 +1277,6 @@ function ViewerProFinal() {
     || innerConfig?.tables 
     || config?.tables 
     || [];
-  
-  console.log('[Viewer] Config:', config);
-  console.log('[Viewer] Config keys:', config ? Object.keys(config) : 'null');
-  console.log('[Viewer] innerConfig (config.config):', innerConfig);
-  console.log('[Viewer] innerConfig keys:', innerConfig ? Object.keys(innerConfig) : 'null');
-  console.log('[Viewer] innerConfig.schema:', innerConfig?.schema);
-  console.log('[Viewer] Blueprint:', config?.blueprint);
-  console.log('[Viewer] Tables found:', tables.length, tables);
   
   const activeTable = tables.find((t) => t.name === activeView) || null;
   const datiAziendaliTable = getDatiAziendaliTable(tables);
@@ -2058,8 +1314,8 @@ function ViewerProFinal() {
   // l'eventuale colore primario personalizzato dall'utente in Impostazioni
   // come override — non più un dark/light fisso indipendente dal settore.
   const colors = useMemo(
-    () => designTokensToThemeVars(designTokens, prefs.primaryColor || config?.branding?.primary_color || undefined),
-    [designTokens, prefs.primaryColor, config?.branding?.primary_color]
+    () => designTokensToThemeVars(designTokens, prefs.primaryColor || config?.branding?.primary_color || undefined, theme),
+    [designTokens, prefs.primaryColor, config?.branding?.primary_color, theme]
   );
   const layoutCfg = LAYOUT_CONFIG[prefs.layout];
 
@@ -2095,12 +1351,18 @@ function ViewerProFinal() {
   }, [sectorFromConfig, designTokens, prefsKey]);
 
   // ─── Save preferences to localStorage ────────────────────────────────────
+  // Aspetta che il settore sia noto (stesso guard della semina qui sopra):
+  // altrimenti questo effetto salverebbe i default hardcoded dello state
+  // iniziale (tema scuro, indaco) PRIMA che l'effetto di semina riesca a
+  // scriverci sopra i valori corretti del settore, vincendo la race e
+  // congelando ogni tenant sul tema/colore di default invece di quello giusto.
 
   useEffect(() => {
+    if (!sectorFromConfig) return;
     try {
       localStorage.setItem(prefsKey, JSON.stringify(prefs));
     } catch { /* ignore */ }
-  }, [prefs, prefsKey]);
+  }, [prefs, prefsKey, sectorFromConfig]);
 
   // ─── Registra service worker + manifest PWA dinamico ─────────────────────
 
@@ -2187,6 +1449,14 @@ function ViewerProFinal() {
   // ─── Load records when table changes ─────────────────────────────────────
 
   const loadRecords = useCallback(async (tableName: string, password: string, appId: string) => {
+    // Le app demo dello Showcase (dashboard/showcase) non hanno righe reali
+    // nel backend (vedi getDemoApp in lib/demoApps.ts): saltiamo la chiamata
+    // invece di generare un errore atteso ad ogni cambio tabella.
+    if (appId.startsWith('demo-')) {
+      setRecords([]);
+      setRecordsLoading(false);
+      return;
+    }
     setRecordsLoading(true);
     try {
       const res = await fetch(`/api/client/apps/${appId}/records?table=${tableName}`, {
@@ -2225,6 +1495,11 @@ function ViewerProFinal() {
 
   const loadCustomTables = useCallback(async () => {
     if (!session) return;
+    // Stesso discorso di loadRecords: le app demo non hanno backend reale.
+    if (session.appInfo.id.startsWith('demo-')) {
+      setCustomTables([]);
+      return;
+    }
     setCustomTablesLoading(true);
     try {
       const res = await fetch(`/api/client/apps/${session.appInfo.id}/custom-tables`, {
@@ -2690,6 +1965,7 @@ function ViewerProFinal() {
           designTokens={designTokens}
           companyName={companyName}
           logoUrl={logoUrl}
+          slug={slug}
           tables={tables}
           activeView={activeView}
           setActiveView={setActiveView}
@@ -2782,385 +2058,43 @@ function ViewerProFinal() {
 
     return (
     <>
-      <div id="app-root-container" style={{ display: 'flex', minHeight: '100vh', background: '#FAFAFA', transition: 'background 0.3s', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      {/* Mobile overlay */}
-      {isMobile && sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-            zIndex: 15, transition: 'opacity 0.3s',
-          }}
-        />
-      )}
-
-      {/* Sidebar */}
-      {(!isMobile || sidebarOpen) && (
-        <aside
-          className="w-[280px]"
-          style={{
-            background: '#FFFFFF',
-            borderRight: '1px solid #F4F4F5',
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            color: '#18181B',
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.3s, transform 0.3s',
-            position: 'relative',
-            zIndex: 20,
-            flexShrink: 0,
-            // Mobile: off-canvas by default
-            ...(isMobile ? {
-              position: 'fixed',
-              left: '0',
-              top: 0,
-              bottom: 0,
-              width: '280px',
-              boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
-            } : {}),
-          }}
-        >
-        {/* Logo */}
-        <div style={{
-          padding: '24px 20px', borderBottom: `1px solid rgba(255,255,255,0.2)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {logoUrl ? (
-            <img src={logoUrl} alt={companyName} style={{ height: '80px', width: '80px', borderRadius: '12px', objectFit: 'cover' }} />
-          ) : (
-            <div style={{
-              width: '80px', height: '80px', borderRadius: '12px',
-              background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontWeight: 700, fontSize: '32px',
-            }}>
-              {companyName.charAt(0).toUpperCase()}
-            </div>
-          )}
-        </div>
-
-        {/* Nav Items */}
-        <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {/* Dashboard */}
-          <SidebarItem
-            icon={<LayoutDashboard size={18} />}
-            label="Dashboard"
-            active={activeView === 'dashboard'}
-            onClick={() => setActiveView('dashboard')}
-            colors={colors}
-            primaryColor={primaryColor}
-          />
-
-          {/* Tables fisse: di lavoro in cima, tabelle di sistema (Fatture, Dati Azienda) in fondo */}
-          {sortTablesForSidebar(tables).map((table) => (
-            <div key={table.name} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <SidebarItem
-                  icon={resolveIcon(table.icon, table.name)}
-                  label={table.labelPlural}
-                  active={activeView === table.name}
-                  onClick={() => setActiveView(table.name)}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditTable(table);
-                }}
-                title="Modifica tabella"
-                style={{
-                  background: 'rgba(255,255,255,0.15)',
-                  border: 'none', borderRadius: '6px',
-                  padding: '4px', cursor: 'pointer',
-                  color: 'rgba(255,255,255,0.7)',
-                  display: 'flex', alignItems: 'center',
-                  marginRight: '8px', flexShrink: 0,
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = '#fff'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-              >
-                <Settings2 size={14} />
-              </button>
-            </div>
-          ))}
-
-          {/* Tabelle personalizzate */}
-          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid rgba(0,0,0,0.08)` }}>
-            <div style={{ padding: '0 14px 8px', fontSize: '11px', fontWeight: 600, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Personalizzate
-            </div>
-            {customTables.map((ct: any) => (
-              <SidebarItem
-                key={`custom_${ct.name}`}
-                icon={<LayoutDashboard size={18} />}
-                label={ct.labelPlural || ct.label + 'i'}
-                active={activeView === `custom_${ct.name}`}
-                onClick={() => setActiveView(`custom_${ct.name}`)}
-                colors={colors}
-                primaryColor={primaryColor}
-              />
-            ))}
-            <button
-              onClick={() => setShowCreateCustomTable(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                background: 'rgba(0,0,0,0.04)', color: '#18181B',
-                fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-                width: '100%', justifyContent: 'center', marginTop: '4px',
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.08)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-            >
-              <Plus size={14} /> Nuova Tabella
-            </button>
-            <button
-              onClick={() => { setAiTableError(null); setShowAITableModal(true); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                background: `${primaryColor}15`, color: primaryColor,
-                fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-                width: '100%', justifyContent: 'center', marginTop: '6px',
-                transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = `${primaryColor}25`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = `${primaryColor}15`; }}
-            >
-              <Sparkles size={14} /> Crea con AI
-            </button>
-          </div>
-
-          {/* Comunicazioni - Collapsible */}
-          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid rgba(0,0,0,0.08)` }}>
-            <button
-              onClick={() => setComunicazioniOpen(!comunicazioniOpen)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                background: 'transparent', color: '#18181B',
-                fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                width: '100%', textTransform: 'uppercase',
-                letterSpacing: '0.05em', transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <MessageSquare size={14} />
-              <span style={{ flex: 1, textAlign: 'left' }}>Comunicazioni</span>
-              <ChevronDown
-                size={14}
-                style={{
-                  transform: comunicazioniOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s',
-                }}
-              />
-            </button>
-            {comunicazioniOpen && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                <SidebarItem
-                  icon={<MessageSquare size={18} />}
-                  label="Provider SDI"
-                  active={false}
-                  onClick={() => window.open('https://www.sdi.agenziaentrate.gov.it', '_blank')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<Mail size={18} />}
-                  label="Email"
-                  active={false}
-                  onClick={() => window.open('https://mail.google.com', '_blank')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<MessageCircle size={18} />}
-                  label="WhatsApp"
-                  active={false}
-                  onClick={() => window.open('https://wa.me/393331234567', '_blank')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Importazioni - Collapsible */}
-          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: `1px solid rgba(0,0,0,0.08)` }}>
-            <button
-              onClick={() => setImportazioniOpen(!importazioniOpen)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '8px 14px', borderRadius: '8px', border: 'none',
-                background: 'transparent', color: '#18181B',
-                fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                width: '100%', textTransform: 'uppercase',
-                letterSpacing: '0.05em', transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              <Upload size={14} />
-              <span style={{ flex: 1, textAlign: 'left' }}>Importazioni</span>
-              <ChevronDown 
-                size={14} 
-                style={{ 
-                  transform: importazioniOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.2s',
-                }} 
-              />
-            </button>
-            {importazioniOpen && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                <SidebarItem
-                  icon={<Upload size={18} />}
-                  label="Importa CSV"
-                  active={activeView === 'import_csv'}
-                  onClick={() => setActiveView('import_csv')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<Download size={18} />}
-                  label="Esporta CSV"
-                  active={activeView === 'export_csv'}
-                  onClick={() => setActiveView('export_csv')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileText size={18} />}
-                  label="Importa PDF"
-                  active={activeView === 'import_pdf'}
-                  onClick={() => setActiveView('import_pdf')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileText size={18} />}
-                  label="Esporta PDF"
-                  active={activeView === 'export_pdf'}
-                  onClick={() => setActiveView('export_pdf')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileSpreadsheet size={18} />}
-                  label="Importa Excel"
-                  active={activeView === 'import_excel'}
-                  onClick={() => setActiveView('import_excel')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileSpreadsheet size={18} />}
-                  label="Esporta Excel"
-                  active={activeView === 'export_excel'}
-                  onClick={() => setActiveView('export_excel')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileIcon size={18} />}
-                  label="Importa JSON"
-                  active={activeView === 'import_json'}
-                  onClick={() => setActiveView('import_json')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-                <SidebarItem
-                  icon={<FileIcon size={18} />}
-                  label="Esporta JSON"
-                  active={activeView === 'export_json'}
-                  onClick={() => setActiveView('export_json')}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-              </div>
-            )}
-          </div>
-        </nav>
-
-        {/* Bottom actions */}
-        <div style={{ padding: '12px 10px', borderTop: `1px solid rgba(255,255,255,0.2)`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <SidebarItem
-            icon={<Settings size={18} />}
-            label="Impostazioni"
-            active={false}
-            onClick={() => setShowSettings(true)}
-            colors={colors}
-            primaryColor={primaryColor}
-          />
-          {datiAziendaliTable && (
-            <SidebarItem
-              icon={resolveIcon(datiAziendaliTable.icon, datiAziendaliTable.name)}
-              label={datiAziendaliTable.labelPlural}
-              active={activeView === datiAziendaliTable.name}
-              onClick={() => setActiveView(datiAziendaliTable.name)}
-              colors={colors}
-              primaryColor={primaryColor}
-            />
-          )}
-          <SidebarItem
-            icon={<LogOut size={18} />}
-            label="Logout"
-            active={false}
-            onClick={handleLogout}
-            colors={colors}
-            primaryColor={colors.danger}
-          />
-        </div>
-
-        {/* Brand Footer */}
-        <div style={{ padding: '16px 20px', borderTop: `1px solid rgba(255,255,255,0.2)`, textAlign: 'center' }}>
-          <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '11px', fontWeight: 600, margin: 0 }}>
-            ZeusX <span style={{ color: 'rgba(255,255,255,0.6)' }}>by</span> <span style={{ color: '#ffffff', fontWeight: 700 }}>MUSINO</span>
-          </p>
-        </div>
-      </aside>
-      )}
+      <div
+        id="app-root-container"
+        className="flex h-full bg-tenant-bg"
+        style={{ ...tenantThemeVars(colors), fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+      >
+      <ViewerSidebar
+        tables={tables}
+        customTables={customTables}
+        activeView={activeView}
+        onNavigate={setActiveView}
+        datiAziendaliTable={datiAziendaliTable}
+        onEditTable={setEditTable}
+        onCreateTable={() => setShowCreateCustomTable(true)}
+        onCreateAITable={() => { setAiTableError(null); setShowAITableModal(true); }}
+        onOpenSettings={() => setShowSettings(true)}
+        onLogout={handleLogout}
+        logoUrl={logoUrl}
+        companyName={companyName}
+        slug={slug}
+        isMobile={isMobile}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       {/* Main Content */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top bar (mobile toggle) */}
-        <header style={{
-          padding: '16px 24px', borderBottom: `2px solid ${colors.primary}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: colors.cardBg,
-          position: 'relative',
-        }}>
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: colors.textSecondary, padding: '4px',
-              display: 'block',
-              position: 'absolute',
-              left: '24px',
-            }}
-          >
-            <Menu size={22} />
-          </button>
-          <div style={{ color: colors.text, fontSize: '16px', fontWeight: 700 }}>
-            {activeView === 'dashboard' ? companyName : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName)}
-          </div>
-          <div style={{ position: 'absolute', right: '24px' }}>
-            <FullscreenToggle color={colors.textSecondary} />
-          </div>
-        </header>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AppTopBar
+          title={activeView === 'dashboard' ? companyName : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName)}
+          onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+          showMenuToggle={isMobile}
+        />
 
         {/* Content area */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           <div style={{ padding: prefs.layout === 'corporate' ? '32px' : prefs.layout === 'modern' ? '24px' : '16px' }}>
             {activeView === 'dashboard' ? (
               <Dashboard
-                colors={colors}
-                radius={layoutCfg.radius}
-                shadow={layoutCfg.shadow}
                 companyName={companyName}
                 tables={tables}
                 appId={session?.appInfo?.id}
@@ -3515,70 +2449,7 @@ function ImportExportPanel({ view, colors, radius, shadow, appId, password }: Im
   );
 }
 
-// ─── SidebarItem Component ────────────────────────────────────────────────────
-
-interface SidebarItemProps {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  colors: ReturnType<typeof getThemeVars>;
-  primaryColor: string;
-}
-
-function SidebarItem({ icon, label, active, onClick, colors, primaryColor }: SidebarItemProps) {
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '10px',
-        padding: '10px 14px', borderRadius: '8px', border: 'none',
-        background: active
-          ? '#EFF6FF'
-          : hovered
-            ? '#F4F4F5'
-            : 'transparent',
-        color: active ? '#2563EB' : '#18181B',
-        fontSize: '14px', fontWeight: active ? 600 : 500,
-        cursor: 'pointer', width: '100%', textAlign: 'left',
-        transition: 'all 0.15s',
-        position: 'relative',
-      }}
-    >
-      {active && (
-        <div style={{
-          position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-          width: '2px', height: '20px', borderRadius: '0 2px 2px 0',
-          background: '#2563EB',
-        }} />
-      )}
-      <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-    </button>
-  );
-}
-
 // ─── Entry point della route /a/[slug]/app ─────────────────────────────────
-// Comandi AI (app_type='comandi_ai', vedi provisionComandiAppAction) ha uno
-// schema fisso e una console operativa dedicata: salta interamente il motore
-// a tabelle dinamiche generato dall'AI (ViewerProFinal), che resta invariato
-// per tutte le altre app.
 export default function AppPage() {
-  const appInfo = useAppInfo();
-
-  if (appInfo.appType === 'comandi_ai') {
-    return (
-      <ComandiOperativeConsole
-        className="min-h-screen bg-gray-950 py-8 px-4"
-        unauthenticatedRedirect={`/a/${appInfo.slug}/login`}
-        instanceSlug={appInfo.slug}
-      />
-    );
-  }
-
   return <ViewerProFinal />;
 }

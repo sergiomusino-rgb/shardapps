@@ -4,6 +4,10 @@ import React, { useMemo, useState } from 'react';
 import {
   Search, Plus, Pencil, Trash2, X, ChevronDown, LayoutGrid, List
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { TableDef, fieldName, extractDynamicKeys, getDisplayFields, getRecordValue } from './table-definitions';
 import { getPlaceholderCategoryForTable } from '@/lib/recordPlaceholderImages';
 import RecordCardGrid from './RecordCardGrid';
@@ -24,37 +28,24 @@ interface DynamicDataTableProps {
   onEdit: (record: AppRecord) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
-  colors: ReturnType<typeof getThemeVars>;
+  colors: ThemeColors;
   radius: string;
   shadow: string;
 }
 
-/** Helper per tema — copia inline dal page.tsx per non creare dipendenza */
-function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
-  const isDark = theme === 'dark';
-  return {
-    bg: isDark ? '#0a0e1a' : '#f8fafc',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    cardBg: isDark ? '#1e293b' : '#ffffff',
-    cardBgAlt: isDark ? '#162032' : '#f1f5f9',
-    border: isDark ? '#334155' : '#e2e8f0',
-    sidebarBg: isDark ? '#0f172a' : '#1e293b',
-    sidebarText: '#e2e8f0',
-    sidebarHover: isDark ? '#1e293b' : '#334155',
-    inputBg: isDark ? '#0f172a' : '#f1f5f9',
-    inputBorder: isDark ? '#334155' : '#cbd5e1',
-    primary: primaryColor,
-    primaryHover: primaryColor + 'dd',
-    danger: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-  };
+/** Sottoinsieme di `colors` usato solo da RecordCardGrid (non ancora migrato ai token tenant). */
+interface ThemeColors {
+  text: string;
+  textSecondary: string;
+  cardBg: string;
+  border: string;
+  primary: string;
+  danger: string;
 }
 
 export default function DynamicDataTable({
   table, records, loading, searchQuery, onSearchChange,
-  onEdit, onDelete, onAddNew, colors, radius, shadow,
+  onEdit, onDelete, onAddNew, colors,
 }: DynamicDataTableProps) {
   const [showDynamicCols, setShowDynamicCols] = useState(false);
 
@@ -101,120 +92,77 @@ export default function DynamicDataTable({
     });
   }, [records, searchQuery, table.fields]);
 
-  // Stile input
-  const inputStyle: React.CSSProperties = {
-    flex: 1, border: 'none', outline: 'none', background: 'transparent',
-    color: colors.text, fontSize: '14px',
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        flexWrap: 'wrap', gap: '12px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <h2 style={{ color: colors.text, fontSize: '24px', fontWeight: 700, margin: 0 }}>
-            {table.labelPlural}
-          </h2>
-          {table.color && (
-            <div style={{
-              width: '12px', height: '12px', borderRadius: '50%',
-              background: table.color,
-            }} />
-          )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="m-0 text-2xl font-bold text-tenant-text">{table.labelPlural}</h2>
+          {table.color && <div className="h-3 w-3 rounded-full" style={{ background: table.color }} />}
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="flex gap-2">
           {placeholderCategory && (
-            <div style={{ display: 'flex', border: `1px solid ${colors.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+            <div className="flex overflow-hidden rounded-xl border border-tenant-border">
               <button
+                type="button"
                 onClick={() => setViewMode('grid')}
                 title="Vista griglia"
-                style={{
-                  display: 'flex', alignItems: 'center', padding: '10px 12px', border: 'none',
-                  background: viewMode === 'grid' ? colors.primary + '20' : colors.cardBg,
-                  color: viewMode === 'grid' ? colors.primary : colors.textSecondary, cursor: 'pointer',
-                }}
+                className={cn(
+                  'flex items-center px-3 py-2.5 transition-colors',
+                  viewMode === 'grid' ? 'bg-tenant-primary/12 text-tenant-primary' : 'bg-tenant-card text-tenant-text-secondary'
+                )}
               >
                 <LayoutGrid size={16} />
               </button>
               <button
+                type="button"
                 onClick={() => setViewMode('table')}
                 title="Vista tabella"
-                style={{
-                  display: 'flex', alignItems: 'center', padding: '10px 12px', border: 'none',
-                  background: viewMode === 'table' ? colors.primary + '20' : colors.cardBg,
-                  color: viewMode === 'table' ? colors.primary : colors.textSecondary, cursor: 'pointer',
-                  borderLeft: `1px solid ${colors.border}`,
-                }}
+                className={cn(
+                  'flex items-center border-l border-tenant-border px-3 py-2.5 transition-colors',
+                  viewMode === 'table' ? 'bg-tenant-primary/12 text-tenant-primary' : 'bg-tenant-card text-tenant-text-secondary'
+                )}
               >
                 <List size={16} />
               </button>
             </div>
           )}
-          <button
-            onClick={onAddNew}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '10px 18px', borderRadius: '10px', border: 'none',
-              background: colors.primary, color: '#fff', fontSize: '14px',
-              fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-          >
+          <Button onClick={onAddNew}>
             <Plus size={16} /> Nuovo
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Search Bar + toggle colonne dinamiche */}
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-        <div
-          className={`${radius}`}
-          style={{
-            flex: 1, display: 'flex', alignItems: 'center', gap: '8px',
-            background: colors.cardBg, border: `1px solid ${colors.border}`,
-            padding: '10px 16px',
-          }}
-        >
-          <Search size={18} style={{ color: colors.textSecondary }} />
-          <input
+      <div className="flex items-center gap-2.5">
+        <div className="relative flex-1">
+          <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+          <Input
             type="text"
             placeholder={`Cerca in ${table.labelPlural}...`}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            style={inputStyle}
+            className="pl-10 pr-9"
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => onSearchChange('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '2px' }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary hover:text-tenant-text"
             >
               <X size={16} />
             </button>
           )}
         </div>
         {dynamicKeys.length > 0 && (
-          <button
+          <Button
+            variant={showDynamicCols ? 'soft' : 'outline'}
             onClick={() => setShowDynamicCols(!showDynamicCols)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '10px 16px', borderRadius: '10px',
-              border: `1px solid ${colors.border}`,
-              background: showDynamicCols ? colors.primary + '15' : colors.cardBg,
-              color: showDynamicCols ? colors.primary : colors.textSecondary,
-              fontSize: '13px', fontWeight: 500,
-              cursor: 'pointer', whiteSpace: 'nowrap',
-            }}
+            className="whitespace-nowrap"
           >
-            <ChevronDown size={15} style={{
-              transform: showDynamicCols ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s',
-            }} />
+            <ChevronDown size={15} className={cn('transition-transform', showDynamicCols && 'rotate-180')} />
             Col. Dinamiche ({dynamicKeys.length})
-          </button>
+          </Button>
         )}
       </div>
 
@@ -229,185 +177,110 @@ export default function DynamicDataTable({
           onDelete={onDelete}
         />
       ) : (
-      <div
-        className={`${radius} ${shadow}`}
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-              <tr style={{ background: colors.cardBgAlt }}>
-                {/* Colonne fisse */}
-                {table.fields.map((field) => (
-                  <th
-                    key={fieldName(field)}
-                    style={{
-                      textAlign: 'left', padding: '12px 16px',
-                      borderBottom: `2px solid ${colors.border}`,
-                      color: colors.textSecondary, fontSize: '12px',
-                      fontWeight: 600, textTransform: 'uppercase',
-                      letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {field.label}
-                    {field.required && (
-                      <span style={{ color: colors.danger, marginLeft: '2px' }}>*</span>
-                    )}
+        <Card className="overflow-hidden">
+          <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-tenant-card-alt">
+                  {/* Colonne fisse */}
+                  {table.fields.map((field) => (
+                    <th
+                      key={fieldName(field)}
+                      className="whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary"
+                    >
+                      {field.label}
+                      {field.required && <span className="ml-0.5 text-tenant-danger">*</span>}
+                    </th>
+                  ))}
+                  {/* Colonne dinamiche (se attive) */}
+                  {showDynamicCols && dynamicKeys.map((key) => (
+                    <th
+                      key={`dp_${key}`}
+                      className="whitespace-nowrap border-b-2 border-tenant-border bg-tenant-primary/5 px-4 py-3 text-left text-xs font-semibold italic uppercase tracking-wide text-tenant-primary"
+                    >
+                      {key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')} ⚡
+                    </th>
+                  ))}
+                  {/* Azioni */}
+                  <th className="w-[100px] whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">
+                    Azioni
                   </th>
-                ))}
-                {/* Colonne dinamiche (se attive) */}
-                {showDynamicCols && dynamicKeys.map((key) => (
-                  <th
-                    key={`dp_${key}`}
-                    style={{
-                      textAlign: 'left', padding: '12px 16px',
-                      borderBottom: `2px solid ${colors.border}`,
-                      color: colors.primary, fontSize: '12px',
-                      fontWeight: 600, textTransform: 'uppercase',
-                      letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                      fontStyle: 'italic',
-                      background: colors.primary + '08',
-                    }}
-                  >
-                    {key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')} ⚡
-                  </th>
-                ))}
-                {/* Azioni */}
-                <th
-                  style={{
-                    textAlign: 'center', padding: '12px 16px',
-                    borderBottom: `2px solid ${colors.border}`,
-                    color: colors.textSecondary, fontSize: '12px',
-                    fontWeight: 600, textTransform: 'uppercase',
-                    letterSpacing: '0.05em', width: '100px',
-                  }}
-                >
-                  Azioni
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
-                    Caricamento records...
-                  </td>
                 </tr>
-              ) : filteredRecords.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
-                    {searchQuery ? 'Nessun risultato per la ricerca' : 'Nessun record presente'}
-                  </td>
-                </tr>
-              ) : (
-                filteredRecords.map((record, idx) => (
-                  <tr
-                    key={record.id || idx}
-                    style={{
-                      borderBottom: `1px solid ${colors.border}`,
-                      transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = colors.cardBgAlt; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    {/* Valori campi fissi */}
-                    {table.fields.map((field) => (
-                      <td
-                        key={fieldName(field)}
-                        style={{
-                          padding: '12px 16px', color: colors.text,
-                          fontSize: '14px', whiteSpace: 'nowrap',
-                          maxWidth: '200px', overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {renderCellValue(record, fieldName(field), field.type)}
-                      </td>
-                    ))}
-                    {/* Valori colonne dinamiche */}
-                    {showDynamicCols && dynamicKeys.map((key) => {
-                      const dp = (record.dati_personalizzati as Record<string, unknown>) || {};
-                      return (
-                        <td
-                          key={`dpv_${key}`}
-                          style={{
-                            padding: '12px 16px', color: colors.text,
-                            fontSize: '14px', whiteSpace: 'nowrap',
-                            maxWidth: '200px', overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            background: colors.primary + '04',
-                          }}
-                        >
-                          {String(dp[key] ?? '')}
-                        </td>
-                      );
-                    })}
-                    {/* Pulsanti azioni */}
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                        <button
-                          onClick={() => onEdit(record)}
-                          title="Modifica"
-                          style={{
-                            background: colors.primary + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: colors.primary, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = colors.primary + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary + '20'; }}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          onClick={() => onDelete(record.id)}
-                          title="Elimina"
-                          style={{
-                            background: colors.danger + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: colors.danger, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
+                      className="p-10 text-center text-tenant-text-secondary"
+                    >
+                      Caricamento records...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : filteredRecords.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
+                      className="p-10 text-center text-tenant-text-secondary"
+                    >
+                      {searchQuery ? 'Nessun risultato per la ricerca' : 'Nessun record presente'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRecords.map((record, idx) => (
+                    <tr
+                      key={record.id || idx}
+                      className="border-b border-tenant-border transition-colors hover:bg-tenant-card-alt"
+                    >
+                      {/* Valori campi fissi */}
+                      {table.fields.map((field) => (
+                        <td
+                          key={fieldName(field)}
+                          className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap px-4 py-3 text-sm text-tenant-text"
+                        >
+                          {renderCellValue(record, fieldName(field), field.type)}
+                        </td>
+                      ))}
+                      {/* Valori colonne dinamiche */}
+                      {showDynamicCols && dynamicKeys.map((key) => {
+                        const dp = (record.dati_personalizzati as Record<string, unknown>) || {};
+                        return (
+                          <td
+                            key={`dpv_${key}`}
+                            className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap bg-tenant-primary/[0.02] px-4 py-3 text-sm text-tenant-text"
+                          >
+                            {String(dp[key] ?? '')}
+                          </td>
+                        );
+                      })}
+                      {/* Pulsanti azioni */}
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica" className="h-8 w-8">
+                            <Pencil size={15} />
+                          </Button>
+                          <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina" className="h-8 w-8">
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Footer counter */}
-        <div
-          style={{
-            padding: '12px 16px', borderTop: `1px solid ${colors.border}`,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}
-        >
-          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
-            {filteredRecords.length} di {records.length} record
-            {dynamicKeys.length > 0 && (
-              <span style={{ marginLeft: '12px', fontStyle: 'italic', fontSize: '12px' }}>
-                · {dynamicKeys.length} colonne dinamiche
-              </span>
-            )}
-          </span>
-        </div>
-      </div>
+          {/* Footer counter */}
+          <div className="flex items-center justify-between border-t border-tenant-border px-4 py-3">
+            <span className="text-[13px] text-tenant-text-secondary">
+              {filteredRecords.length} di {records.length} record
+              {dynamicKeys.length > 0 && (
+                <span className="ml-3 text-xs italic">· {dynamicKeys.length} colonne dinamiche</span>
+              )}
+            </span>
+          </div>
+        </Card>
       )}
     </div>
   );

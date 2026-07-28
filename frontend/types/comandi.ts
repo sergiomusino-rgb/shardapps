@@ -8,6 +8,10 @@ import { z } from 'zod';
 
 // ─── Tipi database ──────────────────────────────────────────────────────────
 
+// Ruolo su tenant_members. 'agent': accesso ridotto (Catalogo in sola
+// lettura + Raccolta Ordini), vedi useComandiRole e ComandiInstanceDashboard.
+export type TenantMemberRole = 'owner' | 'admin' | 'member' | 'agent';
+
 export type OrderStatus =
   | 'PENDING_CONFIRMATION'
   | 'CONFIRMED'
@@ -21,6 +25,7 @@ export interface CatalogItem {
   tenant_id: string; // UUID
   sku: string;
   name: string;
+  category: string | null;
   description: string | null;
   unit_price: number;
   stock_qty: number;
@@ -39,10 +44,23 @@ export interface ProductSynonym {
   created_at: string; // TIMESTAMPTZ
 }
 
+// Tabella customers
+export interface Customer {
+  id: string; // UUID
+  tenant_id: string; // UUID
+  name: string;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  created_at: string; // TIMESTAMPTZ
+  updated_at: string; // TIMESTAMPTZ
+}
+
 // Tabella orders
 export interface Order {
   id: string; // UUID
   tenant_id: string; // UUID
+  customer_id: string | null; // UUID -> customers.id (opzionale: cliente scelto dal selettore rapido)
   customer_name: string | null;
   customer_phone: string | null;
   agent_id: string | null; // UUID -> auth.users.id
@@ -50,6 +68,9 @@ export interface Order {
   total_amount: number;
   audio_transcript: string | null;
   confidence_score: number | null; // 0..1
+  delivery_date: string | null; // DATE (YYYY-MM-DD)
+  extracted_items: unknown; // JSONB: snapshot grezzo dell'estrazione AI, vedi ParsedOrderItem[]/DiscardedItem[]
+  audio_url: string | null; // path nel bucket privato comandi-agent-audio, non un URL pubblico
   notes: string | null;
   created_at: string; // TIMESTAMPTZ
   updated_at: string; // TIMESTAMPTZ

@@ -170,13 +170,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tenant non trovato o creato' }, { status: 500 });
     }
 
-    // Gestione slot extra (15€ per slot). Per i piani regolari il priceId
-    // NON viene mai preso dal body: è derivato server-side da planId (vedi
-    // getSetupPriceId) per evitare che un client paghi un piano economico
-    // dichiarando però un planId più costoso nei metadata.
-    const EXTRA_SLOT_PRICE_ID = process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
-    const effectivePriceId = planId === 'extra_slot' ? EXTRA_SLOT_PRICE_ID : getSetupPriceId(planId);
-    const effectiveQuantity = planId === 'extra_slot' ? (quantity || 1) : 1;
+    // Gestione "Ricarica Extra" (15€ → 50 crediti Vision, vedi getCreditsForPlan
+    // nel webhook). Il nome della env var è storico (il bottone si chiamava
+    // "Slot Extra" e dava +1 slot app): stesso prezzo Stripe da 15€, cambia
+    // solo cosa viene accreditato lato webhook, quindi non serve creare un
+    // nuovo Price su Stripe né rinominare la env var. Per i piani regolari il
+    // priceId NON viene mai preso dal body: è derivato server-side da planId
+    // (vedi getSetupPriceId) per evitare che un client paghi un piano
+    // economico dichiarando però un planId più costoso nei metadata.
+    const CREDIT_TOPUP_PRICE_ID = process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
+    const isCreditTopup = planId === 'credit_topup';
+    const effectivePriceId = isCreditTopup ? CREDIT_TOPUP_PRICE_ID : getSetupPriceId(planId);
+    const effectiveQuantity = isCreditTopup ? (quantity || 1) : 1;
 
     if (!effectivePriceId) {
       return NextResponse.json({ error: 'Piano non riconosciuto' }, { status: 400 });
@@ -198,10 +203,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Crea la sessione di checkout
-    // Per extra_slot: modalità 'payment' (pagamento una tantum)
+    // Per credit_topup: modalità 'payment' (pagamento una tantum, nessuna subscription)
     // Per piani: modalità 'payment' (setup price) - la subscription viene creata dal webhook
-    const isExtraSlot = planId === 'extra_slot';
-    
+
     // Get the recurring fee price ID for the plan
     const feePriceId = getFeePriceId(planId);
     

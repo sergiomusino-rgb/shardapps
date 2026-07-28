@@ -130,18 +130,16 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     } else {
       const slug = `${slugify(businessName)}-${Date.now().toString(36)}`;
 
-      // app_limit: 1 (non 0 come le altre creazioni lazy di tenant nel
-      // progetto): chi arriva da /comandi/setup si sta registrando
-      // specificamente per Comandi AI, quindi lo slot per la propria
-      // istanza è incluso nella registrazione stessa, non un extra a
-      // pagamento come per le app aggiuntive create dal Creator.
+      // app_limit: 0, come le altre creazioni lazy di tenant nel progetto:
+      // Comandi AI non consuma più uno slot (vedi comandi-provisioning.ts),
+      // quindi non serve più pre-caricarne uno qui per coprirlo.
       const { data: newTenant, error: tenantError } = await supabaseAdmin
         .from('tenants')
         .insert({
           owner_id: userId,
           slug,
           plan: 'free',
-          app_limit: 1,
+          app_limit: 0,
           total_apps_created: 0,
           ...companyFields,
         })

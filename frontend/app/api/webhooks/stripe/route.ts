@@ -20,18 +20,35 @@ function getSupabase() {
  * - free: 0 slot
  * - starter: +1 slot
  * - pro: +5 slot
- * - business: +100 slot
- * - extra_slot: +1 slot
+ * - business: +20 slot
+ * - credit_topup ("Ricarica Extra"): 0 slot, solo crediti (vedi getCreditsForPlan)
  */
 function getSlotsForPlan(planId: string): number {
   const slotsMap: Record<string, number> = {
     free: 0,
     starter: 1,
     pro: 5,
-    business: 100,
-    extra_slot: 1,
+    business: 20,
+    credit_topup: 0,
   };
   return slotsMap[planId] || 0;
+}
+
+/**
+ * Mappa i piani ai crediti Vision da accreditare (cumulativo, come gli slot).
+ * I piani base includono un pacchetto di crediti al setup; "credit_topup"
+ * (bottone "Ricarica Extra" in pricing, ex "Slot Extra") accredita solo
+ * crediti senza toccare gli slot app.
+ */
+function getCreditsForPlan(planId: string): number {
+  const creditsMap: Record<string, number> = {
+    free: 0,
+    starter: 20,
+    pro: 100,
+    business: 400,
+    credit_topup: 50,
+  };
+  return creditsMap[planId] || 0;
 }
 
 // Rango dei piani: gli eventi Stripe non arrivano garantiti in ordine
@@ -136,11 +153,13 @@ async function handleCheckoutSessionCompleted(event: Stripe.Event, supabase: any
   let totalum_app_id: string | null = null;
   let planId: string | null = null;
   let tenantId: string | null = null;
+  let supabaseUserId: string | null = null;
 
   if (data.metadata) {
     totalum_app_id = data.metadata.totalum_app_id ?? null;
     planId = data.metadata.plan_id ?? null;
     tenantId = data.metadata.tenant_id ?? null;
+    supabaseUserId = data.metadata.supabase_user_id ?? null;
   }
 
   // Caso 1: Pagamento per un'app cliente (Stripe Connect)
@@ -161,17 +180,19 @@ async function handleCheckoutSessionCompleted(event: Stripe.Event, supabase: any
     return;
   }
   
-  // Caso 2: Pagamento per un piano/utente (aggiungi slot)
+  // Caso 2: Pagamento per un piano/utente (aggiungi slot e/o crediti Vision)
   if (planId && tenantId) {
     const slotsToAdd = getSlotsForPlan(planId);
+    const creditsToAdd = getCreditsForPlan(planId);
 
-    if (slotsToAdd > 0) {
+    if (slotsToAdd > 0 || creditsToAdd > 0) {
       // Questo evento arriva anche al webhook del backend
       // (backend/server.js, registrato separatamente su Render): entrambi
       // sono abilitati su checkout.session.completed. La riga in
       // processed_checkout_sessions fa da guardia di idempotenza condivisa
-      // tra i due: solo chi riesce a inserirla per primo somma gli slot
-      // (via RPC atomica add_tenant_slots), l'altro diventa no-op.
+      // tra i due: solo chi riesce a inserirla per primo somma slot/crediti
+      // (via RPC atomiche add_tenant_slots/grant_credits), l'altro diventa
+      // no-op.
       const sessionId: string | undefined = data.id;
       const { error: insertError } = await supabase
         .from('processed_checkout_sessions')
@@ -180,6 +201,37 @@ async function handleCheckoutSessionCompleted(event: Stripe.Event, supabase: any
       if (insertError && insertError.code !== '23505') {
         console.error('[Stripe Webhook] Errore idempotenza:', insertError);
       } else if (!insertError) {
+        // Crediti Vision: legati all'utente che ha pagato (profiles.user_id),
+        // non al tenant/workspace — coerente con come vengono spesi in
+        // /api/generate-video. Se manca supabase_user_id nei metadata (non
+        // dovrebbe succedere, create-checkout-session lo imposta sempre) si
+        // salta l'accredito invece di far fallire l'intero webhook: gli slot
+        // vanno comunque a buon fine sotto.
+        if (creditsToAdd > 0 && supabaseUserId) {
+          const { error: creditsError } = await supabase.rpc('grant_credits', {
+            p_user_id: supabaseUserId,
+            p_amount: creditsToAdd,
+            p_type: 'purchase',
+            p_description: `Acquisto piano ${planId}`,
+            p_reference_id: sessionId ?? null,
+            p_metadata: { plan_id: planId, session_id: sessionId ?? null },
+          });
+
+          if (creditsError) {
+            console.error('[Stripe Webhook] Errore accredito crediti Vision:', creditsError);
+          } else {
+            console.log(`[Stripe Webhook] Accreditati ${creditsToAdd} crediti Vision a utente ${supabaseUserId} per piano ${planId}`);
+          }
+        } else if (creditsToAdd > 0) {
+          console.error(`[Stripe Webhook] Impossibile accreditare crediti per piano ${planId}: supabase_user_id mancante nei metadata (session ${sessionId})`);
+        }
+
+        if (slotsToAdd === 0) {
+          // credit_topup ("Ricarica Extra"): nessuno slot da aggiungere,
+          // niente altro da fare per questa sessione.
+          return;
+        }
+
         const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
           tenant_id: tenantId,
           slots_to_add: slotsToAdd,

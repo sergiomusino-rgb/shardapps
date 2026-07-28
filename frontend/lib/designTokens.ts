@@ -647,6 +647,59 @@ const INDUSTRIAL_DARK_TOKENS: DesignTokens = {
   },
 };
 
+// ─── AutoDrive Design Tokens (Automotive / Concessionaria) ─────────────────
+const AUTODRIVE_TOKENS: DesignTokens = {
+  colors: {
+    'primary': '#DC2626',
+    'primary-hover': '#B91C1C',
+    'secondary': '#71717A',
+    'tertiary': '#64748B',
+    'bg': '#F4F4F5',
+    'surface': '#FFFFFF',
+    'success': '#16A34A',
+    'warning': '#D97706',
+    'error': '#DC2626',
+    'info': '#2563EB',
+    'text': '#18181B',
+    'text-secondary': '#52525B',
+    'border': '#E4E4E7',
+    'border-light': '#F4F4F5',
+    'sidebar-bg': '#18181B',
+    'sidebar-text': '#F4F4F5',
+    'sidebar-hover': '#27272A',
+    'card-bg': '#FFFFFF',
+    'card-bg-alt': '#FAFAFA',
+    'input-bg': '#FFFFFF',
+    'label': '#52525B',
+    'label-disabled': '#A1A1AA',
+  },
+  fonts: {
+    'headline': "'Plus Jakarta Sans', sans-serif",
+    'body': "'Inter', sans-serif",
+    'mono': "'JetBrains Mono', monospace",
+  },
+  radii: {
+    'none': '0px',
+    'sm': '4px',
+    'md': '8px',
+    'lg': '12px',
+    'xl': '16px',
+    'full': '9999px',
+  },
+  spacing: {
+    'base': '8px',
+    'xs': '4px',
+    'sm': '8px',
+    'md': '16px',
+    'lg': '24px',
+    'xl': '32px',
+    '2xl': '48px',
+    '3xl': '64px',
+    'section': '48px',
+    'page': '64px',
+  },
+};
+
 // ─── ClinicLife Design Tokens (Sanità / Healthcare) ────────────────────────
 const CLINICLIFE_TOKENS: DesignTokens = {
   colors: {
@@ -716,6 +769,7 @@ const DESIGN_TOKEN_MAP: Record<string, DesignTokens> = {
   'clean-tech': CLEAN_TECH_TOKENS,
   'warm-editorial': WARM_EDITORIAL_TOKENS,
   'industrial-dark': INDUSTRIAL_DARK_TOKENS,
+  autodrive: AUTODRIVE_TOKENS,
 };
 
 // ─── Sector → Design Key Mapping ──────────────────────────────────────────
@@ -798,6 +852,18 @@ const SECTOR_TO_DESIGN_KEY: Record<string, string> = {
   health: 'cliniclife',
   healthcare: 'cliniclife',
 
+  // Automotive / Concessionaria
+  automotive: 'autodrive',
+  auto: 'autodrive',
+  concessionaria: 'autodrive',
+  concessionario: 'autodrive',
+  autofficina: 'autodrive',
+  officina: 'autodrive',
+  autosalone: 'autodrive',
+  carrozzeria: 'autodrive',
+  autonoleggio: 'autodrive',
+  gommista: 'autodrive',
+
   // SaaS / Tech / Dashboard
   saas: 'wandermap',
   tech: 'wandermap',
@@ -830,6 +896,10 @@ const SECTOR_KEYWORD_FALLBACK: Array<{ keywords: string[]; designKey: string }> 
   {
     designKey: 'recipebook',
     keywords: ['ricett', 'cooking', 'cucina', 'foodblog'],
+  },
+  {
+    designKey: 'autodrive',
+    keywords: ['automot', 'concessionari', 'autofficin', 'autosalon', 'carrozzeri', 'autonolegg', 'gommist', 'auto-usat', 'auto usat', 'rivendita-aut', 'rivendita auto'],
   },
   {
     designKey: 'industrial-dark',
@@ -964,6 +1034,7 @@ const DESIGN_KEY_TO_LAYOUT: Record<string, DesignLayoutType> = {
   'clean-tech': 'saas',
   'warm-editorial': 'saas',
   'industrial-dark': 'saas',
+  autodrive: 'ecommerce',
 };
 
 // ─── Get Layout Type by Sector ────────────────────────────────────────────

@@ -1,7 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plus, Trash2, ChevronDown, GripVertical } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, X } from 'lucide-react';
+import { Dialog } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 interface FieldDef {
   name: string;
@@ -26,26 +31,7 @@ interface EditTableModalProps {
   onSave: (data: { name?: string; label?: string; labelPlural?: string; fields: FieldDef[] }) => Promise<void>;
   onClose: () => void;
   saving: boolean;
-  colors: ReturnType<typeof getThemeVars>;
-}
-
-function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
-  const isDark = theme === 'dark';
-  return {
-    bg: isDark ? '#0a0e1a' : '#f8fafc',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    cardBg: isDark ? '#1e293b' : '#ffffff',
-    cardBgAlt: isDark ? '#162032' : '#f1f5f9',
-    border: isDark ? '#334155' : '#e2e8f0',
-    inputBg: isDark ? '#0f172a' : '#f1f5f9',
-    inputBorder: isDark ? '#334155' : '#cbd5e1',
-    primary: primaryColor,
-    primaryHover: primaryColor + 'dd',
-    danger: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-  };
+  colors?: unknown;
 }
 
 const FIELD_TYPES = [
@@ -60,7 +46,7 @@ const FIELD_TYPES = [
 ];
 
 export default function EditTableModal({
-  table, onSave, onClose, saving, colors,
+  table, onSave, onClose, saving,
 }: EditTableModalProps) {
   const [tableName, setTableName] = useState(table.name || '');
   const [tableLabel, setTableLabel] = useState(table.label || '');
@@ -116,267 +102,166 @@ export default function EditTableModal({
     });
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-    color: colors.text, fontSize: '14px', outline: 'none',
-    boxSizing: 'border-box',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block', marginBottom: '6px', fontSize: '13px',
-    fontWeight: 600, color: colors.textSecondary,
-  };
-
-  const sectionTitle: React.CSSProperties = {
-    color: colors.text, fontSize: '15px', fontWeight: 700,
-    marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em',
-  };
+  const sectionCard = 'rounded-xl border border-tenant-border bg-tenant-card-alt p-5';
+  const sectionTitle = 'mb-3 text-[15px] font-bold uppercase tracking-wide text-tenant-text';
+  const smallSelectClasses = 'w-full appearance-none rounded-md border border-tenant-input-border bg-tenant-input-bg py-1.5 pl-2.5 pr-7 text-[13px] text-tenant-text outline-none disabled:bg-tenant-card-alt';
+  const smallInputClasses = 'w-full rounded-md border border-tenant-input-border bg-tenant-input-bg px-2.5 py-1.5 text-[13px] text-tenant-text outline-none focus:border-tenant-primary disabled:bg-tenant-card-alt';
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="rounded-2xl"
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          width: '100%', maxWidth: '720px', maxHeight: '90vh',
-          overflow: 'auto', padding: '32px',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <div>
-            <h2 style={{ color: colors.text, fontSize: '20px', fontWeight: 700, margin: 0 }}>
-              Modifica Tabella
-            </h2>
-            <p style={{ color: colors.textSecondary, fontSize: '13px', marginTop: '4px' }}>
-              {table.labelPlural} · {table.name}
-            </p>
+    <Dialog open onClose={onClose} maxWidthClassName="max-w-[720px]">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="m-0 text-xl font-bold text-tenant-text">Modifica Tabella</h2>
+          <p className="mt-1 text-[13px] text-tenant-text-secondary">{table.labelPlural} · {table.name}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1 text-tenant-text-secondary transition-colors hover:bg-tenant-card-alt hover:text-tenant-text"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4.5">
+        {/* METADATI TABELLA */}
+        <div className={sectionCard}>
+          <div className={sectionTitle}>Nome Tabella</div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label>Nome (identificativo)</Label>
+              <Input
+                type="text"
+                value={tableName}
+                onChange={(e) => setTableName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_'))}
+                placeholder="nome_tabella"
+              />
+            </div>
+            <div>
+              <Label>Label (singolare)</Label>
+              <Input type="text" value={tableLabel} onChange={(e) => setTableLabel(e.target.value)} placeholder="Nome" />
+            </div>
+            <div>
+              <Label>Label (plurale)</Label>
+              <Input type="text" value={tableLabelPlural} onChange={(e) => setTableLabelPlural(e.target.value)} placeholder="Nomi" />
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '4px' }}>
-            <X size={20} />
+        </div>
+
+        {/* CAMPI */}
+        <div className={sectionCard}>
+          <div className="mb-3 flex items-center justify-between">
+            <div className={sectionTitle}>Campi della Tabella</div>
+            <span className="text-xs text-tenant-text-secondary">{fields.length} campi</span>
+          </div>
+
+          <div className="mb-3 flex flex-col gap-2">
+            {fields.map((field, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border border-tenant-border bg-tenant-card p-3',
+                  field.fixed && 'opacity-70'
+                )}
+              >
+                {/* Move buttons */}
+                <div className="flex shrink-0 flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => moveField(i, 'up')}
+                    disabled={i === 0}
+                    className="p-0.5 leading-none text-tenant-text-secondary disabled:text-tenant-border"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveField(i, 'down')}
+                    disabled={i === fields.length - 1}
+                    className="p-0.5 leading-none text-tenant-text-secondary disabled:text-tenant-border"
+                  >
+                    ▼
+                  </button>
+                </div>
+
+                <div className="min-w-0 flex-[1_1_25%]">
+                  <Label className="text-[11px]">Label</Label>
+                  <input
+                    type="text"
+                    value={field.label}
+                    onChange={(e) => updateField(i, 'label', e.target.value)}
+                    placeholder="Nome campo"
+                    disabled={field.fixed}
+                    className={smallInputClasses}
+                  />
+                </div>
+                <div className="w-[110px] shrink-0">
+                  <Label className="text-[11px]">Tipo</Label>
+                  <div className="relative">
+                    <select
+                      value={field.type}
+                      onChange={(e) => updateField(i, 'type', e.target.value)}
+                      disabled={field.fixed}
+                      className={smallSelectClasses}
+                    >
+                      {FIELD_TYPES.map((ft) => (
+                        <option key={ft.value} value={ft.value}>{ft.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1 self-end pb-1.5">
+                  <label className="flex cursor-pointer items-center gap-1 text-xs text-tenant-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={field.required}
+                      onChange={(e) => updateField(i, 'required', e.target.checked)}
+                      disabled={field.fixed}
+                      className="accent-tenant-primary"
+                    />
+                    Richiesto
+                  </label>
+                </div>
+                <div className="self-end pb-1.5">
+                  <Button
+                    type="button"
+                    variant={field.fixed ? 'ghost' : 'destructive'}
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => removeField(i)}
+                    disabled={field.fixed || fields.length <= 1}
+                    title={field.fixed ? 'Campo fisso non eliminabile' : 'Elimina campo'}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+                {field.fixed && (
+                  <span className="self-end whitespace-nowrap pb-1.5 text-[10px] font-medium text-tenant-text-secondary">
+                    FISSO
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addField}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-tenant-border py-2 text-[13px] font-semibold text-tenant-primary transition-colors hover:bg-tenant-primary/5"
+          >
+            <Plus size={14} /> Aggiungi Campo
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {/* METADATI TABELLA */}
-          <div style={{
-            background: colors.cardBgAlt, borderRadius: '12px',
-            padding: '20px', border: `1px solid ${colors.border}`,
-          }}>
-            <div style={sectionTitle}>Nome Tabella</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-              <div>
-                <label style={labelStyle}>Nome (identificativo)</label>
-                <input
-                  type="text"
-                  value={tableName}
-                  onChange={(e) => setTableName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_'))}
-                  placeholder="nome_tabella"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Label (singolare)</label>
-                <input
-                  type="text"
-                  value={tableLabel}
-                  onChange={(e) => setTableLabel(e.target.value)}
-                  placeholder="Nome"
-                  style={inputStyle}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Label (plurale)</label>
-                <input
-                  type="text"
-                  value={tableLabelPlural}
-                  onChange={(e) => setTableLabelPlural(e.target.value)}
-                  placeholder="Nomi"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* CAMPI */}
-          <div style={{
-            background: colors.cardBgAlt, borderRadius: '12px',
-            padding: '20px', border: `1px solid ${colors.border}`,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={sectionTitle}>Campi della Tabella</div>
-              <span style={{ color: colors.textSecondary, fontSize: '12px' }}>
-                {fields.length} campi
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-              {fields.map((field, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex', gap: '8px', alignItems: 'center',
-                    padding: '12px', borderRadius: '8px',
-                    background: colors.cardBg, border: `1px solid ${colors.border}`,
-                    opacity: field.fixed ? 0.7 : 1,
-                  }}
-                >
-                  {/* Move buttons */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => moveField(i, 'up')}
-                      disabled={i === 0}
-                      style={{
-                        background: 'none', border: 'none', cursor: i === 0 ? 'not-allowed' : 'pointer',
-                        color: i === 0 ? colors.border : colors.textSecondary, padding: '1px',
-                        lineHeight: 1,
-                      }}
-                    >
-                      ▲
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveField(i, 'down')}
-                      disabled={i === fields.length - 1}
-                      style={{
-                        background: 'none', border: 'none', cursor: i === fields.length - 1 ? 'not-allowed' : 'pointer',
-                        color: i === fields.length - 1 ? colors.border : colors.textSecondary, padding: '1px',
-                        lineHeight: 1,
-                      }}
-                    >
-                      ▼
-                    </button>
-                  </div>
-
-                  <div style={{ flex: '1 1 25%', minWidth: 0 }}>
-                    <label style={{ ...labelStyle, fontSize: '11px' }}>Label</label>
-                    <input
-                      type="text"
-                      value={field.label}
-                      onChange={(e) => updateField(i, 'label', e.target.value)}
-                      placeholder="Nome campo"
-                      disabled={field.fixed}
-                      style={{
-                        width: '100%', padding: '6px 10px', borderRadius: '6px',
-                        border: `1px solid ${colors.inputBorder}`, background: field.fixed ? colors.cardBgAlt : colors.inputBg,
-                        color: colors.text, fontSize: '13px', outline: 'none',
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                  <div style={{ flex: '0 0 auto', width: '110px' }}>
-                    <label style={{ ...labelStyle, fontSize: '11px' }}>Tipo</label>
-                    <div style={{ position: 'relative' }}>
-                      <select
-                        value={field.type}
-                        onChange={(e) => updateField(i, 'type', e.target.value)}
-                        disabled={field.fixed}
-                        style={{
-                          width: '100%', padding: '6px 28px 6px 10px', borderRadius: '6px',
-                          border: `1px solid ${colors.inputBorder}`, background: field.fixed ? colors.cardBgAlt : colors.inputBg,
-                          color: colors.text, fontSize: '13px', outline: 'none',
-                          appearance: 'none', boxSizing: 'border-box',
-                        }}
-                      >
-                        {FIELD_TYPES.map((ft) => (
-                          <option key={ft.value} value={ft.value}>{ft.label}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', color: colors.textSecondary, pointerEvents: 'none' }} />
-                    </div>
-                  </div>
-                  <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '4px', paddingTop: '16px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '12px', color: colors.textSecondary }}>
-                      <input
-                        type="checkbox"
-                        checked={field.required}
-                        onChange={(e) => updateField(i, 'required', e.target.checked)}
-                        disabled={field.fixed}
-                        style={{ accentColor: colors.primary }}
-                      />
-                      Richiesto
-                    </label>
-                  </div>
-                  <div style={{ paddingTop: '16px' }}>
-                    <button
-                      type="button"
-                      onClick={() => removeField(i)}
-                      disabled={field.fixed || fields.length <= 1}
-                      title={field.fixed ? 'Campo fisso non eliminabile' : 'Elimina campo'}
-                      style={{
-                        background: field.fixed ? 'transparent' : colors.danger + '15', border: 'none',
-                        borderRadius: '6px', padding: '4px', cursor: field.fixed ? 'not-allowed' : 'pointer',
-                        color: field.fixed ? colors.border : colors.danger, display: 'flex',
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                  {field.fixed && (
-                    <span style={{
-                      fontSize: '10px', color: colors.textSecondary, paddingTop: '16px',
-                      whiteSpace: 'nowrap', fontWeight: 500,
-                    }}>
-                      FISSO
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={addField}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px',
-                padding: '8px 16px', borderRadius: '8px',
-                border: `1px dashed ${colors.border}`, background: 'transparent',
-                color: colors.primary, fontSize: '13px', fontWeight: 600,
-                cursor: 'pointer', width: '100%', justifyContent: 'center',
-              }}
-            >
-              <Plus size={14} /> Aggiungi Campo
-            </button>
-          </div>
-
-          {/* BUTTONS */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '10px 20px', borderRadius: '10px',
-                border: `1px solid ${colors.border}`, background: 'transparent',
-                color: colors.textSecondary, fontSize: '14px', fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Annulla
-            </button>
-            <button
-              type="submit"
-               disabled={saving || fields.filter(f => f.name && f.name.trim()).length === 0}
-              style={{
-                padding: '10px 24px', borderRadius: '10px', border: 'none',
-                background: saving ? colors.textSecondary : colors.primary,
-                color: '#fff', fontSize: '14px', fontWeight: 600,
-                cursor: saving ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {saving ? 'Salvataggio...' : 'Salva Tabella'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {/* BUTTONS */}
+        <div className="mt-2 flex justify-end gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>Annulla</Button>
+          <Button type="submit" disabled={saving || fields.filter((f) => f.name && f.name.trim()).length === 0}>
+            {saving ? 'Salvataggio...' : 'Salva Tabella'}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

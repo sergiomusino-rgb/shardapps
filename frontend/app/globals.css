@@ -3,6 +3,26 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Tenant branding tokens — overridden at runtime (inline style on the app
+     root) with the per-tenant palette computed from designTokens.ts. The
+     values here are neutral fallbacks only, used if nothing overrides them. */
+  --tenant-primary: #6366f1;
+  --tenant-primary-hover: #4f46e5;
+  --tenant-bg: #f8fafc;
+  --tenant-card: #ffffff;
+  --tenant-card-alt: #f1f5f9;
+  --tenant-border: #e2e8f0;
+  --tenant-text: #0f172a;
+  --tenant-text-secondary: #64748b;
+  --tenant-sidebar-bg: #ffffff;
+  --tenant-sidebar-text: #0f172a;
+  --tenant-sidebar-hover: #f1f5f9;
+  --tenant-input-bg: #f8fafc;
+  --tenant-input-border: #cbd5e1;
+  --tenant-danger: #ef4444;
+  --tenant-success: #22c55e;
+  --tenant-warning: #f59e0b;
 }
 
 @theme inline {
@@ -10,6 +30,23 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-tenant-primary: var(--tenant-primary);
+  --color-tenant-primary-hover: var(--tenant-primary-hover);
+  --color-tenant-bg: var(--tenant-bg);
+  --color-tenant-card: var(--tenant-card);
+  --color-tenant-card-alt: var(--tenant-card-alt);
+  --color-tenant-border: var(--tenant-border);
+  --color-tenant-text: var(--tenant-text);
+  --color-tenant-text-secondary: var(--tenant-text-secondary);
+  --color-tenant-sidebar-bg: var(--tenant-sidebar-bg);
+  --color-tenant-sidebar-text: var(--tenant-sidebar-text);
+  --color-tenant-sidebar-hover: var(--tenant-sidebar-hover);
+  --color-tenant-input-bg: var(--tenant-input-bg);
+  --color-tenant-input-border: var(--tenant-input-border);
+  --color-tenant-danger: var(--tenant-danger);
+  --color-tenant-success: var(--tenant-success);
+  --color-tenant-warning: var(--tenant-warning);
 }
 
 /* Light theme (default) */

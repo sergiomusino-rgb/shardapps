@@ -3,9 +3,9 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, Users, Package, ShoppingCart, Database,
-  Settings, LogOut, Search, Plus, Pencil, Trash2, X, ChevronDown,
+  Settings, LogOut, Search, Plus, Pencil, Trash2, X,
   Download, Upload, FileText, FileSpreadsheet, MessageSquare, Mail, MessageCircle,
-  Settings2, Menu, TrendingUp, AlertTriangle, Star, StarHalf, Heart, HeartPulse,
+  Settings2, TrendingUp, AlertTriangle, Star, StarHalf, Heart, HeartPulse, Receipt,
   BarChart3, Activity, Globe, MapPin, Calendar as CalendarIcon, Clock, CheckCircle,
   XCircle, Tag, Code, BookOpen, HelpCircle, ExternalLink, Copy, RefreshCw
 } from 'lucide-react';
@@ -13,10 +13,13 @@ import { TableDef, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findD
 import { DesignLayout, DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
-import FullscreenToggle from '@/components/FullscreenToggle';
 import HeaderClock from '@/components/HeaderClock';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
 import { renderCellValue } from './cellRenderers';
+import { Sheet } from '@/components/ui/sheet';
+import AppTopBar from './AppTopBar';
+import { tenantThemeVars } from './tenant-theme';
+import { NavItem, SectionLabel, CollapsibleSection, SidebarLogo, SidebarBrandFooter, type SidebarCustomTable } from './sidebar-primitives';
 
 // ─── Props Interface ───────────────────────────────────────────────────────
 
@@ -27,6 +30,8 @@ interface DynamicLayoutRendererProps {
   designTokens?: DesignTokens;
   companyName: string;
   logoUrl: string;
+  /** Slug del tenant, per il link "Fatture e Ricevute" (route standalone). */
+  slug: string;
   tables: TableDef[];
   activeView: string;
   setActiveView: (view: string) => void;
@@ -81,6 +86,7 @@ export default function DynamicLayoutRenderer({
   designTokens = getDesignTokens(),
   companyName,
   logoUrl,
+  slug,
   tables,
   activeView,
   setActiveView,
@@ -254,301 +260,70 @@ export default function DynamicLayoutRenderer({
     }
   };
 
+  const pageTitle = activeView === 'dashboard'
+    ? companyName
+    : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName);
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: colors.bg, transition: 'background 0.3s', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-      {/* Mobile overlay */}
-      {isMobile && sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-            zIndex: 15, transition: 'opacity 0.3s',
-          }}
-        />
-      )}
-
-      {/* Sidebar */}
-      {(!isMobile || sidebarOpen) && (
-        <aside
-          style={{
-            background: colors.sidebarBg,
-            borderRight: '1px solid #334155',
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            color: colors.sidebarText,
-            display: 'flex',
-            flexDirection: 'column',
-            transition: 'width 0.3s, transform 0.3s',
-            position: 'relative',
-            zIndex: 20,
-            flexShrink: 0,
-            width: '280px',
-            ...(isMobile ? {
-              position: 'fixed',
-              left: 0,
-              top: 0,
-              bottom: 0,
-              boxShadow: '4px 0 24px rgba(0,0,0,0.3)',
-            } : {}),
-          }}
-        >
-          {/* Logo */}
-          <div style={{
-            padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {logoUrl ? (
-              <img src={logoUrl} alt={companyName} style={{ height: '80px', width: '80px', borderRadius: '12px', objectFit: 'cover' }} />
-            ) : (
-              <div style={{
-                width: '80px', height: '80px', borderRadius: '12px',
-                background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontWeight: 700, fontSize: '32px',
-              }}>
-                {companyName.charAt(0).toUpperCase()}
-              </div>
-            )}
-          </div>
-
-          {/* Nav Items */}
-          <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {/* Dashboard */}
-            <SidebarItem
-              icon={<LayoutDashboard size={18} />}
-              label="Dashboard"
-              active={activeView === 'dashboard'}
-              onClick={() => setActiveView('dashboard')}
-              colors={colors}
-              primaryColor={primaryColor}
-            />
-
-            {/* Tables: di lavoro in cima, tabelle di sistema (Fatture, Dati Azienda) in fondo */}
-            {sortTablesForSidebar(tables).map((table) => (
-              <div key={table.name} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <SidebarItem
-                    icon={resolveIcon(table.icon || '', table.name)}
-                    label={table.labelPlural}
-                    active={activeView === table.name}
-                    onClick={() => handleTableClick(table.name)}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditTable?.(table);
-                  }}
-                  title="Modifica tabella"
-                  style={{
-                    background: 'rgba(255,255,255,0.15)',
-                    border: 'none', borderRadius: '6px',
-                    padding: '4px', cursor: 'pointer',
-                    color: 'rgba(255,255,255,0.7)',
-                    display: 'flex', alignItems: 'center',
-                    marginRight: '8px', flexShrink: 0,
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = '#fff'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-                >
-                  <Settings2 size={14} />
-                </button>
-              </div>
-            ))}
-
-            {/* Custom Tables */}
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
-              <div style={{ padding: '0 14px 8px', fontSize: '11px', fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Personalizzate
-              </div>
-              {customTables?.map((ct: any) => (
-                <SidebarItem
-                  key={`custom_${ct.name}`}
-                  icon={<LayoutDashboard size={18} />}
-                  label={ct.labelPlural || ct.label + 'i'}
-                  active={activeView === `custom_${ct.name}`}
-                  onClick={() => setActiveView(`custom_${ct.name}`)}
-                  colors={colors}
-                  primaryColor={primaryColor}
-                />
-              ))}
-            </div>
-
-            {/* Comunicazioni - Collapsible */}
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
-              <button
-                onClick={() => setComunicazioniOpen(!comunicazioniOpen)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '8px 14px', borderRadius: '8px', border: 'none',
-                  background: 'transparent', color: colors.sidebarText,
-                  fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                  width: '100%', textTransform: 'uppercase',
-                  letterSpacing: '0.05em', transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                <MessageSquare size={14} />
-                <span style={{ flex: 1, textAlign: 'left' }}>Comunicazioni</span>
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: comunicazioniOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                  }}
-                />
-              </button>
-              {comunicazioniOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                  <SidebarItem
-                    icon={<MessageSquare size={18} />}
-                    label="Provider SDI"
-                    active={false}
-                    onClick={() => window.open('https://www.sdi.agenziaentrate.gov.it', '_blank')}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                  <SidebarItem
-                    icon={<Mail size={18} />}
-                    label="Email"
-                    active={false}
-                    onClick={() => window.open('https://mail.google.com', '_blank')}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                  <SidebarItem
-                    icon={<MessageCircle size={18} />}
-                    label="WhatsApp"
-                    active={false}
-                    onClick={() => window.open('https://wa.me/393331234567', '_blank')}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Importazioni - Collapsible */}
-            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
-              <button
-                onClick={() => setImportazioniOpen(!importazioniOpen)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '8px 14px', borderRadius: '8px', border: 'none',
-                  background: 'transparent', color: colors.sidebarText,
-                  fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                  width: '100%', textTransform: 'uppercase',
-                  letterSpacing: '0.05em', transition: 'background 0.2s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                <Upload size={14} />
-                <span style={{ flex: 1, textAlign: 'left' }}>Importazioni</span>
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: importazioniOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                  }}
-                />
-              </button>
-              {importazioniOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                  <SidebarItem
-                    icon={<Upload size={18} />}
-                    label="Importa CSV"
-                    active={activeView === 'import_csv'}
-                    onClick={() => setActiveView('import_csv')}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                  <SidebarItem
-                    icon={<Download size={18} />}
-                    label="Esporta CSV"
-                    active={activeView === 'export_csv'}
-                    onClick={() => setActiveView('export_csv')}
-                    colors={colors}
-                    primaryColor={primaryColor}
-                  />
-                </div>
-              )}
-            </div>
-          </nav>
-
-          {/* Bottom actions */}
-          <div style={{ padding: '12px 10px', borderTop: '1px solid rgba(255,255,255,0.2)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <SidebarItem
-              icon={<Settings size={18} />}
-              label="Impostazioni"
-              active={false}
-              onClick={() => setShowSettings(true)}
-              colors={colors}
-              primaryColor={primaryColor}
-            />
-            {datiAziendaliTable && (
-              <SidebarItem
-                icon={resolveIcon(datiAziendaliTable.icon || '', datiAziendaliTable.name)}
-                label={datiAziendaliTable.labelPlural}
-                active={activeView === datiAziendaliTable.name}
-                onClick={() => handleTableClick(datiAziendaliTable.name)}
-                colors={colors}
-                primaryColor={primaryColor}
-              />
-            )}
-            <SidebarItem
-              icon={<LogOut size={18} />}
-              label="Logout"
-              active={false}
-              onClick={onLogout}
-              colors={colors}
-              primaryColor={colors.danger}
-            />
-          </div>
-
-          {/* Brand Footer */}
-          <div style={{ padding: '16px 20px', borderTop: '1px solid rgba(255,255,255,0.2)', textAlign: 'center' }}>
-            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '11px', fontWeight: 600, margin: 0 }}>
-              ZeusX <span style={{ color: 'rgba(255,255,255,0.6)' }}>by</span> <span style={{ color: '#ffffff', fontWeight: 700 }}>MUSINO</span>
-            </p>
-          </div>
+    <div
+      className="flex h-full bg-tenant-bg"
+      style={{ ...tenantThemeVars(colors), fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+    >
+      {isMobile ? (
+        <Sheet open={sidebarOpen} onOpenChange={(v) => !v && setSidebarOpen(false)}>
+          <LayoutSidebar
+            tables={tables}
+            customTables={customTables}
+            activeView={activeView}
+            onNavigate={handleTableClick}
+            onNavigateView={setActiveView}
+            datiAziendaliTable={datiAziendaliTable}
+            onEditTable={onEditTable}
+            onOpenSettings={() => setShowSettings(true)}
+            onLogout={onLogout}
+            logoUrl={logoUrl}
+            companyName={companyName}
+            slug={slug}
+            comunicazioniOpen={comunicazioniOpen}
+            onToggleComunicazioni={() => setComunicazioniOpen((v) => !v)}
+            importazioniOpen={importazioniOpen}
+            onToggleImportazioni={() => setImportazioniOpen((v) => !v)}
+          />
+        </Sheet>
+      ) : (
+        <aside className="h-full w-[280px] shrink-0 border-r border-tenant-sidebar-text/10">
+          <LayoutSidebar
+            tables={tables}
+            customTables={customTables}
+            activeView={activeView}
+            onNavigate={handleTableClick}
+            onNavigateView={setActiveView}
+            datiAziendaliTable={datiAziendaliTable}
+            onEditTable={onEditTable}
+            onOpenSettings={() => setShowSettings(true)}
+            onLogout={onLogout}
+            logoUrl={logoUrl}
+            companyName={companyName}
+            slug={slug}
+            comunicazioniOpen={comunicazioniOpen}
+            onToggleComunicazioni={() => setComunicazioniOpen((v) => !v)}
+            importazioniOpen={importazioniOpen}
+            onToggleImportazioni={() => setImportazioniOpen((v) => !v)}
+          />
         </aside>
       )}
 
       {/* Main Content */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top bar (mobile toggle) */}
-        <header style={{
-          padding: '16px 24px', borderBottom: `2px solid ${primaryColor}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: colors.cardBg,
-          position: 'relative',
-        }}>
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: colors.textSecondary, padding: '4px',
-              display: 'block',
-              position: 'absolute',
-              left: '24px',
-            }}
-          >
-            <Menu size={22} />
-          </button>
-          <div style={{ color: colors.text, fontSize: '16px', fontWeight: 700 }}>
-            {activeView === 'dashboard' ? companyName : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName)}
-          </div>
-          <div style={{ position: 'absolute', right: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            {!isMobile && <HeaderClock textColor={colors.text} mutedColor={colors.textSecondary} />}
-            <FullscreenToggle color={colors.textSecondary} />
-          </div>
-        </header>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AppTopBar
+          title={pageTitle}
+          onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+          showMenuToggle={isMobile}
+          extraActions={!isMobile ? <HeaderClock textColor={colors.text} mutedColor={colors.textSecondary} /> : undefined}
+        />
 
         {/* Content area */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div className="flex-1 overflow-y-auto p-6">
           {renderContent()}
         </div>
       </main>
@@ -556,50 +331,131 @@ export default function DynamicLayoutRenderer({
   );
 }
 
-// ─── SidebarItem Component ────────────────────────────────────────────────────
-
-interface SidebarItemProps {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  colors: ReturnType<typeof getThemeVars>;
-  primaryColor: string;
+// ─── Sidebar Component (layout di settore) ───────────────────────────────────
+// Stesso linguaggio visivo di ViewerSidebar (layout generico), stesso set di
+// funzioni: qui non ci sono creazione tabelle personalizzate/AI e l'elenco
+// import/export resta volutamente ridotto (solo CSV), invariato rispetto a
+// prima — nessuna funzionalità aggiunta, solo restyling.
+interface LayoutSidebarProps {
+  tables: TableDef[];
+  customTables: SidebarCustomTable[];
+  activeView: string;
+  onNavigate: (tableName: string) => void;
+  onNavigateView: (view: string) => void;
+  datiAziendaliTable: TableDef | null | undefined;
+  onEditTable?: (table: TableDef) => void;
+  onOpenSettings: () => void;
+  onLogout: () => void;
+  logoUrl: string;
+  companyName: string;
+  slug: string;
+  comunicazioniOpen: boolean;
+  onToggleComunicazioni: () => void;
+  importazioniOpen: boolean;
+  onToggleImportazioni: () => void;
 }
 
-function SidebarItem({ icon, label, active, onClick, colors, primaryColor }: SidebarItemProps) {
-  const [hovered, setHovered] = useState(false);
-
+function LayoutSidebar({
+  tables, customTables, activeView, onNavigate, onNavigateView, datiAziendaliTable,
+  onEditTable, onOpenSettings, onLogout, logoUrl, companyName, slug,
+  comunicazioniOpen, onToggleComunicazioni, importazioniOpen, onToggleImportazioni,
+}: LayoutSidebarProps) {
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '10px',
-        padding: '10px 14px', borderRadius: '8px', border: 'none',
-        background: active
-          ? '#EFF6FF'
-          : hovered
-            ? '#F4F4F5'
-            : 'transparent',
-        color: active ? '#2563EB' : '#18181B',
-        fontSize: '14px', fontWeight: active ? 600 : 500,
-        cursor: 'pointer', width: '100%', textAlign: 'left',
-        transition: 'all 0.15s',
-        position: 'relative',
-      }}
-    >
-      {active && (
-        <div style={{
-          position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-          width: '2px', height: '20px', borderRadius: '0 2px 2px 0',
-          background: '#2563EB',
-        }} />
-      )}
-      <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-    </button>
+    <div className="flex h-full flex-col bg-tenant-sidebar-bg text-tenant-sidebar-text">
+      <SidebarLogo logoUrl={logoUrl} companyName={companyName} />
+
+      <nav className="flex-1 overflow-y-auto px-2.5 py-3">
+        <NavItem
+          icon={<LayoutDashboard size={18} />}
+          label="Dashboard"
+          active={activeView === 'dashboard'}
+          onClick={() => onNavigateView('dashboard')}
+        />
+
+        {sortTablesForSidebar(tables).map((table) => (
+          <NavItem
+            key={table.name}
+            icon={resolveIcon(table.icon || '', table.name)}
+            label={table.labelPlural}
+            active={activeView === table.name}
+            onClick={() => onNavigate(table.name)}
+            trailing={
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditTable?.(table);
+                }}
+                title="Modifica tabella"
+                className="shrink-0 rounded-lg p-1.5 text-tenant-sidebar-text/40 transition-colors hover:bg-tenant-sidebar-hover hover:text-tenant-sidebar-text"
+              >
+                <Settings2 size={14} />
+              </button>
+            }
+          />
+        ))}
+
+        <SectionLabel>Personalizzate</SectionLabel>
+        {customTables?.map((ct) => (
+          <NavItem
+            key={`custom_${ct.name}`}
+            icon={<LayoutDashboard size={18} />}
+            label={ct.labelPlural || `${ct.label}i`}
+            active={activeView === `custom_${ct.name}`}
+            onClick={() => onNavigateView(`custom_${ct.name}`)}
+          />
+        ))}
+
+        <CollapsibleSection
+          icon={<MessageSquare size={14} />}
+          label="Comunicazioni"
+          open={comunicazioniOpen}
+          onToggle={onToggleComunicazioni}
+        >
+          <NavItem icon={<MessageCircle size={18} />} label="WhatsApp" active={false} onClick={() => window.open('https://wa.me/393331234567', '_blank')} />
+          <NavItem icon={<MessageSquare size={18} />} label="Provider SDI" active={false} onClick={() => window.open('https://www.sdi.agenziaentrate.gov.it', '_blank')} />
+          <NavItem icon={<Mail size={18} />} label="Email" active={false} onClick={() => window.open('https://mail.google.com', '_blank')} />
+        </CollapsibleSection>
+
+        <CollapsibleSection
+          icon={<Upload size={14} />}
+          label="Importazioni"
+          open={importazioniOpen}
+          onToggle={onToggleImportazioni}
+        >
+          <NavItem icon={<Upload size={18} />} label="Importa CSV" active={activeView === 'import_csv'} onClick={() => onNavigateView('import_csv')} />
+          <NavItem icon={<Download size={18} />} label="Esporta CSV" active={activeView === 'export_csv'} onClick={() => onNavigateView('export_csv')} />
+        </CollapsibleSection>
+      </nav>
+
+      {/* Bottom actions */}
+      <div className="flex flex-col gap-0.5 border-t border-tenant-sidebar-text/10 px-2.5 py-3">
+        <NavItem
+          icon={<Receipt size={18} />}
+          label="Fatture e Ricevute"
+          active={false}
+          onClick={() => { window.location.href = `/a/${slug}/fatture`; }}
+        />
+        <NavItem icon={<Settings size={18} />} label="Impostazioni" active={false} onClick={onOpenSettings} />
+        {datiAziendaliTable && (
+          <NavItem
+            icon={resolveIcon(datiAziendaliTable.icon || '', datiAziendaliTable.name)}
+            label={datiAziendaliTable.labelPlural}
+            active={activeView === datiAziendaliTable.name}
+            onClick={() => onNavigate(datiAziendaliTable.name)}
+          />
+        )}
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-tenant-danger transition-colors hover:bg-tenant-danger/10"
+        >
+          <LogOut size={18} /> Logout
+        </button>
+      </div>
+
+      <SidebarBrandFooter />
+    </div>
   );
 }
 

@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTheme } from '@/src/lib/ThemeContext';
+import { Plus, Search, FileText, ArrowLeft } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { getTenantColors } from './tenantBranding';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
@@ -16,6 +21,7 @@ interface Fattura {
   cliente_piva?: string;
   cliente_indirizzo?: string;
   stato: string;
+  tipo_documento?: 'fattura' | 'ricevuta';
   metodo_pagamento?: string;
   created_at: string;
   updated_at: string;
@@ -26,29 +32,24 @@ export default function FatturePage() {
   const params = useParams();
   const router = useRouter();
   const slug = params.slug as string;
-  
-  // Usa il tema dal context globale
-  const { theme } = useTheme();
+
+  const [{ style: tenantStyle }] = useState(() => getTenantColors(slug));
 
   const [fatture, setFatture] = useState<Fattura[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Recupera la password dalla sessione
   const getPassword = (): string | null => {
     if (typeof window === 'undefined') return null;
-    const sessionKey = `app_session_${slug}`;
-    const raw = localStorage.getItem(sessionKey);
+    const raw = localStorage.getItem(`app_session_${slug}`);
     if (!raw) return null;
     try {
-      const parsed = JSON.parse(raw);
-      return parsed.password || null;
+      return JSON.parse(raw).password || null;
     } catch {
       return null;
     }
   };
 
-  // Carica le fatture
   useEffect(() => {
     const loadFatture = async () => {
       setLoading(true);
@@ -63,30 +64,24 @@ export default function FatturePage() {
 
       try {
         const res = await fetch(`${BACKEND_URL}/api/a/${slug}/invoices`, {
-          headers: {
-            Authorization: `Bearer ${password}`,
-          },
+          headers: { Authorization: `Bearer ${password}` },
         });
-
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || `Errore ${res.status}`);
         }
-
         const data = await res.json();
-        // Calcola il totale per ogni fattura caricando le righe
         const fattureConTotali = await Promise.all(
           (data.fatture || []).map(async (fattura: Fattura) => {
             try {
               const righeRes = await fetch(`${BACKEND_URL}/api/invoices/${fattura.id}`, {
-                headers: {
-                  Authorization: `Bearer ${password}`,
-                },
+                headers: { Authorization: `Bearer ${password}` },
               });
               if (righeRes.ok) {
                 const righeData = await righeRes.json();
-                const totale = (righeData.righe || []).reduce((sum: number, riga: any) => {
-                  return sum + (riga.quantita * riga.prezzo_unitario * (1 + (riga.aliquota_iva || 0) / 100));
+                const righeList: Array<{ quantita: number; prezzo_unitario: number; aliquota_iva?: number }> = righeData.righe || [];
+                const totale = righeList.reduce((sum, riga) => {
+                  return sum + riga.quantita * riga.prezzo_unitario * (1 + (riga.aliquota_iva || 0) / 100);
                 }, 0);
                 return { ...fattura, totale };
               }
@@ -108,168 +103,130 @@ export default function FatturePage() {
     loadFatture();
   }, [slug]);
 
-  // Aggiorna stato fattura
   const updateStato = async (fatturaId: string, nuovoStato: string) => {
     const password = getPassword();
     if (!password) {
       alert('Password mancante. Effettua nuovamente il login.');
       return;
     }
-
     try {
       const res = await fetch(`${BACKEND_URL}/api/invoices/${fatturaId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${password}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
         body: JSON.stringify({ stato: nuovoStato }),
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Errore ${res.status}`);
       }
-
       const data = await res.json();
-      // Aggiorna la fattura nella lista
-      setFatture(fatture.map(f => f.id === fatturaId ? { ...f, stato: data.fattura.stato } : f));
+      setFatture((prev) => prev.map((f) => (f.id === fatturaId ? { ...f, stato: data.fattura.stato } : f)));
     } catch (err) {
       console.error('Errore aggiornamento stato:', err);
       alert(err instanceof Error ? err.message : 'Errore aggiornamento stato');
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('it-IT');
-  };
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('it-IT');
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  };
-
-  // Stati per filtri
   const [filterStato, setFilterStato] = useState<string>('tutti');
-  const [filterAnno, setFilterAnno] = useState<string>('tutti');
+  const [filterTipo, setFilterTipo] = useState<string>('tutti');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Fatture filtrate
   const fattureFiltrate = fatture.filter((fattura) => {
     const matchStato = filterStato === 'tutti' || fattura.stato === filterStato;
-    const matchAnno = filterAnno === 'tutti' || fattura.anno.toString() === filterAnno;
-    const matchSearch = searchTerm === '' || 
+    const matchTipo = filterTipo === 'tutti' || (fattura.tipo_documento || 'fattura') === filterTipo;
+    const matchSearch =
+      searchTerm === '' ||
       fattura.cliente_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       fattura.numero_fattura.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (fattura.cliente_piva && fattura.cliente_piva.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchStato && matchAnno && matchSearch;
+    return matchStato && matchTipo && matchSearch;
   });
 
-  // Statistiche
   const stats = {
     totale: fattureFiltrate.length,
-    bozze: fattureFiltrate.filter(f => f.stato === 'bozza').length,
-    emesse: fattureFiltrate.filter(f => f.stato === 'emessa').length,
-    pagate: fattureFiltrate.filter(f => f.stato === 'pagata').length,
+    bozze: fattureFiltrate.filter((f) => f.stato === 'bozza').length,
+    emesse: fattureFiltrate.filter((f) => f.stato === 'emessa').length,
+    pagate: fattureFiltrate.filter((f) => f.stato === 'pagata').length,
   };
-
-  // Colori in base al tema
-  const isDark = theme === 'dark';
-  const bgColor = isDark ? 'bg-slate-950' : 'bg-gray-100';
-  const cardBg = isDark ? 'bg-slate-900' : 'bg-white';
-  const textPrimary = isDark ? 'text-white' : 'text-gray-900';
-  const textSecondary = isDark ? 'text-slate-400' : 'text-gray-600';
-  const textMuted = isDark ? 'text-slate-500' : 'text-gray-500';
-  const borderColor = isDark ? 'border-slate-800' : 'border-gray-300';
 
   if (loading) {
     return (
-      <div className={`min-h-screen ${bgColor} flex items-center justify-center`}>
-        <div className={textSecondary}>Caricamento fatture...</div>
+      <div className="flex min-h-screen items-center justify-center bg-tenant-bg" style={tenantStyle}>
+        <div className="text-tenant-text-secondary">Caricamento documenti...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className={`min-h-screen ${bgColor} flex items-center justify-center`}>
+      <div className="flex min-h-screen items-center justify-center bg-tenant-bg" style={tenantStyle}>
         <div className="text-center">
-          <h2 className="text-xl font-semibold text-red-600 mb-2">Errore</h2>
-          <p className={textSecondary}>{error}</p>
+          <h2 className="mb-2 text-xl font-semibold text-tenant-danger">Errore</h2>
+          <p className="text-tenant-text-secondary">{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`${bgColor} min-h-screen py-8 transition-colors duration-300`}>
-      <div className="max-w-7xl mx-auto px-4">
-        {/* Header */}
-        <div className="flex justify-between items-center mb-8">
+    <div className="min-h-screen bg-tenant-bg py-8" style={tenantStyle}>
+      <div className="mx-auto max-w-7xl px-4">
+        <button
+          type="button"
+          onClick={() => router.push(`/a/${slug}/dashboard`)}
+          className="mb-4 flex items-center gap-1.5 text-sm text-tenant-text-secondary transition-colors hover:text-tenant-text"
+        >
+          <ArrowLeft size={15} /> Torna alla Dashboard
+        </button>
+
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className={`text-3xl font-bold ${textPrimary} mb-2`}>Fatture</h1>
-            <p className={`text-sm ${textSecondary}`}>Gestisci le tue fatture</p>
+            <h1 className="m-0 text-3xl font-bold text-tenant-text">Fatture e Ricevute</h1>
+            <p className="mt-1 text-sm text-tenant-text-secondary">Gestisci i tuoi documenti e scarica i PDF</p>
           </div>
-          <button
-            onClick={() => router.push(`/a/${slug}/fatture/nuova`)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg shadow-lg hover:bg-blue-700 transition-colors"
-            style={{ fontSize: '14px', fontWeight: 600 }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Nuova Fattura
-          </button>
+          <Button size="lg" onClick={() => router.push(`/a/${slug}/fatture/nuova`)}>
+            <Plus size={18} /> Nuovo Documento
+          </Button>
         </div>
 
-        {/* Statistiche */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className={`${cardBg} rounded-lg shadow-md p-4`}>
-            <div className={`text-2xl font-bold ${textPrimary}`}>{stats.totale}</div>
-            <div className={`text-sm ${textMuted}`}>Totale Fatture</div>
-          </div>
-          <div className={`${cardBg} rounded-lg shadow-md p-4`}>
-            <div className={`text-2xl font-bold ${textMuted}`}>{stats.bozze}</div>
-            <div className={`text-sm ${textMuted}`}>Bozze</div>
-          </div>
-          <div className={`${cardBg} rounded-lg shadow-md p-4`}>
-            <div className="text-2xl font-bold text-green-600">{stats.emesse}</div>
-            <div className={`text-sm ${textMuted}`}>Emesse</div>
-          </div>
-          <div className={`${cardBg} rounded-lg shadow-md p-4`}>
-            <div className="text-2xl font-bold text-blue-600">{stats.pagate}</div>
-            <div className={`text-sm ${textMuted}`}>Pagate</div>
-          </div>
+        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+          <Card><CardContent className="p-4"><div className="text-2xl font-bold text-tenant-text">{stats.totale}</div><div className="text-sm text-tenant-text-secondary">Totale</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-2xl font-bold text-tenant-text-secondary">{stats.bozze}</div><div className="text-sm text-tenant-text-secondary">Bozze</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-2xl font-bold text-tenant-success">{stats.emesse}</div><div className="text-sm text-tenant-text-secondary">Emesse</div></CardContent></Card>
+          <Card><CardContent className="p-4"><div className="text-2xl font-bold text-tenant-primary">{stats.pagate}</div><div className="text-sm text-tenant-text-secondary">Pagate</div></CardContent></Card>
         </div>
 
-        {/* Filtri */}
-        <div className={`${cardBg} rounded-lg shadow-md p-4 mb-6`}>
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            <div className="flex-1 w-full md:w-auto">
-              <label className={`block text-xs font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'} mb-1`}>Cerca</label>
+        <Card className="mb-6">
+          <CardContent className="flex flex-col items-start gap-4 p-4 md:flex-row md:items-center">
+            <div className="w-full flex-1 md:w-auto">
+              <label className="mb-1 block text-xs font-medium text-tenant-text-secondary">Cerca</label>
               <div className="relative">
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Cliente, numero fattura, P.IVA..."
-                  className={`w-full px-3 py-2 pl-10 border ${borderColor} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}
-                />
-                <svg className={`absolute left-3 top-2.5 w-4 h-4 ${isDark ? 'text-slate-400' : 'text-gray-400'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="M21 21l-4.35-4.35" />
-                </svg>
+                <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+                <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Cliente, numero, P.IVA..." className="pl-9" />
               </div>
             </div>
             <div>
-              <label className={`block text-xs font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'} mb-1`}>Stato</label>
+              <label className="mb-1 block text-xs font-medium text-tenant-text-secondary">Tipo</label>
+              <select
+                value={filterTipo}
+                onChange={(e) => setFilterTipo(e.target.value)}
+                className="h-10 rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3 text-sm text-tenant-text outline-none focus:border-tenant-primary"
+              >
+                <option value="tutti">Tutti</option>
+                <option value="fattura">Fatture</option>
+                <option value="ricevuta">Ricevute</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-tenant-text-secondary">Stato</label>
               <select
                 value={filterStato}
                 onChange={(e) => setFilterStato(e.target.value)}
-                className={`px-3 py-2 border ${borderColor} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}
+                className="h-10 rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3 text-sm text-tenant-text outline-none focus:border-tenant-primary"
               >
                 <option value="tutti">Tutti</option>
                 <option value="bozza">Bozza</option>
@@ -278,120 +235,69 @@ export default function FatturePage() {
                 <option value="annullata">Annullata</option>
               </select>
             </div>
-            <div>
-              <label className={`block text-xs font-medium ${isDark ? 'text-slate-300' : 'text-gray-700'} mb-1`}>Anno</label>
-              <select
-                value={filterAnno}
-                onChange={(e) => setFilterAnno(e.target.value)}
-                className={`px-3 py-2 border ${borderColor} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDark ? 'bg-slate-900 text-white' : 'bg-white text-gray-900'}`}
-              >
-                <option value="tutti">Tutti</option>
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-              </select>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        {/* Tabella Fatture */}
-        <div className={`${cardBg} rounded-lg shadow-md overflow-hidden`}>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className={isDark ? 'bg-slate-800' : 'bg-gray-100'}>
-                <th className={`border-b ${borderColor} px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Numero
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Data
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Cliente
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-left text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  P.IVA
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-center text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Stato
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-right text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Totale
-                </th>
-                <th className={`border-b ${borderColor} px-4 py-3 text-center text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
-                  Azioni
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {fattureFiltrate.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className={`px-4 py-8 text-center ${textMuted}`}>
-                    Nessuna fattura trovata
-                  </td>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-tenant-card-alt">
+                  <th className="border-b border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Tipo</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Numero</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Data</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Cliente</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Stato</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Totale</th>
+                  <th className="border-b border-tenant-border px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">Azioni</th>
                 </tr>
-              ) : (
-                fattureFiltrate.map((fattura, index) => (
-                  <tr key={fattura.id} className={index % 2 === 0 ? (isDark ? 'bg-slate-900' : 'bg-white') : (isDark ? 'bg-slate-800' : 'bg-gray-50')}>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-sm ${textPrimary}`}>
-                      {fattura.numero_fattura}/{fattura.anno}
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-sm ${textPrimary}`}>
-                      {formatDate(fattura.data_emissione)}
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-sm ${textPrimary}`}>
-                      {fattura.cliente_nome}
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-sm ${textMuted}`}>
-                      {fattura.cliente_piva || '-'}
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-center`}>
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        fattura.stato === 'emessa' 
-                          ? 'bg-green-100 text-green-800' 
-                          : fattura.stato === 'pagata'
-                          ? 'bg-blue-100 text-blue-800'
-                          : fattura.stato === 'annullata'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {fattura.stato.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-sm text-right ${textPrimary}`}>
-                      {fattura.totale ? formatCurrency(fattura.totale) : '-'}
-                    </td>
-                    <td className={`border-b ${borderColor} px-4 py-3 text-center`}>
-                      <select
-                        value={fattura.stato}
-                        onChange={(e) => updateStato(fattura.id, e.target.value)}
-                        className={`px-3 py-1 rounded text-sm font-medium ${
-                          fattura.stato === 'emessa' 
-                            ? 'bg-green-100 text-green-800 border border-green-300' 
-                            : fattura.stato === 'pagata'
-                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                            : fattura.stato === 'annullata'
-                            ? 'bg-red-100 text-red-800 border border-red-300'
-                            : 'bg-gray-100 text-gray-800 border border-gray-300'
-                        }`}
-                      >
-                        <option value="bozza">Bozza</option>
-                        <option value="emessa">Emessa</option>
-                        <option value="pagata">Pagata</option>
-                        <option value="annullata">Annullata</option>
-                      </select>
-                      <button
-                        onClick={() => router.push(`/a/${slug}/fatture/${fattura.id}`)}
-                        className="ml-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm"
-                      >
-                        Visualizza
-                      </button>
+              </thead>
+              <tbody>
+                {fattureFiltrate.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-10 text-center text-tenant-text-secondary">
+                      <FileText size={28} className="mx-auto mb-2 opacity-50" />
+                      Nessun documento trovato
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  fattureFiltrate.map((fattura) => (
+                    <tr key={fattura.id} className="border-b border-tenant-border transition-colors hover:bg-tenant-card-alt">
+                      <td className="px-4 py-3 text-sm">
+                        <Badge variant={fattura.tipo_documento === 'ricevuta' ? 'primary' : 'outline'}>
+                          {fattura.tipo_documento === 'ricevuta' ? 'Ricevuta' : 'Fattura'}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-tenant-text">{fattura.numero_fattura}/{fattura.anno}</td>
+                      <td className="px-4 py-3 text-sm text-tenant-text">{formatDate(fattura.data_emissione)}</td>
+                      <td className="px-4 py-3 text-sm text-tenant-text">{fattura.cliente_nome}</td>
+                      <td className="px-4 py-3 text-center">
+                        <select
+                          value={fattura.stato}
+                          onChange={(e) => updateStato(fattura.id, e.target.value)}
+                          className="rounded-lg border border-tenant-border bg-transparent px-2 py-1 text-xs font-medium text-tenant-text outline-none"
+                        >
+                          <option value="bozza">Bozza</option>
+                          <option value="emessa">Emessa</option>
+                          <option value="pagata">Pagata</option>
+                          <option value="annullata">Annullata</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm font-medium text-tenant-text">
+                        {fattura.totale ? formatCurrency(fattura.totale) : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Button variant="soft" size="sm" onClick={() => router.push(`/a/${slug}/fatture/${fattura.id}`)}>
+                          Visualizza
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       </div>
     </div>
   );

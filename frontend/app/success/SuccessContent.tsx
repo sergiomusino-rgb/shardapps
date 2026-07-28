@@ -34,7 +34,13 @@ export default function SuccessPage() {
         .then(res => res.json())
         .then(data => {
           console.log('[Sync Plan] Risultato:', data);
-          if (data.success) {
+          if (data.success && !data.plan && data.credits_added > 0) {
+            // Ricarica Extra (credit_topup): nessun piano/slot coinvolto,
+            // solo crediti Vision accreditati.
+            setSyncStatus(`+${data.credits_added} crediti Vision accreditati!`);
+          } else if (data.success && data.credits_added > 0) {
+            setSyncStatus(`Piano ${data.plan} attivato con ${data.app_limit} slot e ${data.credits_added} crediti Vision!`);
+          } else if (data.success) {
             setSyncStatus(`Piano ${data.plan} attivato con ${data.app_limit} slot!`);
           } else if (data.paid === false) {
             setSyncStatus('Attendi la conferma del pagamento...');
@@ -71,41 +77,47 @@ export default function SuccessPage() {
   const buttonHref = appSlug ? `/dashboard/projects/${appSlug}` : '/dashboard';
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6 text-center">
-      <div className="bg-white p-8 rounded-2xl shadow-lg border border-green-100 max-w-md w-full">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-950 p-6 text-center text-white">
+      {/* Glow di sfondo, coerente con dashboard/pricing/vision */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-indigo-600/10 blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 h-96 w-96 rounded-full bg-emerald-600/10 blur-[120px]" />
+      </div>
+
+      <div className="relative w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-sm">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 ring-1 ring-emerald-500/30">
+          <svg className="h-8 w-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Pagamento Riuscito!</h1>
-        <p className="text-gray-600 mb-6">
-          {appSlug 
+
+        <h1 className="mb-2 text-2xl font-bold text-white">Pagamento Riuscito!</h1>
+        <p className="mb-6 text-sm leading-relaxed text-slate-400">
+          {appSlug
             ? "L'app è stata creata con successo! Verrai reindirizzato ai dettagli dell'app a breve..."
             : "Grazie per aver acquistato i crediti ZEUSX. Il tuo account è stato aggiornato. Verrai reindirizzato alla dashboard a breve..."
           }
         </p>
 
         {syncStatus && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-700">{syncStatus}</p>
+          <div className="mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3">
+            <p className="text-sm text-indigo-300">{syncStatus}</p>
           </div>
         )}
 
-        <Link 
+        <Link
           href={buttonHref}
-          className="block w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+          className="block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-3 font-semibold text-white shadow-lg shadow-indigo-600/20 transition-all hover:-translate-y-0.5 hover:shadow-indigo-600/30"
         >
           {appSlug ? "Vai ai dettagli dell'app" : "Vai subito alla Dashboard"}
         </Link>
       </div>
-      
-      <p className="mt-6 text-sm text-gray-400">
-        {sessionId 
-          ? `ID Transazione: ${sessionId.substring(0, 15)}...` 
-          : appSlug 
-            ? `App Slug: ${appSlug}` 
+
+      <p className="relative mt-6 text-sm text-slate-500">
+        {sessionId
+          ? `ID Transazione: ${sessionId.substring(0, 15)}...`
+          : appSlug
+            ? `App Slug: ${appSlug}`
             : "N/A"
         }
       </p>

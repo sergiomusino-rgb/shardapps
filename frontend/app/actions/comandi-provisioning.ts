@@ -8,10 +8,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Stesso ID già hardcoded in frontend/app/actions/generator.ts: l'admin
-// salta il controllo slot anche per il provisioning di Comandi AI.
-const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
-
 const TRIAL_DAYS = 30;
 const MONTHLY_PRICE = 25.0;
 
@@ -120,24 +116,12 @@ export async function provisionComandiAppAction(
       };
     }
 
-    // ─── Controllo slot ────────────────────────────────────────────────────
-    if (userId !== ADMIN_USER_ID) {
-      const { data: tenant, error: tenantError } = await supabaseAdmin
-        .from('tenants')
-        .select('app_limit, total_apps_created')
-        .eq('id', tenantId)
-        .single();
-
-      if (tenantError || !tenant) {
-        return { success: false, error: 'Tenant non trovato' };
-      }
-
-      const slotsAvailable = (tenant.app_limit as number) - (tenant.total_apps_created as number);
-      if (slotsAvailable <= 0) {
-        return { success: false, error: 'Slot esauriti. Aggiorna il tuo piano per attivare Comandi AI.' };
-      }
-    }
-
+    // Nessun controllo slot: Comandi AI è un'app omaggio inclusa di default in
+    // ogni registrazione (vedi auto-provisioning in /api/tenants/create), non
+    // un prodotto a pagamento che consuma uno slot del piano — a differenza
+    // delle app generate dal Creator. Resta comunque a pagamento (25€/mese)
+    // dopo i 30 giorni di trial tramite lo stesso paywall standard
+    // (apps.status/trial_ends_at, vedi app/a/[slug]/layout.tsx).
     const slug = `comandi-${Date.now().toString(36)}`;
     const productionUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
     const now = new Date();
@@ -213,19 +197,9 @@ export async function provisionComandiAppAction(
       return { success: false, error: 'Errore nella creazione dell\'istanza: ' + (appError?.message || 'unknown') };
     }
 
-    // Incrementa il contatore slot del tenant (stesso bookkeeping di generateAppAction)
-    const { data: tenantData } = await supabaseAdmin
-      .from('tenants')
-      .select('total_apps_created')
-      .eq('id', tenantId)
-      .single();
-
-    if (tenantData) {
-      await supabaseAdmin
-        .from('tenants')
-        .update({ total_apps_created: ((tenantData.total_apps_created as number) || 0) + 1 })
-        .eq('id', tenantId);
-    }
+    // NON si incrementa total_apps_created qui (a differenza di
+    // generateAppAction): Comandi non consuma uno slot, quindi non deve
+    // ridurre gli slot disponibili per le app generate dal Creator.
 
     // app_definitions: schema vuoto, la console Comandi non usa il motore a
     // tabelle dinamiche, ma la riga è comunque attesa dal resto della

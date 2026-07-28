@@ -22,8 +22,20 @@ const PLAN_SLOTS: Record<string, number> = {
   free: 0,
   starter: 1,
   pro: 5,
-  business: 100,
+  business: 20,
 };
+
+// Mappa piani -> crediti Vision inclusi (setup una tantum). "credit_topup"
+// ("Ricarica Extra", ex "extra_slot") non è un piano: accredita solo crediti,
+// gestito a parte più sotto (vedi CREDIT_TOPUP_CREDITS).
+const PLAN_CREDITS: Record<string, number> = {
+  free: 0,
+  starter: 20,
+  pro: 100,
+  business: 400,
+};
+
+const CREDIT_TOPUP_CREDITS = 50;
 
 // Rango dei piani: questo endpoint può essere chiamato in parallelo al
 // webhook Stripe e non c'è garanzia sull'ordine di consegna degli eventi. Se
@@ -76,7 +88,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         paid: false,
         plan: 'free',
-        app_limit: 0
+        app_limit: 0,
+        credits_added: 0
       });
     }
 
@@ -96,6 +109,58 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant non autorizzato' }, { status: 403 });
     }
 
+    // I crediti Vision sono legati all'utente che ha pagato (profiles.user_id),
+    // non al tenant/workspace. create-checkout-session/route.ts imposta sempre
+    // supabase_user_id nei metadata; per sessioni più vecchie che ne fossero
+    // prive, l'utente autenticato (già verificato membro del tenant sopra) è
+    // un fallback ragionevole.
+    const metadataPlan = session.metadata?.plan_id;
+    const supabaseUserId = session.metadata?.supabase_user_id || user.id;
+
+    // "Ricarica Extra" (credit_topup, ex "extra_slot"): accredita crediti
+    // Vision, zero slot, non è un "piano" — gestita a parte perché altrimenti
+    // finirebbe nel fallback sotto e verrebbe trattata erroneamente come
+    // acquisto del piano 'starter'.
+    if (metadataPlan === 'credit_topup') {
+      const lineItems = await stripe.checkout.sessions.listLineItems(session_id, { limit: 10 });
+      const quantity = lineItems.data[0]?.quantity || 1;
+      const creditsToAdd = CREDIT_TOPUP_CREDITS * quantity;
+
+      const { error: insertError } = await supabase
+        .from('processed_checkout_sessions')
+        .insert({ session_id, tenant_id: tenantId, plan: 'credit_topup', slots_added: 0 });
+
+      if (insertError && insertError.code !== '23505') {
+        throw insertError;
+      }
+
+      if (!insertError) {
+        const { error: creditsError } = await supabase.rpc('grant_credits', {
+          p_user_id: supabaseUserId,
+          p_amount: creditsToAdd,
+          p_type: 'purchase',
+          p_description: 'Ricarica Extra crediti Vision',
+          p_reference_id: session_id,
+          p_metadata: { plan_id: 'credit_topup', session_id },
+        });
+        if (creditsError) throw creditsError;
+      }
+
+      const { data: tenantRow } = await supabase
+        .from('tenants')
+        .select('plan, app_limit')
+        .eq('id', tenantId)
+        .single();
+
+      return NextResponse.json({
+        success: true,
+        paid: true,
+        plan: tenantRow?.plan ?? null,
+        app_limit: tenantRow?.app_limit ?? 0,
+        credits_added: creditsToAdd,
+      });
+    }
+
     // Il piano scelto è già salvato correttamente in metadata.plan_id al
     // momento della creazione della sessione (create-checkout-session/route.ts)
     // — è la stessa fonte usata dal webhook Stripe. Prima si tentava di
@@ -105,9 +170,9 @@ export async function POST(request: NextRequest) {
     // veniva salvato come "pro", sovrascrivendo il valore corretto già scritto
     // dal webhook. Il match sul nome resta solo come fallback per sessioni
     // vecchie prive di questo metadata.
-    const metadataPlan = session.metadata?.plan_id;
     let plan = PLAN_SLOTS[metadataPlan || ''] !== undefined ? metadataPlan! : 'starter';
     let appLimit = PLAN_SLOTS[plan] ?? 1;
+    let creditsToAdd = PLAN_CREDITS[plan] ?? 0;
 
     if (!metadataPlan) {
       // Recupera i dettagli del prodotto per determinare il piano (fallback)
@@ -124,14 +189,13 @@ export async function POST(request: NextRequest) {
 
           if (name.includes('business')) {
             plan = 'business';
-            appLimit = PLAN_SLOTS.business;
           } else if (name.includes('pro')) {
             plan = 'pro';
-            appLimit = PLAN_SLOTS.pro;
           } else if (name.includes('starter')) {
             plan = 'starter';
-            appLimit = PLAN_SLOTS.starter;
           }
+          appLimit = PLAN_SLOTS[plan] ?? 1;
+          creditsToAdd = PLAN_CREDITS[plan] ?? 0;
         }
       }
     }
@@ -151,6 +215,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (!insertError) {
+      if (creditsToAdd > 0) {
+        const { error: creditsError } = await supabase.rpc('grant_credits', {
+          p_user_id: supabaseUserId,
+          p_amount: creditsToAdd,
+          p_type: 'purchase',
+          p_description: `Acquisto piano ${plan}`,
+          p_reference_id: session_id,
+          p_metadata: { plan_id: plan, session_id },
+        });
+        if (creditsError) console.error('[Sync Plan] errore grant_credits:', creditsError);
+      }
+
       const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
         tenant_id: tenantId,
         slots_to_add: appLimit,
@@ -185,6 +261,7 @@ export async function POST(request: NextRequest) {
       paid: true,
       plan: tenantRow?.plan ?? plan,
       app_limit: tenantRow?.app_limit ?? appLimit,
+      credits_added: creditsToAdd,
     });
 
   } catch (error) {

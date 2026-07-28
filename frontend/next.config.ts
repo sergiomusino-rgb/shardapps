@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
+  // ffmpeg-static espone il path del binario tramite require.resolve interno:
+  // va escluso dal bundling dei Server Components (che altrimenti prova a
+  // riscriverne il path) e caricato con require() nativo di Node. Vedi uso in
+  // app/api/concat-videos/route.ts.
+  serverExternalPackages: ['ffmpeg-static'],
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',

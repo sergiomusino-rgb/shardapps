@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
     // Verifica slot PRIMA di chiamare l'AI, per non sprecare budget se il
     // tenant ha già esaurito le app disponibili sul suo piano — anche in
     // anteprima non ha senso far generare uno schema che non si potrà salvare.
-    const tenantId = await getOrCreateTenant(supabase, user);
+    const tenantId = await getOrCreateTenant(supabase, user, token);
     const { allowed, reason } = await canCreateApp(supabase, tenantId, user.id);
 
     if (!allowed) {

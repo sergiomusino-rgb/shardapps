@@ -2,18 +2,13 @@
 
 import { useState } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
+import { daysRemaining } from './subscription-status';
 
 interface TrialBannerProps {
   slug: string;
   trialEndsAt: string;
   /** Prezzo mensile (€) deciso dal reseller per questa app (min. 25€). */
   price: number;
-}
-
-function daysRemaining(trialEndsAt: string): number {
-  const end = new Date(trialEndsAt).getTime();
-  const now = Date.now();
-  return Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
 }
 
 // Banner discreto mostrato in cima alla dashboard durante il trial attivo

@@ -103,140 +103,108 @@ function LandingPublic() {
         </div>
       </header>
 
-      {/* Hero: layout asimmetrico a due colonne, palette e font di settore */}
-      <section
-        className="relative overflow-hidden"
-        style={{
-          padding: '80px 32px',
-          background: `linear-gradient(160deg, ${designTokens.colors.bg} 0%, ${designTokens.colors['card-bg-alt'] || designTokens.colors.surface} 100%)`,
-        }}
-      >
-        {/* Bagliore sfumato di settore */}
+      {/* Hero: copertina full-bleed con foto contestuale di settore e testo sovrapposto */}
+      <section className="relative flex min-h-[560px] items-end overflow-hidden sm:min-h-[640px]">
+        <img
+          src={hero.image}
+          alt={hero.imageAlt}
+          className="absolute inset-0 h-full w-full object-cover"
+          loading="eager"
+        />
+        {/* Overlay: scurisce la foto per leggibilità del testo, sfumato di settore in basso */}
         <div
-          className="pointer-events-none absolute left-0 top-0"
+          className="pointer-events-none absolute inset-0"
           style={{
-            width: '560px', height: '560px', borderRadius: '9999px',
-            background: `radial-gradient(circle, ${designTokens.colors.primary}33, transparent 70%)`,
-            filter: 'blur(50px)', transform: 'translate(-30%, -30%)',
+            background: `linear-gradient(0deg, ${designTokens.colors.bg} 0%, rgba(0,0,0,0.55) 38%, rgba(0,0,0,0.15) 65%, rgba(0,0,0,0.35) 100%)`,
           }}
         />
 
-        <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 lg:grid-cols-[1.15fr_0.85fr]">
-          {/* Colonna testo */}
-          <div>
-            <div
-              className="mb-6 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold tracking-wide backdrop-blur-sm"
-              style={{
-                border: `1px solid ${designTokens.colors.primary}40`,
-                background: `${designTokens.colors.primary}14`,
-                color: designTokens.colors.primary,
-              }}
-            >
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ background: designTokens.colors.success }}
-              />
-              {hero.badgeLabel}
-            </div>
-
-            <h1
-              className="text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl"
-              style={{ fontFamily: designTokens.fonts.headline, color: designTokens.colors.text }}
-            >
-              {displayName}
-            </h1>
-
-            <p
-              className="mt-5 max-w-xl text-lg leading-relaxed"
-              style={{ color: designTokens.colors['text-secondary'], fontFamily: designTokens.fonts.body }}
-            >
-              {taglineBefore}
-              <em style={{ fontStyle: 'italic', color: designTokens.colors.primary, fontWeight: 600 }}>
-                {hero.keyword}
-              </em>
-              {taglineAfter}
-            </p>
-
-            {description && (
-              <p
-                className="mt-3 max-w-xl text-sm leading-relaxed"
-                style={{ color: designTokens.colors['text-secondary'], opacity: 0.85 }}
-              >
-                {description}
-              </p>
-            )}
-
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <a
-                href={`/a/${slug}/register`}
-                className="shadow-lg transition-transform duration-200 hover:-translate-y-0.5"
-                style={{
-                  background: designTokens.colors.primary, color: '#fff',
-                  padding: '14px 28px', borderRadius: designTokens.radii.md,
-                  fontWeight: 700, fontSize: '15px', textDecoration: 'none',
-                  boxShadow: `0 8px 24px ${designTokens.colors.primary}40`,
-                }}
-              >
-                Registrati ora
-              </a>
-              <a
-                href={`/a/${slug}/login`}
-                className="flex items-center gap-2 transition-colors duration-200"
-                style={{
-                  border: `1px solid ${designTokens.colors.border}`,
-                  color: designTokens.colors.text,
-                  padding: '14px 24px', borderRadius: designTokens.radii.md,
-                  fontWeight: 600, fontSize: '15px', textDecoration: 'none',
-                }}
-              >
-                <LogIn size={16} /> Accedi
-              </a>
-            </div>
+        <div className="relative mx-auto w-full max-w-6xl px-8 pb-14 pt-24 sm:px-10">
+          <div
+            className="mb-6 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold tracking-wide backdrop-blur-sm"
+            style={{
+              border: `1px solid ${designTokens.colors.primary}66`,
+              background: `${designTokens.colors.primary}33`,
+              color: '#fff',
+            }}
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: designTokens.colors.success }}
+            />
+            {hero.badgeLabel}
           </div>
 
-          {/* Colonna immagine: foto HD contestuale di settore, bordi fortemente arrotondati */}
-          <div className="relative">
-            <div
-              className="relative overflow-hidden shadow-2xl"
-              style={{ borderRadius: '2rem', aspectRatio: '4 / 5' }}
-            >
-              <img
-                src={hero.image}
-                alt={hero.imageAlt}
-                className="h-full w-full object-cover"
-                loading="eager"
-              />
-              <div
-                className="pointer-events-none absolute inset-0"
-                style={{ background: `linear-gradient(0deg, ${designTokens.colors.primary}30 0%, transparent 45%)` }}
-              />
-            </div>
+          <h1
+            className="max-w-2xl text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl"
+            style={{ fontFamily: designTokens.fonts.headline, textShadow: '0 2px 16px rgba(0,0,0,0.35)' }}
+          >
+            {displayName}
+          </h1>
 
-            {/* Card statistica sovrapposta, per l'asimmetria del layout */}
+          <p
+            className="mt-5 max-w-xl text-lg leading-relaxed text-white/90"
+            style={{ fontFamily: designTokens.fonts.body, textShadow: '0 1px 8px rgba(0,0,0,0.35)' }}
+          >
+            {taglineBefore}
+            <em style={{ fontStyle: 'italic', color: '#fff', fontWeight: 700 }}>
+              {hero.keyword}
+            </em>
+            {taglineAfter}
+          </p>
+
+          {description && (
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75" style={{ textShadow: '0 1px 8px rgba(0,0,0,0.35)' }}>
+              {description}
+            </p>
+          )}
+
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <a
+              href={`/a/${slug}/register`}
+              className="shadow-lg transition-transform duration-200 hover:-translate-y-0.5"
+              style={{
+                background: designTokens.colors.primary, color: '#fff',
+                padding: '14px 28px', borderRadius: designTokens.radii.md,
+                fontWeight: 700, fontSize: '15px', textDecoration: 'none',
+                boxShadow: `0 8px 24px ${designTokens.colors.primary}66`,
+              }}
+            >
+              Registrati ora
+            </a>
+            <a
+              href={`/a/${slug}/login`}
+              className="flex items-center gap-2 transition-colors duration-200 backdrop-blur-sm"
+              style={{
+                border: '1px solid rgba(255,255,255,0.5)',
+                background: 'rgba(255,255,255,0.08)',
+                color: '#fff',
+                padding: '14px 24px', borderRadius: designTokens.radii.md,
+                fontWeight: 600, fontSize: '15px', textDecoration: 'none',
+              }}
+            >
+              <LogIn size={16} /> Accedi
+            </a>
+
             {tables.length > 0 && (
               <div
-                className="absolute -bottom-6 -left-6 hidden sm:flex items-center gap-3 shadow-xl"
-                style={{
-                  background: designTokens.colors.surface,
-                  border: `1px solid ${designTokens.colors.border}`,
-                  borderRadius: designTokens.radii.lg,
-                  padding: '16px 20px',
-                }}
+                className="ml-2 hidden items-center gap-3 rounded-xl px-4 py-2.5 backdrop-blur-sm sm:flex"
+                style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
               >
                 <div
                   className="flex items-center justify-center"
                   style={{
-                    width: '40px', height: '40px', borderRadius: designTokens.radii.md,
-                    background: `${designTokens.colors.primary}1A`, color: designTokens.colors.primary,
+                    width: '32px', height: '32px', borderRadius: designTokens.radii.md,
+                    background: 'rgba(255,255,255,0.15)', color: '#fff',
                   }}
                 >
                   {resolveIcon(tables[0]?.icon || '', tables[0]?.name)}
                 </div>
                 <div>
-                  <div style={{ fontFamily: designTokens.fonts.headline, fontWeight: 700, fontSize: '18px', color: designTokens.colors.text }}>
+                  <div style={{ fontFamily: designTokens.fonts.headline, fontWeight: 700, fontSize: '16px', color: '#fff' }}>
                     {tables.length}
                   </div>
-                  <div style={{ fontSize: '12px', color: designTokens.colors['text-secondary'] }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.75)' }}>
                     sezioni gestite
                   </div>
                 </div>

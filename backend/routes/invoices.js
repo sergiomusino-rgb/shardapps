@@ -85,19 +85,27 @@ router.post('/invoices', async (req, res) => {
   try {
     const {
       tenant_id,
-      numero_fattura,
-      anno,
+      anno: annoInput,
       data_emissione,
       cliente_nome,
       cliente_piva,
       cliente_indirizzo,
       stato,
       metodo_pagamento,
-      righe
+      righe,
+      tipo_documento,
     } = req.body;
 
-    if (!tenant_id || !numero_fattura || !anno || !data_emissione || !cliente_nome || !righe || !Array.isArray(righe) || righe.length === 0) {
+    const tipoDocumento = tipo_documento === 'ricevuta' ? 'ricevuta' : 'fattura';
+    const anno = annoInput || new Date().getFullYear();
+
+    if (!tenant_id || !data_emissione || !cliente_nome || !righe || !Array.isArray(righe) || righe.length === 0) {
       return res.status(400).json({ error: 'Campi obbligatori mancanti o righe non valide' });
+    }
+    // La ricevuta non richiede la P.IVA del cliente (spesso un privato); la
+    // fattura sì, per restare un documento fiscale valido.
+    if (tipoDocumento === 'fattura' && !cliente_piva) {
+      return res.status(400).json({ error: 'La P.IVA/Codice Fiscale del cliente è obbligatoria per una fattura' });
     }
 
     const supabase = getSupabase();
@@ -106,12 +114,30 @@ router.post('/invoices', async (req, res) => {
       return res.status(401).json({ error: 'Password errata' });
     }
 
+    // Numero progressivo reale (mai fidarsi di un numero_fattura passato dal
+    // client): conta i documenti dello stesso tenant+tipo+anno e assegna il
+    // prossimo, zero-padded. Stessa logica della route Next.js gemella
+    // (frontend/app/a/[slug]/api/invoices/route.ts) usata dal form.
+    const { count: countEsistenti, error: countError } = await supabase
+      .from('fatture')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenant_id)
+      .eq('tipo_documento', tipoDocumento)
+      .eq('anno', anno);
+
+    if (countError) {
+      console.error('Errore conteggio fatture per numerazione:', countError);
+      return res.status(500).json({ error: 'Errore nella generazione del numero documento' });
+    }
+
+    const numeroFattura = String((countEsistenti || 0) + 1).padStart(4, '0');
+
     // Inserisci la fattura
     const { data: fattura, error: fatturaError } = await supabase
       .from('fatture')
       .insert({
         tenant_id,
-        numero_fattura,
+        numero_fattura: numeroFattura,
         anno,
         data_emissione,
         cliente_nome,
@@ -119,6 +145,7 @@ router.post('/invoices', async (req, res) => {
         cliente_indirizzo,
         stato: stato || 'bozza',
         metodo_pagamento: metodo_pagamento || null,
+        tipo_documento: tipoDocumento,
       })
       .select()
       .single();

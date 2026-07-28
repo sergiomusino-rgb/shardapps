@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Table } from '@/src/lib/blueprint-schema';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 export const CREATOR_ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
 
@@ -15,7 +16,8 @@ export async function getUserFromToken(supabase: SupabaseClient, token: string) 
 
 export async function getOrCreateTenant(
   supabase: SupabaseClient,
-  user: { id: string; email?: string }
+  user: { id: string; email?: string },
+  accessToken?: string
 ): Promise<string> {
   const { data: memberships } = await supabase
     .from('tenant_members')
@@ -47,6 +49,24 @@ export async function getOrCreateTenant(
     user_id: user.id,
     role: 'owner',
   });
+
+  // Comandi AI è un'app omaggio inclusa di default in ogni tenant (non
+  // consuma slot, vedi comandi-provisioning.ts). Best-effort: un fallimento
+  // qui non deve mai impedire la creazione del tenant, che è il compito
+  // primario di questa funzione. Solo al momento della creazione (non ad
+  // ogni lookup di un tenant esistente): questa funzione è chiamata da rotte
+  // d'azione (generate/create app), non da un endpoint di onboarding
+  // dedicato come /api/tenants/create, che invece la richiama sempre.
+  if (accessToken) {
+    try {
+      const result = await provisionComandiAppAction({ accessToken });
+      if (!result.success) {
+        console.error('[getOrCreateTenant] Provisioning Comandi AI non riuscito:', result.error);
+      }
+    } catch (err) {
+      console.error('[getOrCreateTenant] Errore provisioning Comandi AI:', err);
+    }
+  }
 
   return tenant.id;
 }
