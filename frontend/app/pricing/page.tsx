@@ -118,7 +118,7 @@ export default function PricingPage() {
         t('pricing_per_app').replace('{fee}', '25€') + ' (dopo 1 mese gratis)',
         'Supporto email'
       ],
-      priceId: 'price_1TwTvdRZR2YaFu2sUdqjbupl',
+      priceId: 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
       highlighted: false,
     },
     {

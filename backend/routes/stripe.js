@@ -113,7 +113,7 @@ function ensureComandiProvisioned(accessToken) {
 // (stessa vulnerabilità già corretta in frontend/app/api/create-checkout-session/route.ts).
 function getSetupPriceId(planId) {
   const setupPrices = {
-    starter: process.env.STRIPE_SETUP_PRICE_STARTER || 'price_1TwTvdRZR2YaFu2sUdqjbupl',
+    starter: process.env.STRIPE_SETUP_PRICE_STARTER || 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
     pro: process.env.STRIPE_SETUP_PRICE_PRO || 'price_1Tmd1tRZR2YaFu2sgHgxzcTC',
     business: process.env.STRIPE_SETUP_PRICE_BUSINESS || 'price_1Tmd4GRZR2YaFu2s0FZ4Btym',
   };
