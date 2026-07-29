@@ -13,6 +13,14 @@ const nextConfig: NextConfig = {
       allowedOrigins: ['localhost:3000', 'zeusx.app', 'www.zeusx.app', 'zeusxapps.com'],
     },
   },
+  // I file designmd/*.md sono letti a runtime via fs.readFile (non
+  // require/import), quindi il file tracer di Next.js non li individua da
+  // solo per il bundle serverless: senza questa inclusione esplicita
+  // sparirebbero dal deploy Vercel anche dopo aver spostato la cartella
+  // dentro frontend/ (vedi lib/designSystemLoader.ts).
+  outputFileTracingIncludes: {
+    '/api/creator/generate': ['./designmd/**/*'],
+  },
   turbopack: {
     root: __dirname,
   },

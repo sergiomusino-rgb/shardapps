@@ -13,17 +13,17 @@ interface App {
   config: any;
   trial_ends_at: string;
   is_active: boolean;
-  created_at: string;
-  blueprint_id: string;
+  created_at: string | null;
+  blueprint_id: string | null;
   tenant_id: string;
   app_type?: string | null;
-  slug?: string;
-  client_password?: string;
-  client_email?: string;
+  slug?: string | null;
+  client_password?: string | null;
+  client_email?: string | null;
   client_active?: boolean;
-  expires_at?: string;
-  initial_password?: string;
-  auth_mode?: 'legacy' | 'supabase';
+  expires_at?: string | null;
+  initial_password?: string | null;
+  auth_mode?: string | null;
   client_full_name?: string | null;
   client_phone?: string | null;
   client_tax_id?: string | null;
@@ -136,7 +136,7 @@ export default function AppDetailPage() {
     loadApp();
   }, [idOrSlug]);
 
-  const formatDate = (iso: string | undefined) => {
+  const formatDate = (iso: string | null | undefined) => {
     if (!iso) return '-';
     return new Date(iso).toLocaleDateString('it-IT');
   };

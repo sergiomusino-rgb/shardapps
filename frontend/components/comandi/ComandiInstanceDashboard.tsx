@@ -321,7 +321,7 @@ function CatalogTab({
 
       if (catalogError) throw catalogError;
 
-      const rows = (catalogRows || []) as CatalogItem[];
+      const rows = (catalogRows || []) as unknown as CatalogItem[];
       const ids = rows.map((r) => r.id);
       let synonymRows: ProductSynonym[] = [];
       if (ids.length > 0) {
@@ -329,7 +329,7 @@ function CatalogTab({
           .from('product_synonyms' as any)
           .select('*')
           .in('product_id', ids);
-        synonymRows = (data || []) as ProductSynonym[];
+        synonymRows = (data || []) as unknown as ProductSynonym[];
       }
 
       setItems(
@@ -797,7 +797,7 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
         .eq('tenant_id', tenantId)
         .order('name');
       if (error) throw error;
-      setCustomers((data || []) as Customer[]);
+      setCustomers((data || []) as unknown as Customer[]);
     } catch (err) {
       console.error('[CustomersTab] Errore caricamento clienti:', err);
       setListError(t('comandi_dashboard_customers_error_generic'));
@@ -1565,7 +1565,7 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false })
         .limit(100);
-      setOrders((data || []) as Order[]);
+      setOrders((data || []) as unknown as Order[]);
       setLoading(false);
     })();
   }, [tenantId]);

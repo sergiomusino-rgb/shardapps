@@ -9,15 +9,13 @@ import ZeusXBrandingFooter from '@/components/ZeusXBrandingFooter';
 import CollectedDataSection from './CollectedDataSection';
 import PushNotificationSection from './PushNotificationSection';
 
-type AppStatus = 'trial' | 'active' | 'expired';
-
 interface AppInfo {
   id: string;
   name: string;
-  status: AppStatus;
+  status: string | null;
   trial_ends_at: string | null;
   stripe_subscription_id: string | null;
-  client_email?: string;
+  client_email?: string | null;
   config?: { schema?: { tables?: any[] } } | null;
 }
 
@@ -47,7 +45,7 @@ export default function SettingsPage() {
         .eq('slug', slug)
         .single();
       
-      setAppInfo(app);
+      setAppInfo(app as unknown as AppInfo | null);
       setLoading(false);
     };
     init();
