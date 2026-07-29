@@ -24,12 +24,24 @@ const nextConfig: NextConfig = {
   async rewrites() {
     // Only use backend rewrite in production
     if (process.env.NODE_ENV === 'production') {
-      return [
-        {
-          source: "/api/:path*",
-          destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://zeusx-backend.onrender.com"}/api/:path*`,
-        },
-      ];
+      // Un array semplice qui viene trattato da Next.js come rewrite
+      // "afterFiles": eseguito dopo le route statiche/filesystem ma PRIMA
+      // delle route dinamiche ([slug], [id]...) — quindi /api/:path* dirottava
+      // verso il backend Express ogni route API dinamica di Next.js
+      // (verify-password, mark-first-login, apps/[id], ecc.), che non
+      // veniva mai raggiunta: il backend rispondeva con un suo 404 ("Cannot
+      // POST ...") mascherato da errore applicativo. "fallback" gira dopo
+      // aver controllato anche le route dinamiche di Next.js, quindi il
+      // proxy verso il backend scatta solo se Next.js non ha davvero nessuna
+      // route (statica o dinamica) per quel path.
+      return {
+        fallback: [
+          {
+            source: "/api/:path*",
+            destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://zeusx-backend.onrender.com"}/api/:path*`,
+          },
+        ],
+      };
     }
     return [];
   },
