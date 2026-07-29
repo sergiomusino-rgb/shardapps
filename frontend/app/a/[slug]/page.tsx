@@ -12,6 +12,7 @@ import { getHeroContentForSector } from '@/lib/landingHero';
 import { resolveIcon } from './app/iconResolver';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import InstallAppBanner from '@/components/InstallAppBanner';
+import PushNotificationBanner from '@/components/PushNotificationBanner';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import ComandiInstanceLanding from '@/components/comandi/ComandiInstanceLanding';
 
@@ -41,7 +42,7 @@ interface CompanyInfo {
 
 // ─── Landing pubblica (nuove app) ───────────────────────────────────────────
 function LandingPublic() {
-  const { slug, appName, config } = useAppInfo();
+  const { appId, slug, appName, config } = useAppInfo();
   const sector = (config?.sector as string) || '';
   const description = (config?.description as string) || '';
   const tables = ((config?.schema as any)?.tables as Array<{ name: string; label: string; labelPlural?: string; icon?: string }>) || [];
@@ -270,6 +271,15 @@ function LandingPublic() {
       </footer>
 
       <InstallAppBanner
+        appName={displayName}
+        slug={slug}
+        primaryColor={designTokens.colors.primary}
+        textColor={designTokens.colors.text}
+        surfaceColor={designTokens.colors.surface}
+        borderColor={designTokens.colors.border}
+      />
+      <PushNotificationBanner
+        appId={appId}
         appName={displayName}
         slug={slug}
         primaryColor={designTokens.colors.primary}

@@ -18,6 +18,45 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Web Push (Fase B): il payload arriva come JSON da /api/apps/[id]/send-push
+// ({ title, body, url, icon }). event.data può mancare (push "silenziosi" o
+// malformati) o non essere JSON valido: in entrambi i casi si mostra comunque
+// una notifica generica invece di far fallire silenziosamente l'evento.
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { body: event.data ? event.data.text() : '' };
+  }
+
+  const title = payload.title || 'Nuova notifica';
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
+    data: { url: payload.url || '/' },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Click sulla notifica: porta al tab già aperto sull'URL di destinazione se
+// esiste, altrimenti ne apre uno nuovo (comportamento standard PWA).
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url === targetUrl && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl);
+    })
+  );
+});
+
 // Network-first per navigazioni HTML e chiamate API, cache-first per asset
 // statici. In tutti i casi si cachano solo risposte GET con response.ok:
 // una 404/500 transitoria (es. durante un rebuild del dev server) non deve

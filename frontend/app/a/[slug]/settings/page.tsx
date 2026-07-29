@@ -7,6 +7,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/src/lib/supabase';
 import ZeusXBrandingFooter from '@/components/ZeusXBrandingFooter';
 import CollectedDataSection from './CollectedDataSection';
+import PushNotificationSection from './PushNotificationSection';
 
 type AppStatus = 'trial' | 'active' | 'expired';
 
@@ -394,6 +395,8 @@ export default function SettingsPage() {
             (t) => t?.name !== 'dati_aziendali' && t?.name !== 'fatture'
           )}
         />
+
+        <PushNotificationSection appId={appInfo.id} />
 
         {/* QR Code per accesso mobile */}
         <div className="bg-slate-900/40 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 mb-6">
