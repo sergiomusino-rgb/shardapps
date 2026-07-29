@@ -6,6 +6,8 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import DynamicAppPreview from '@/src/components/creator/DynamicAppPreview';
+import TemplateQuickModal from '@/src/components/creator/TemplateQuickModal';
+import { VERTICAL_TEMPLATES, type VerticalTemplate } from '@/src/lib/templates';
 import type { BlueprintJSON } from '@/src/lib/blueprint-schema';
 
 // Type declarations for SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
@@ -39,6 +41,7 @@ export default function CreatorPage() {
   const [previewSchema, setPreviewSchema] = useState<BlueprintJSON | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<VerticalTemplate | null>(null);
   const recognitionRef = useRef<any>(null);
 
   // Inizializza SpeechRecognition (stesso pattern di dashboard/generator/page.tsx)
@@ -85,8 +88,14 @@ export default function CreatorPage() {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+  // Accetta override espliciti (invece di leggere solo prompt/selectedSector
+  // dallo state) perché la selezione di un Template Verticale deve generare
+  // subito con il prompt appena composto, senza aspettare il re-render dello
+  // state aggiornato da setPrompt/setSelectedSector.
+  const handleGenerate = async (overridePrompt?: string, overrideSector?: string) => {
+    const effectivePrompt = overridePrompt ?? prompt;
+    const effectiveSector = overrideSector ?? selectedSector ?? 'saas';
+    if (!effectivePrompt.trim()) return;
 
     setIsGenerating(true);
     setPreviewError(null);
@@ -110,8 +119,8 @@ export default function CreatorPage() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          userPrompt: prompt,
-          sector: selectedSector || 'saas',
+          userPrompt: effectivePrompt,
+          sector: effectiveSector,
           lang: locale
         })
       });
@@ -185,6 +194,30 @@ export default function CreatorPage() {
           <p className="text-gray-400 text-lg">{t('creator_subtitle')}</p>
         </div>
 
+        {/* Template Verticali: preset di settore, alternativa rapida al
+            prompt libero qui sotto — 3-4 campi invece di scrivere da zero. */}
+        {!previewSchema && (
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
+              Template Verticali
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {VERTICAL_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  onClick={() => setActiveTemplate(tpl)}
+                  className="flex flex-col items-start gap-1 rounded-xl border border-gray-800 bg-gray-900 p-4 text-left transition hover:border-amber-500"
+                >
+                  <span className="text-2xl">{tpl.icon}</span>
+                  <span className="text-sm font-semibold text-white">{tpl.name}</span>
+                  <span className="text-xs text-gray-500">{tpl.features.join(' · ')}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Main Box */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-6">
           {/* Sector Picker */}
@@ -240,7 +273,7 @@ export default function CreatorPage() {
 
           {/* Generate Button */}
           <button
-            onClick={handleGenerate}
+            onClick={() => handleGenerate()}
             disabled={!prompt.trim() || isGenerating}
             className="w-full bg-amber-600 hover:bg-amber-500 disabled:bg-gray-600 text-white py-3 rounded-lg font-semibold transition flex items-center justify-center gap-2"
           >
@@ -260,7 +293,7 @@ export default function CreatorPage() {
           <div className="mb-6">
             <DynamicAppPreview
               schema={previewSchema}
-              onRegenerate={handleGenerate}
+              onRegenerate={() => handleGenerate()}
               onConfirm={handleConfirmCreate}
               isCreating={isCreating}
               labels={{
@@ -277,6 +310,19 @@ export default function CreatorPage() {
           </div>
         )}
       </div>
+
+      {activeTemplate && (
+        <TemplateQuickModal
+          template={activeTemplate}
+          onClose={() => setActiveTemplate(null)}
+          onSubmit={(finalPrompt) => {
+            setPrompt(finalPrompt);
+            setSelectedSector(activeTemplate.sector);
+            setActiveTemplate(null);
+            handleGenerate(finalPrompt, activeTemplate.sector);
+          }}
+        />
+      )}
     </div>
   );
 }

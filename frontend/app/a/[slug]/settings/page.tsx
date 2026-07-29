@@ -6,6 +6,7 @@ import { CreditCard, XCircle, CheckCircle, Loader2, Mail, Lock, Eye, EyeOff, QrC
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '@/src/lib/supabase';
 import ZeusXBrandingFooter from '@/components/ZeusXBrandingFooter';
+import CollectedDataSection from './CollectedDataSection';
 
 type AppStatus = 'trial' | 'active' | 'expired';
 
@@ -16,6 +17,7 @@ interface AppInfo {
   trial_ends_at: string | null;
   stripe_subscription_id: string | null;
   client_email?: string;
+  config?: { schema?: { tables?: any[] } } | null;
 }
 
 export default function SettingsPage() {
@@ -40,7 +42,7 @@ export default function SettingsPage() {
       // Get app info
       const { data: app } = await supabase
         .from('apps')
-        .select('id, name, status, trial_ends_at, stripe_subscription_id, client_email')
+        .select('id, name, status, trial_ends_at, stripe_subscription_id, client_email, config')
         .eq('slug', slug)
         .single();
       
@@ -381,6 +383,17 @@ export default function SettingsPage() {
             </form>
           )}
         </div>
+
+        {/* Dati Raccolti: tabelle di dominio generate dall'app (es. Lead, Ordini,
+            Prenotazioni) escluse le tabelle di sistema sempre presenti
+            (dati_aziendali, fatture — vedi ensureCoreSystemTables in
+            blueprint-schema.ts), non pertinenti qui. */}
+        <CollectedDataSection
+          appId={appInfo.id}
+          tables={(appInfo.config?.schema?.tables || []).filter(
+            (t) => t?.name !== 'dati_aziendali' && t?.name !== 'fatture'
+          )}
+        />
 
         {/* QR Code per accesso mobile */}
         <div className="bg-slate-900/40 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 mb-6">
