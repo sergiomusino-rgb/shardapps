@@ -206,6 +206,35 @@ export type Database = {
           },
         ]
       }
+      app_push_subscriptions: {
+        Row: {
+          app_id: string
+          created_at: string
+          id: string
+          subscription: Json
+        }
+        Insert: {
+          app_id: string
+          created_at?: string
+          id?: string
+          subscription: Json
+        }
+        Update: {
+          app_id?: string
+          created_at?: string
+          id?: string
+          subscription?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_push_subscriptions_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_records: {
         Row: {
           app_id: string
@@ -516,6 +545,7 @@ export type Database = {
       }
       catalog_items: {
         Row: {
+          category: string | null
           created_at: string
           description: string | null
           id: string
@@ -529,6 +559,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -542,6 +573,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           created_at?: string
           description?: string | null
           id?: string
@@ -781,6 +813,56 @@ export type Database = {
         }
         Relationships: []
       }
+      customers: {
+        Row: {
+          address: string | null
+          city: string | null
+          created_at: string
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone: string | null
+          tenant_id: string
+          updated_at: string
+          vat_number: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          tenant_id: string
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          tenant_id?: string
+          updated_at?: string
+          vat_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fatture: {
         Row: {
           anno: number
@@ -974,11 +1056,17 @@ export type Database = {
         Row: {
           agent_id: string | null
           audio_transcript: string | null
+          audio_url: string | null
           confidence_score: number | null
           created_at: string
+          customer_id: string | null
           customer_name: string | null
           customer_phone: string | null
+          delivery_date: string | null
+          delivery_note_number: string | null
+          extracted_items: Json
           id: string
+          invoice_number: string | null
           notes: string | null
           status: Database["public"]["Enums"]["order_status"]
           tenant_id: string
@@ -988,11 +1076,17 @@ export type Database = {
         Insert: {
           agent_id?: string | null
           audio_transcript?: string | null
+          audio_url?: string | null
           confidence_score?: number | null
           created_at?: string
+          customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          delivery_date?: string | null
+          delivery_note_number?: string | null
+          extracted_items?: Json
           id?: string
+          invoice_number?: string | null
           notes?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id: string
@@ -1002,11 +1096,17 @@ export type Database = {
         Update: {
           agent_id?: string | null
           audio_transcript?: string | null
+          audio_url?: string | null
           confidence_score?: number | null
           created_at?: string
+          customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
+          delivery_date?: string | null
+          delivery_note_number?: string | null
+          extracted_items?: Json
           id?: string
+          invoice_number?: string | null
           notes?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           tenant_id?: string
@@ -1014,6 +1114,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "orders_tenant_id_fkey"
             columns: ["tenant_id"]
@@ -1654,9 +1761,9 @@ export type Database = {
       deduct_credits: {
         Args: {
           p_amount: number
-          p_description?: string | null
+          p_description?: string
           p_metadata?: Json
-          p_reference_id?: string | null
+          p_reference_id?: string
           p_type: string
           p_user_id: string
         }
@@ -1741,9 +1848,9 @@ export type Database = {
       grant_credits: {
         Args: {
           p_amount: number
-          p_description?: string | null
+          p_description?: string
           p_metadata?: Json
-          p_reference_id?: string | null
+          p_reference_id?: string
           p_type?: string
           p_user_id: string
         }
@@ -1770,9 +1877,9 @@ export type Database = {
       refund_credits: {
         Args: {
           p_amount: number
-          p_description?: string | null
+          p_description?: string
           p_metadata?: Json
-          p_reference_id?: string | null
+          p_reference_id?: string
           p_user_id: string
         }
         Returns: {
