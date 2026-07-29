@@ -203,9 +203,13 @@ export default function AppDetailPage() {
     if (action === 'extend-expiry') setExtending(true);
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`/api/apps/${app.id}/client-access`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ action }),
       });
 
@@ -241,9 +245,13 @@ export default function AppDetailPage() {
     setError('');
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`/api/apps/${app.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify(buyerForm),
       });
 

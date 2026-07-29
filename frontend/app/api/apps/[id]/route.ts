@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
-import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -179,35 +178,26 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Autenticazione via cookie di sessione Supabase, stesso schema di
-    // client-access/route.ts: questa route viene chiamata da
-    // dashboard/projects/[id]/page.tsx con un fetch "nudo" (same-origin),
-    // senza header Authorization.
-    const cookieStore = await cookies();
-    const authCookie = cookieStore.getAll().find(c => c.name.endsWith('-auth-token') || c.name === 'sb-access-token');
-
-    let accessToken: string | undefined;
-    if (authCookie) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(authCookie.value));
-        accessToken = parsed.access_token || parsed[0];
-      } catch {
-        accessToken = decodeURIComponent(authCookie.value);
-      }
+    // Sessione utente in localStorage (non cookie): stesso schema di
+    // GET/DELETE qui sopra, il client invia il token via header Authorization.
+    const authHeader = req.headers.get('authorization');
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
-    if (!accessToken) {
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
     const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-
-    const { data: { user } } = await adminClient.auth.getUser(accessToken);
-    if (!user) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
-    }
 
     const { id } = await params;
 

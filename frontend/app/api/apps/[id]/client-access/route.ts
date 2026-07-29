@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
@@ -19,26 +19,22 @@ function generatePassword(): string {
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    // Verifica autenticazione ZeusX
-    const cookieStore = await cookies();
-    const authCookie = cookieStore.getAll().find(c => c.name.endsWith('-auth-token') || c.name === 'sb-access-token');
 
-    let accessToken: string | undefined;
-    if (authCookie) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(authCookie.value));
-        accessToken = parsed.access_token || parsed[0];
-      } catch {
-        accessToken = decodeURIComponent(authCookie.value);
-      }
-    }
-
+    // Verifica autenticazione ZeusX: la sessione utente vive in localStorage
+    // (non in cookie), quindi il client invia il token via header Authorization
+    // come nel resto delle route sotto /api/apps/[id].
+    const authHeader = req.headers.get('authorization');
+    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
     if (!accessToken) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
-    const { data: { user } } = await supabase.auth.getUser(accessToken);
-    if (!user) {
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    });
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
 
