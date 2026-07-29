@@ -373,6 +373,7 @@ export type Database = {
           is_active: boolean
           is_managed_by_platform: boolean | null
           name: string
+          owner_trial_ends_at: string | null
           payment_reset_required: boolean | null
           production_url: string | null
           slug: string | null
@@ -410,6 +411,7 @@ export type Database = {
           is_active?: boolean
           is_managed_by_platform?: boolean | null
           name: string
+          owner_trial_ends_at?: string | null
           payment_reset_required?: boolean | null
           production_url?: string | null
           slug?: string | null
@@ -447,6 +449,7 @@ export type Database = {
           is_active?: boolean
           is_managed_by_platform?: boolean | null
           name?: string
+          owner_trial_ends_at?: string | null
           payment_reset_required?: boolean | null
           production_url?: string | null
           slug?: string | null

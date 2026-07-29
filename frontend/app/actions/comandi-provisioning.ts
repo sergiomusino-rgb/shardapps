@@ -26,7 +26,11 @@ const ProvisionComandiAppInputSchema = z.object({
   createNew: z.boolean().optional().default(false),
 });
 
-export type ProvisionComandiAppInput = z.infer<typeof ProvisionComandiAppInputSchema>;
+// z.input (non z.infer): createNew ha .default(false), quindi nell'input
+// (pre-parse, quello che scrivono i chiamanti) resta opzionale — con z.infer
+// (output post-parse) risulterebbe obbligatorio e romperebbe i chiamanti
+// storici che passano solo { accessToken }.
+export type ProvisionComandiAppInput = z.input<typeof ProvisionComandiAppInputSchema>;
 
 export interface ProvisionComandiAppResult {
   success: boolean;
