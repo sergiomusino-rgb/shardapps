@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typescript: { ignoreBuildErrors: true },
+  typescript: { ignoreBuildErrors: false },
   // ffmpeg-static espone il path del binario tramite require.resolve interno:
   // va escluso dal bundling dei Server Components (che altrimenti prova a
   // riscriverne il path) e caricato con require() nativo di Node. Vedi uso in
@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
-      allowedOrigins: ['localhost:3000', 'zeusx.app', 'www.zeusx.app'],
+      allowedOrigins: ['localhost:3000', 'zeusx.app', 'www.zeusx.app', 'zeusxapps.com'],
     },
   },
   turbopack: {

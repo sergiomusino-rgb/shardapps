@@ -149,7 +149,6 @@ router.post('/generate', async (req, res) => {
         success: false,
         error: 'Errore nella validazione del token',
         code: 'TOKEN_VALIDATION_ERROR',
-        details: error.message
       });
     }
 
@@ -392,7 +391,7 @@ router.post('/generate', async (req, res) => {
     console.error('[generate] Unexpected error:', err);
     return res.status(500).json({
       success: false,
-      error: err.message || 'Errore interno del server',
+      error: 'Errore interno del server',
       code: 'INTERNAL_ERROR'
     });
   }

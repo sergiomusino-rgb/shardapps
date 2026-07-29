@@ -1,9 +1,10 @@
 const express = require('express');
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
+const { checkoutLimiter } = require('../middleware/rate-limit');
 
 const router = express.Router();
-const STRIPE_API_VERSION = '2026-06-24.dahlia';
+const STRIPE_API_VERSION = '2025-03-31.basil';
 
 function getSupabase() {
   return createClient(
@@ -29,9 +30,22 @@ function planRank(plan) {
   return PLAN_RANK[plan] ?? 0;
 }
 
-// Crediti Vision accreditati da una "Ricarica Extra" (credit_topup), vedi
-// anche PLAN_CREDITS.credit_topup in backend/server.js.
+// Crediti Vision e slot accreditati da una "Ricarica Extra" (credit_topup),
+// vedi anche PLAN_CREDITS.credit_topup / PLAN_SLOTS.credit_topup in
+// backend/server.js.
 const CREDIT_TOPUP_CREDITS = 50;
+const CREDIT_TOPUP_SLOTS = 1;
+
+// Price ID della fee ricorrente mensile per app attiva, stessi valori di
+// backend/server.js::getFeePriceId e frontend/app/api/create-checkout-session.
+function getFeePriceId(planId) {
+  const feePrices = {
+    starter: process.env.STRIPE_FEE_PRICE_STARTER || 'price_1TmdIgRZR2YaFu2sT5gkrMdx',
+    pro: process.env.STRIPE_FEE_PRICE_PRO || 'price_1TmdK0RZR2YaFu2s8pXkLety',
+    business: process.env.STRIPE_FEE_PRICE_BUSINESS || 'price_1TmdKuRZR2YaFu2sHeH8fShE',
+  };
+  return feePrices[planId] || feePrices.starter;
+}
 
 async function getUser(req) {
   const authHeader = req.headers.authorization;
@@ -107,109 +121,16 @@ function ensureComandiProvisioned(accessToken) {
     .catch((err) => console.error('[getOrCreateTenant] Errore provisioning Comandi AI:', err));
 }
 
-// Setup (one-time) price ID per piano. Non fidarsi mai del priceId passato
-// dal client: planId decide quanti slot vengono concessi dal webhook, quindi
-// il prezzo addebitato deve essere derivato server-side dallo stesso planId
-// (stessa vulnerabilità già corretta in frontend/app/api/create-checkout-session/route.ts).
-function getSetupPriceId(planId) {
-  const setupPrices = {
-    starter: process.env.STRIPE_SETUP_PRICE_STARTER || 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
-    pro: process.env.STRIPE_SETUP_PRICE_PRO || 'price_1Tmd1tRZR2YaFu2sgHgxzcTC',
-    business: process.env.STRIPE_SETUP_PRICE_BUSINESS || 'price_1Tmd4GRZR2YaFu2s0FZ4Btym',
-  };
-  return setupPrices[planId] || null;
-}
-
-// Nome storico della env var (il bottone si chiamava "Slot Extra" e dava +1
-// slot app): stesso Price Stripe da 15€, ora "Ricarica Extra" accredita
-// crediti Vision invece di uno slot, quindi non serve un nuovo Price né
-// rinominare la env var.
-const CREDIT_TOPUP_PRICE_ID = process.env.EXTRA_SLOT_PRICE_ID || process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
-
-// POST /api/create-checkout-session
-router.post('/create-checkout-session', async (req, res) => {
-  const user = await getUser(req);
-  if (!user) return res.status(401).json({ error: 'Non autorizzato' });
-
-  try {
-    const { planId, quantity = 1 } = req.body;
-    const priceId = planId === 'credit_topup' ? CREDIT_TOPUP_PRICE_ID : getSetupPriceId(planId);
-    if (!priceId) return res.status(400).json({ error: 'Piano non riconosciuto' });
-
-    const supabase = getSupabase();
-    const authHeader = req.headers.authorization;
-    const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    const tenantId = await getOrCreateTenant(supabase, user, accessToken);
-
-    const stripe = getStripe();
-
-    // Crea o recupera customer
-    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-    let customerId = customers.data[0]?.id;
-
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: user.email });
-      customerId = customer.id;
-    }
-
-    // Attach payment method
-    const setupIntent = await stripe.setupIntents.create({
-      customer: customerId,
-      payment_method_types: ['card'],
-    });
-
-    const appUrl = process.env.APP_URL || 'https://zeusx-zwu8.vercel.app';
-
-    // Line items: setup + fee mensile (quantity=0 iniziale)
-    const feePriceId = getFeePriceId(planId);
-    const lineItems = [];
-
-    // Handle credit top-up purchase ("Ricarica Extra")
-    if (planId === 'credit_topup') {
-      lineItems.push({ price: priceId, quantity: quantity });
-    } else {
-      // Regular plan: setup + monthly fee
-      lineItems.push({ price: priceId, quantity: 1 }); // Setup one-time
-      if (feePriceId) {
-        lineItems.push({ price: feePriceId, quantity: 0 }); // Fee mensile, quantity aggiornata dopo
-      }
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      line_items: lineItems,
-      success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/pricing`,
-      client_reference_id: tenantId,
-      // supabase_user_id: i crediti Vision (grant_credits) sono legati
-      // all'utente che paga (profiles.user_id), non al tenant/workspace —
-      // senza questo campo il webhook non saprebbe a chi accreditarli.
-      metadata: { tenant_id: tenantId, plan_id: planId || 'starter', supabase_user_id: user.id },
-      subscription_data: {
-        metadata: { tenant_id: tenantId },
-      },
-    });
-
-    return res.json({ url: session.url, sessionId: session.id });
-  } catch (err) {
-    console.error('[Stripe Checkout] Errore:', err);
-    res.status(500).json({ error: err.message || 'Errore Stripe' });
-  }
-});
-
-// GET fee price ID in base al piano
-function getFeePriceId(planId) {
-  const feePrices = {
-    starter: process.env.STRIPE_FEE_PRICE_STARTER || 'price_1TmdIgRZR2YaFu2sT5gkrMdx',
-    pro: process.env.STRIPE_FEE_PRICE_PRO || 'price_1TmdK0RZR2YaFu2s8pXkLety',
-    business: process.env.STRIPE_FEE_PRICE_BUSINESS || 'price_1TmdKuRZR2YaFu2sHeH8fShE',
-  };
-  return feePrices[planId] || feePrices.starter;
-}
+// POST /api/create-checkout-session è servito solo da
+// frontend/app/api/create-checkout-session/route.ts (Managed Payments,
+// testato end-to-end): il browser chiama sempre il path relativo, quindi
+// questa route Express non veniva mai raggiunta (e aveva un bug proprio,
+// quantity:0 su un line item ricorrente, rifiutato da Stripe). Rimossa
+// insieme a getSetupPriceId/getFeePriceId/CREDIT_TOPUP_PRICE_ID, usate solo
+// da questa route.
 
 // POST /api/stripe/update-app-fee
-router.post('/update-app-fee', async (req, res) => {
+router.post('/update-app-fee', checkoutLimiter, async (req, res) => {
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: 'Non autorizzato' });
 
@@ -260,10 +181,31 @@ router.post('/update-app-fee', async (req, res) => {
     // reale di app attive. Si ricalcola sempre la quantity dal conteggio
     // reale delle app del tenant (fonte di verità), rendendo l'endpoint
     // idempotente e non manipolabile: 'action' resta solo per log/compatibilità.
+    //
+    // Un'app entra nella quantity di questa fee solo se TUTTE le condizioni
+    // sono vere:
+    // 1. status != 'active' — le app con status:'active' hanno un cliente
+    //    finale che paga tramite Stripe (vedi verify-checkout-session/route.ts,
+    //    che imposta status:'active' + stripe_subscription_id al checkout
+    //    del cliente): ZeusX incassa già la sua quota di 25€ trattenendola
+    //    da quel pagamento (client_price - zeusx_fee = reseller_amount,
+    //    vedi create-checkout-session dell'app). Altrimenti il reseller
+    //    pagherebbe la stessa app due volte.
+    // 2. owner_trial_ends_at IS NOT NULL — l'owner ha fatto almeno il primo
+    //    login nell'app (vedi mark-first-login/route.ts, verify-password/
+    //    route.ts, AuthContext.tsx). Se non ha mai fatto login, l'app non è
+    //    ancora "in uso" e non deve generare alcun addebito.
+    // 3. owner_trial_ends_at < now() — i 30 giorni di trial dal primo login
+    //    sono scaduti (il trial è gestito qui via query, non su Stripe: una
+    //    subscription a quantity variabile non supporta trial differenziati
+    //    per unità con date di inizio diverse).
     const { count: appCount, error: countError } = await supabase
       .from('apps')
       .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .neq('status', 'active')
+      .not('owner_trial_ends_at', 'is', null)
+      .lt('owner_trial_ends_at', new Date().toISOString());
 
     if (countError) {
       console.error('[update-app-fee] errore conteggio app:', countError);
@@ -286,7 +228,7 @@ router.post('/update-app-fee', async (req, res) => {
     return res.json({ success: true, newQuantity });
   } catch (err) {
     console.error('[update-app-fee] errore:', err);
-    res.status(500).json({ error: err.message || 'Errore aggiornamento fee' });
+    res.status(500).json({ error: 'Errore aggiornamento fee' });
   }
 });
 
@@ -336,10 +278,11 @@ router.post('/sync-plan', async (req, res) => {
       const lineItems = await stripe.checkout.sessions.listLineItems(sessionId, { limit: 10 });
       const quantity = lineItems.data[0]?.quantity || 1;
       const creditsToAdd = CREDIT_TOPUP_CREDITS * quantity;
+      const slotsToAdd = CREDIT_TOPUP_SLOTS * quantity;
 
       const { error: insertError } = await supabase
         .from('processed_checkout_sessions')
-        .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: 0 });
+        .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: slotsToAdd });
 
       if (insertError && insertError.code !== '23505') {
         console.error('[sync-plan] errore idempotenza (credit_topup):', insertError);
@@ -357,6 +300,15 @@ router.post('/sync-plan', async (req, res) => {
         });
         if (creditsError) {
           console.error('[sync-plan] errore grant_credits:', creditsError);
+          return res.status(500).json({ error: 'Errore ricarica crediti' });
+        }
+
+        const { error: slotsError } = await supabase.rpc('add_tenant_slots', {
+          tenant_id: tenantId,
+          slots_to_add: slotsToAdd,
+        });
+        if (slotsError) {
+          console.error('[sync-plan] errore add_tenant_slots (credit_topup):', slotsError);
           return res.status(500).json({ error: 'Errore ricarica crediti' });
         }
       }
@@ -474,6 +426,64 @@ router.post('/sync-plan', async (req, res) => {
       } else {
         console.log(`[sync-plan] piano ${plan} non applicato: tenant ${tenantId} ha già ${currentTenant?.plan}`);
       }
+
+      // Crea la fee subscription (25€/app, quantity incrementata da
+      // /update-app-fee man mano che il tenant attiva app). Le sessioni di
+      // checkout sono in mode:'payment' (Managed Payments), quindi non hanno
+      // mai una session.subscription: la fee subscription va creata a parte
+      // qui, non nel webhook checkout.session.completed (che infatti si
+      // fermava prima su "subscription id mancante" e non la creava mai).
+      // Una sola fee subscription per tenant: se esiste già una riga in
+      // "subscriptions" non se ne crea un'altra.
+      const { data: existingSub } = await supabase
+        .from('subscriptions')
+        .select('stripe_subscription_id')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
+      if (!existingSub?.stripe_subscription_id) {
+        try {
+          const feePriceId = getFeePriceId(plan);
+          const feeSubscription = await stripe.subscriptions.create({
+            customer: session.customer,
+            items: [{ price: feePriceId, quantity: 0 }], // Inizia da 0, verrà incrementata con le app
+            metadata: { tenant_id: tenantId, type: 'app_fee' },
+            proration_behavior: 'always_invoice',
+            // Niente trial_period_days qui: il trial è per singola app (dal
+            // primo login dell'owner, vedi apps.owner_trial_ends_at), non
+            // sull'intera subscription del tenant — Stripe non supporta
+            // trial differenziati per unità in una subscription a quantity
+            // variabile. Il trial è applicato lato query in /update-app-fee.
+          });
+
+          // Dalla API version in uso, current_period_start/end non sono più
+          // sulla subscription ma sul subscription item (Stripe ha spostato
+          // questi campi a livello di item da metà 2025).
+          const feeSubItem = feeSubscription.items.data[0];
+          const { error: subUpsertError } = await supabase
+            .from('subscriptions')
+            .upsert(
+              {
+                tenant_id: tenantId,
+                stripe_customer_id: session.customer,
+                stripe_subscription_id: feeSubscription.id,
+                status: feeSubscription.status,
+                current_period_start: new Date(feeSubItem.current_period_start * 1000).toISOString(),
+                current_period_end: new Date(feeSubItem.current_period_end * 1000).toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'tenant_id' }
+            );
+
+          if (subUpsertError) {
+            console.error('[sync-plan] errore salvataggio fee subscription:', subUpsertError);
+          } else {
+            console.log(`[sync-plan] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
+          }
+        } catch (feeErr) {
+          console.error('[sync-plan] errore creazione fee subscription:', feeErr);
+        }
+      }
     }
 
     const { data: tenantRow } = await supabase
@@ -490,7 +500,7 @@ router.post('/sync-plan', async (req, res) => {
     });
   } catch (err) {
     console.error('[sync-plan] errore:', err);
-    res.status(500).json({ error: err.message || 'Errore sync piano' });
+    res.status(500).json({ error: 'Errore sync piano' });
   }
 });
 

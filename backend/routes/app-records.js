@@ -44,7 +44,7 @@ async function authMiddleware(req, res, next) {
     
     if (error) {
       console.error('[AUTH-APP-RECORDS] Errore validazione token:', error.message);
-      return res.status(401).json({ error: 'Token non valido', details: error.message });
+      return res.status(401).json({ error: 'Token non valido' });
     }
     
     if (!user) {
@@ -59,7 +59,7 @@ async function authMiddleware(req, res, next) {
   } catch (error) {
     console.error('[AUTH-APP-RECORDS] Errore durante validazione:', error.message);
     console.error('[AUTH-APP-RECORDS] Stack:', error.stack);
-    return res.status(401).json({ error: 'Errore autenticazione', details: error.message });
+    return res.status(401).json({ error: 'Errore autenticazione' });
   }
 }
 
@@ -240,11 +240,11 @@ router.post('/apps', authMiddleware, async (req, res) => {
     res.status(201).json({ 
       app,
       clientPassword,
-      accessUrl: `${process.env.APP_URL || 'https://zeusx-zwu8.vercel.app'}/a/${slug}`
+      accessUrl: `${process.env.APP_URL || 'https://zeusxapps.com'}/a/${slug}`
     });
   } catch (err) {
     console.error('Create app exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -267,13 +267,13 @@ router.get('/apps/:appId/records', authMiddleware, tenantMiddleware, async (req,
 
     if (error) {
       console.error('GET records error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ records: data || [], count: data?.length || 0 });
   } catch (err) {
     console.error('GET records exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -299,13 +299,13 @@ router.post('/apps/:appId/records', authMiddleware, tenantMiddleware, async (req
 
     if (error) {
       console.error('POST record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -330,7 +330,7 @@ router.put('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware, a
 
     if (error) {
       console.error('PUT record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!record) {
@@ -340,7 +340,7 @@ router.put('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware, a
     res.json({ record });
   } catch (err) {
     console.error('PUT record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -359,13 +359,13 @@ router.delete('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware
 
     if (error) {
       console.error('DELETE record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -414,13 +414,13 @@ router.post('/apps/:appId/import', authMiddleware, tenantMiddleware, upload.sing
 
     if (error) {
       console.error('Import error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ imported: data?.length || 0 });
   } catch (err) {
     console.error('Import exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -443,7 +443,7 @@ router.get('/apps/:appId/export', authMiddleware, tenantMiddleware, async (req, 
 
     if (error) {
       console.error('Export query error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!data || data.length === 0) {
@@ -471,7 +471,7 @@ router.get('/apps/:appId/export', authMiddleware, tenantMiddleware, async (req, 
     res.send(csvOutput);
   } catch (err) {
     console.error('Export exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

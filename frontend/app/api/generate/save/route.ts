@@ -196,7 +196,7 @@ export async function POST(request: NextRequest) {
     console.log('[save-generated-app] App creata con successo:', newApp.id);
 
     // Registra l'app nella app_registry per la Management Console
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusx.vercel.app'}/a/${newApp.slug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${newApp.slug}`;
     const { error: registryError } = await supabase
       .from('app_registry')
       .insert({

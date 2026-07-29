@@ -59,8 +59,9 @@ export async function GET(request: NextRequest) {
     const { data, error } = await supabaseAdmin.rpc('get_reseller_debts');
 
     if (error) {
+      console.error('[admin/reseller-debts] Supabase error:', error);
       return NextResponse.json(
-        { error: error.message },
+        { error: 'Errore nel recupero dei dati' },
         { status: 500 }
       );
     }

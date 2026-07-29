@@ -394,7 +394,7 @@ export default function SettingsPage() {
           <div className="flex flex-col items-center">
             <div className="bg-white p-4 rounded-xl mb-3">
               <QRCodeSVG 
-                value={`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusx.vercel.app'}/a/${slug}`}
+                value={`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`}
                 size={120}
                 bgColor="#ffffff"
                 fgColor="#000000"

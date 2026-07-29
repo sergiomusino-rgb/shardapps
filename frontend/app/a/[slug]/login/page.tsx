@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Eye, EyeOff, Loader2, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Loader2, AlertTriangle, PlusCircle, Check, Copy } from 'lucide-react';
 import { useAppInfo } from '../AppInfoContext';
 import { useAuth } from '@/src/lib/AuthContext';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 // ─── Login legacy/app_users (app a schema generato da AI, invariato) ───────
 function LegacyAppLoginForm() {
@@ -144,6 +145,68 @@ function ComandiLoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [creatingCopy, setCreatingCopy] = useState(false);
+  const [copyResult, setCopyResult] = useState<{ slug: string; posEmail?: string; posPassword?: string } | null>(null);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+
+  const copyCred = (value: string, field: 'email' | 'password') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  // Autentica con le stesse credenziali del form (deve essere l'owner del
+  // tenant proprietario di QUESTA istanza) e crea una nuova copia di Comandi
+  // AI per un cliente diverso, senza lasciare questa pagina — vedi
+  // comandi-provisioning.ts::provisionComandiAppAction(createNew:true).
+  const handleCreateNewCopy = async () => {
+    setError('');
+    setCopyResult(null);
+    setCreatingCopy(true);
+
+    try {
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (loginError || !data?.session) {
+        setError(t('login_error_invalid_credentials'));
+        setCreatingCopy(false);
+        return;
+      }
+
+      const { data: membership } = await supabase
+        .from('tenant_members' as any)
+        .select('tenant_id')
+        .eq('user_id', data.session.user.id)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+
+      if (!membership) {
+        setError(t('comandi_instance_login_error_wrong_tenant'));
+        setCreatingCopy(false);
+        return;
+      }
+
+      const result = await provisionComandiAppAction({
+        accessToken: data.session.access_token,
+        createNew: true,
+      });
+
+      if (!result.success || !result.slug) {
+        setError(result.error || t('comandi_new_copy_error_generic'));
+        setCreatingCopy(false);
+        return;
+      }
+
+      setCopyResult({ slug: result.slug, posEmail: result.posEmail, posPassword: result.posPassword });
+    } catch {
+      setError(t('comandi_new_copy_error_generic'));
+    } finally {
+      setCreatingCopy(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,6 +254,11 @@ function ComandiLoginForm() {
         setLoading(false);
         return;
       }
+
+      // Avvia (se non già impostato) il trial di 30 giorni sulla fee di
+      // 25€/mese dell'owner — vedi mark-first-login/route.ts. Fire-and-forget:
+      // un fallimento qui non deve mai bloccare il login.
+      fetch(`/api/a/${slug}/mark-first-login`, { method: 'POST' }).catch(() => {});
 
       // Dopo il login si atterra sulla dashboard di gestione (non più sulla
       // console operativa/cassa): la console con il microfono resta
@@ -265,7 +333,68 @@ function ComandiLoginForm() {
               {loading && <Loader2 size={16} className="animate-spin" />}
               {loading ? t('login_button_login_loading') : t('login_button_login')}
             </button>
+
+            {/* Crea una nuova copia di Comandi AI per un cliente diverso,
+                usando le stesse credenziali digitate qui sopra (deve essere
+                l'owner del tenant proprietario di questa istanza) — vedi
+                handleCreateNewCopy e provisionComandiAppAction(createNew:true). */}
+            <button
+              type="button"
+              onClick={handleCreateNewCopy}
+              disabled={creatingCopy || !email || !password}
+              className="w-full border border-slate-700 hover:border-amber-500/60 hover:bg-slate-800/60 disabled:opacity-50 text-slate-300 py-2.5 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              {creatingCopy ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+              {t('comandi_new_copy_button')}
+            </button>
           </form>
+
+          {copyResult && (
+            <div className="mt-6 rounded-xl border border-green-700/50 bg-gradient-to-br from-green-950/40 to-emerald-950/20 p-4">
+              <p className="text-sm font-bold text-white mb-1">{t('comandi_new_copy_success_title')}</p>
+              <p className="text-xs text-slate-400 mb-3">{t('comandi_new_copy_success_desc')}</p>
+
+              {copyResult.posEmail && copyResult.posPassword && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 mb-3">
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_email')}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm text-slate-200 break-all">{copyResult.posEmail}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyCred(copyResult.posEmail!, 'email')}
+                          className="shrink-0 text-slate-500 hover:text-white"
+                        >
+                          {copiedField === 'email' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_password')}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm text-slate-200">{copyResult.posPassword}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyCred(copyResult.posPassword!, 'password')}
+                          className="shrink-0 text-slate-500 hover:text-white"
+                        >
+                          {copiedField === 'password' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <a
+                href={`/a/${copyResult.slug}`}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-amber-400 hover:text-amber-300"
+              >
+                {t('comandi_new_copy_go_to_app')} →
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>

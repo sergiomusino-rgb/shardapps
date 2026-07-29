@@ -17,6 +17,13 @@ const ProvisionComandiAppInputSchema = z.object({
   // createBrowserClient di @supabase/ssr), quindi il token va validato
   // esplicitamente con supabase.auth.getUser(accessToken).
   accessToken: z.string().min(1),
+  // false (default): comportamento storico, un'unica istanza omaggio per
+  // tenant, idempotente, gratuita, nessuno slot consumato.
+  // true: crea SEMPRE una nuova istanza (una copia venduta a un cliente
+  // diverso), consuma uno slot del piano come le app Creator/Generator e usa
+  // zeusx_fee:25 (meccanismo B, ZeusX trattiene la quota dal pagamento del
+  // cliente finale) invece di zeusx_fee:0.
+  createNew: z.boolean().optional().default(false),
 });
 
 export type ProvisionComandiAppInput = z.infer<typeof ProvisionComandiAppInputSchema>;
@@ -36,6 +43,10 @@ export interface ProvisionComandiAppResult {
 const UpdatePosPasswordInputSchema = z.object({
   accessToken: z.string().min(1),
   newPassword: z.string().min(6, 'La password deve contenere almeno 6 caratteri'),
+  // Con più istanze Comandi AI per tenant serve specificare quale: se omesso,
+  // ricade sulla prima trovata (comportamento storico, corretto finché il
+  // tenant ne ha una sola).
+  appId: z.string().optional(),
 });
 
 export type UpdatePosPasswordInput = z.infer<typeof UpdatePosPasswordInputSchema>;
@@ -62,7 +73,7 @@ export async function provisionComandiAppAction(
     if (!validation.success) {
       return { success: false, error: 'Dati non validi' };
     }
-    const { accessToken } = validation.data;
+    const { accessToken, createNew } = validation.data;
 
     const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
     const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
@@ -91,37 +102,63 @@ export async function provisionComandiAppAction(
       return { success: false, error: 'Nessun tenant associato all\'utente. Completa prima la configurazione del tuo account.' };
     }
 
-    // Idempotente: se il tenant ha già un'istanza Comandi AI, la restituisce
-    // invece di crearne una seconda (evita di bruciare due volte uno slot se
-    // l'utente richiama questa action da più punti: /comandi/setup,
-    // /dashboard/comandi, il bottone "Attiva" nel Creator). Le credenziali
-    // dell'account cassa sono sempre recuperabili qui: questa action usa il
-    // service role, quindi non serve passare dall'RPC get_app_client_credentials
-    // (pensata per le letture lato client soggette a RLS).
-    const { data: existingApp } = await supabaseAdmin
-      .from('apps')
-      .select('id, slug, client_email, client_password')
-      .eq('tenant_id', tenantId)
-      .eq('app_type', 'comandi_ai')
-      .limit(1)
-      .maybeSingle();
+    // Idempotente SOLO per l'istanza omaggio (createNew:false): se il tenant
+    // ha già un'istanza Comandi AI, la restituisce invece di crearne una
+    // seconda (evita di bruciare due volte uno slot se l'utente richiama
+    // questa action da più punti: /comandi/setup, /dashboard/comandi, il
+    // bottone "Attiva" nel Creator). Le credenziali dell'account cassa sono
+    // sempre recuperabili qui: questa action usa il service role, quindi non
+    // serve passare dall'RPC get_app_client_credentials (pensata per le
+    // letture lato client soggette a RLS).
+    // Con createNew:true si salta questo lookup: si vuole SEMPRE una nuova
+    // istanza (una copia da vendere a un cliente diverso), non recuperare
+    // quella già esistente.
+    if (!createNew) {
+      const { data: existingApp } = await supabaseAdmin
+        .from('apps')
+        .select('id, slug, client_email, client_password')
+        .eq('tenant_id', tenantId)
+        .eq('app_type', 'comandi_ai')
+        .limit(1)
+        .maybeSingle();
 
-    if (existingApp?.slug) {
-      return {
-        success: true,
-        appId: existingApp.id as string,
-        slug: existingApp.slug as string,
-        posEmail: (existingApp.client_email as string) || undefined,
-        posPassword: (existingApp.client_password as string) || undefined,
-      };
+      if (existingApp?.slug) {
+        return {
+          success: true,
+          appId: existingApp.id as string,
+          slug: existingApp.slug as string,
+          posEmail: (existingApp.client_email as string) || undefined,
+          posPassword: (existingApp.client_password as string) || undefined,
+        };
+      }
     }
 
-    // Nessun controllo slot: Comandi AI è un'app omaggio inclusa di default in
-    // ogni registrazione (vedi auto-provisioning in /api/tenants/create), non
-    // un prodotto a pagamento che consuma uno slot del piano — a differenza
-    // delle app generate dal Creator. Resta comunque a pagamento (25€/mese)
-    // dopo i 30 giorni di trial tramite lo stesso paywall standard
-    // (apps.status/trial_ends_at, vedi app/a/[slug]/layout.tsx).
+    // Nessun controllo slot per l'istanza omaggio (createNew:false): Comandi
+    // AI è inclusa di default in ogni registrazione (vedi auto-provisioning
+    // in /api/tenants/create), non un prodotto a pagamento che consuma uno
+    // slot del piano. Resta comunque a pagamento (25€/mese) dopo i 30 giorni
+    // di trial tramite lo stesso paywall standard (apps.status/trial_ends_at,
+    // vedi app/a/[slug]/layout.tsx).
+    // Le copie aggiuntive (createNew:true) sono invece un prodotto vero e
+    // proprio venduto a un cliente: consumano uno slot come le app
+    // Creator/Generator (stesso controllo di generator.ts::generateAppAction).
+    if (createNew) {
+      const { data: tenant, error: tenantError } = await supabaseAdmin
+        .from('tenants')
+        .select('app_limit, total_apps_created')
+        .eq('id', tenantId)
+        .single();
+
+      if (tenantError || !tenant) {
+        return { success: false, error: 'Tenant non trovato' };
+      }
+
+      const slotsAvailable = (tenant.app_limit as number) - (tenant.total_apps_created as number);
+      if (slotsAvailable <= 0) {
+        return { success: false, error: 'Slot esauriti. Aggiorna il tuo piano per creare nuove istanze.' };
+      }
+    }
+
     const slug = `comandi-${Date.now().toString(36)}`;
     const productionUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
     const now = new Date();
@@ -177,7 +214,7 @@ export async function provisionComandiAppAction(
         trial_end: trialEnd.toISOString(),
         trial_ends_at: trialEnd.toISOString(),
         client_price: MONTHLY_PRICE,
-        zeusx_fee: 0,
+        zeusx_fee: createNew ? MONTHLY_PRICE : 0,
         production_url: productionUrl,
         config: {
           appType: 'comandi_ai',
@@ -197,9 +234,25 @@ export async function provisionComandiAppAction(
       return { success: false, error: 'Errore nella creazione dell\'istanza: ' + (appError?.message || 'unknown') };
     }
 
-    // NON si incrementa total_apps_created qui (a differenza di
-    // generateAppAction): Comandi non consuma uno slot, quindi non deve
-    // ridurre gli slot disponibili per le app generate dal Creator.
+    // L'istanza omaggio (createNew:false) non consuma uno slot, quindi non
+    // incrementa total_apps_created — a differenza di generateAppAction. Le
+    // copie vendute a un cliente (createNew:true) invece sì, stesso
+    // contatore usato per le app Creator/Generator (i slot sono condivisi
+    // fra tutti i tipi di app del piano).
+    if (createNew) {
+      const { data: tenantData, error: tenantCountError } = await supabaseAdmin
+        .from('tenants')
+        .select('total_apps_created')
+        .eq('id', tenantId)
+        .single();
+
+      if (!tenantCountError && tenantData) {
+        await supabaseAdmin
+          .from('tenants')
+          .update({ total_apps_created: (tenantData.total_apps_created as number || 0) + 1 })
+          .eq('id', tenantId);
+      }
+    }
 
     // app_definitions: schema vuoto, la console Comandi non usa il motore a
     // tabelle dinamiche, ma la riga è comunque attesa dal resto della
@@ -257,7 +310,7 @@ export async function updatePosCredentialsAction(input: UpdatePosPasswordInput):
     if (!validation.success) {
       return { success: false, error: validation.error.issues[0]?.message || 'Dati non validi' };
     }
-    const { accessToken, newPassword } = validation.data;
+    const { accessToken, newPassword, appId: targetAppId } = validation.data;
 
     const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
     const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
@@ -286,13 +339,13 @@ export async function updatePosCredentialsAction(input: UpdatePosPasswordInput):
       return { success: false, error: 'Nessun tenant associato all\'utente' };
     }
 
-    const { data: app } = await supabaseAdmin
+    let appQuery = supabaseAdmin
       .from('apps')
       .select('id, config')
       .eq('tenant_id', tenantId)
-      .eq('app_type', 'comandi_ai')
-      .limit(1)
-      .maybeSingle();
+      .eq('app_type', 'comandi_ai');
+    appQuery = targetAppId ? appQuery.eq('id', targetAppId) : appQuery.limit(1);
+    const { data: app } = await appQuery.maybeSingle();
 
     const posUserId = (app?.config as { posUserId?: string } | null)?.posUserId;
     if (!app?.id || !posUserId) {

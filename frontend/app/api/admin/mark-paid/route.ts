@@ -70,8 +70,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      console.error('[admin/mark-paid] Supabase error:', error);
       return NextResponse.json(
-        { error: error.message },
+        { error: 'Errore nell\'aggiornamento' },
         { status: 500 }
       );
     }

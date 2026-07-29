@@ -176,6 +176,9 @@ export async function POST(req: NextRequest) {
       },
       product_data: {
         name: `Abbonamento ${app.name}`,
+        // Richiesto da Stripe per l'idoneità a Managed Payments quando il
+        // Product viene creato al volo: "SaaS - business use".
+        tax_code: 'txcd_10103101',
         metadata: {
           app_id: app.id,
           tenant_id: app.tenant_id,
@@ -192,7 +195,9 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
-      payment_method_types: ['card'],
+      // payment_method_types NON va passato con Managed Payments: Stripe
+      // rifiuta la sessione con "Unsupported parameter: payment_method_types"
+      // perché è Managed Payments a decidere i metodi di pagamento disponibili.
       line_items: [
         {
           price: price.id,
@@ -261,7 +266,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('[Managed Checkout] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

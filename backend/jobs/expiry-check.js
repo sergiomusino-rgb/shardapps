@@ -96,7 +96,7 @@ if (!supabase) {
 
 async function sendExpiryWarningEmail(app) {
   const expiresInDays = Math.ceil((new Date(app.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  const accessUrl = `https://zeusx-zwu8.vercel.app/a/${app.slug}`;
+  const accessUrl = `${process.env.APP_URL || 'https://zeusxapps.com'}/a/${app.slug}`;
 
   try {
     await resend.emails.send({
@@ -127,7 +127,7 @@ async function sendExpiryWarningEmail(app) {
 }
 
 async function sendBlockedEmail(app) {
-  const accessUrl = `https://zeusx-zwu8.vercel.app/a/${app.slug}`;
+  const accessUrl = `${process.env.APP_URL || 'https://zeusxapps.com'}/a/${app.slug}`;
 
   try {
     await resend.emails.send({

@@ -103,7 +103,7 @@ router.post('/a/:slug', async (req, res) => {
     return res.json({ appInfo });
   } catch (err) {
     console.error('[/api/a/:slug] error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -194,13 +194,13 @@ router.get('/client/apps/:appId/records', clientAuthMiddleware, async (req, res)
 
     if (error) {
       console.error('GET client records error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ records: data || [], count: data?.length || 0 });
   } catch (err) {
     console.error('GET client records exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -226,13 +226,13 @@ router.post('/client/apps/:appId/records', clientAuthMiddleware, async (req, res
 
     if (error) {
       console.error('POST client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -257,7 +257,7 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
 
     if (error) {
       console.error('PUT client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!record) {
@@ -267,7 +267,7 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
     res.json({ record });
   } catch (err) {
     console.error('PUT client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -286,13 +286,13 @@ router.delete('/client/apps/:appId/records/:recordId', clientAuthMiddleware, asy
 
     if (error) {
       console.error('DELETE client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -330,13 +330,13 @@ router.post('/client/apps/:appId/import', clientAuthMiddleware, upload.single('f
 
     if (error) {
       console.error('Import error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ imported: data?.length || 0 });
   } catch (err) {
     console.error('Import exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -414,7 +414,7 @@ router.put('/client/apps/:appId/tables/:tableName', clientAuthMiddleware, async 
     res.json({ success: true, table: tables[tableIndex] });
   } catch (err) {
     console.error('PUT table-def exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -437,7 +437,7 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
 
     if (error) {
       console.error('Export query error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!data || data.length === 0) {
@@ -452,7 +452,7 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
     res.send(csvOutput);
   } catch (err) {
     console.error('Export exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -526,7 +526,7 @@ router.post('/a/:slug/settings', async (req, res) => {
     res.json({ success: true, message: 'Impostazioni salvate con successo' });
   } catch (err) {
     console.error('Save settings exception:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -573,7 +573,7 @@ router.post('/a/:slug/change-password', async (req, res) => {
     res.json({ success: true, message: 'Password cambiata con successo' });
   } catch (err) {
     console.error('Change password exception:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

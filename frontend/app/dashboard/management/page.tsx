@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
-import { Copy, Check, CreditCard, AlertCircle, Settings, Wallet, TrendingUp, LayoutGrid } from 'lucide-react';
+import { Copy, Check, CreditCard, AlertCircle, Settings, Wallet, TrendingUp, LayoutGrid, PlusCircle, Loader2, X } from 'lucide-react';
 import { getClientSubscriptionPrice, ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -46,6 +47,9 @@ export default function ManagementConsolePage() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [slotInfo, setSlotInfo] = useState<{ appLimit: number; totalCreated: number }>({ appLimit: 0, totalCreated: 0 });
+  const [creatingComandiCopy, setCreatingComandiCopy] = useState(false);
+  const [comandiCopyResult, setComandiCopyResult] = useState<{ slug: string; posEmail?: string; posPassword?: string } | null>(null);
+  const [comandiCopyError, setComandiCopyError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -165,6 +169,29 @@ export default function ManagementConsolePage() {
     }
   };
 
+  const createComandiCopy = async () => {
+    setCreatingComandiCopy(true);
+    setComandiCopyError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const result = await provisionComandiAppAction({ accessToken: session.access_token, createNew: true });
+
+      if (!result.success || !result.slug) {
+        setComandiCopyError(result.error || t('mgmt_comandi_new_copy_error_generic'));
+        return;
+      }
+
+      setComandiCopyResult({ slug: result.slug, posEmail: result.posEmail, posPassword: result.posPassword });
+      loadData();
+    } catch (err) {
+      setComandiCopyError(err instanceof Error ? err.message : t('mgmt_comandi_new_copy_error_generic'));
+    } finally {
+      setCreatingComandiCopy(false);
+    }
+  };
+
   const updatePrice = async (appId: string, totalumAppId: string | null) => {
     const price = parseFloat(priceInputs[appId] || '0');
 
@@ -278,10 +305,64 @@ export default function ManagementConsolePage() {
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">{t('mgmt_title')}</h1>
-        <p className="text-gray-400 mt-1 text-sm sm:text-base">{t('mgmt_subtitle')}</p>
+      <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">{t('mgmt_title')}</h1>
+          <p className="text-gray-400 mt-1 text-sm sm:text-base">{t('mgmt_subtitle')}</p>
+        </div>
+        <button
+          onClick={createComandiCopy}
+          disabled={creatingComandiCopy}
+          className="shrink-0 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 disabled:opacity-50 flex items-center justify-center gap-2 text-sm font-semibold"
+        >
+          {creatingComandiCopy ? <Loader2 size={16} className="animate-spin" /> : <PlusCircle size={16} />}
+          {creatingComandiCopy ? t('mgmt_comandi_new_copy_creating') : t('mgmt_comandi_new_copy_button')}
+        </button>
       </div>
+
+      {comandiCopyError && (
+        <div className="bg-red-500/20 text-red-300 p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 flex items-center gap-2 text-sm">
+          <AlertCircle size={16} />
+          {comandiCopyError}
+        </div>
+      )}
+
+      {comandiCopyResult && (
+        <div className="relative rounded-2xl border border-green-700/50 bg-gradient-to-br from-green-950/40 to-emerald-950/20 p-4 sm:p-6 mb-4 sm:mb-6">
+          <button
+            onClick={() => setComandiCopyResult(null)}
+            className="absolute top-3 right-3 text-slate-500 hover:text-white"
+            title={t('mgmt_comandi_new_copy_dismiss')}
+          >
+            <X size={18} />
+          </button>
+          <p className="text-lg font-bold text-white mb-1">{t('mgmt_comandi_new_copy_success_title')}</p>
+          <p className="text-sm text-slate-400 mb-4">{t('mgmt_comandi_new_copy_success_desc')}</p>
+
+          {comandiCopyResult.posEmail && comandiCopyResult.posPassword && (
+            <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 mb-4 max-w-md">
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_email')}</p>
+                  <p className="font-mono text-sm text-slate-200 break-all">{comandiCopyResult.posEmail}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-0.5">{t('creator_comandi_success_credentials_password')}</p>
+                  <p className="font-mono text-sm text-slate-200">{comandiCopyResult.posPassword}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <a
+            href={`/a/${comandiCopyResult.slug}`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors text-sm"
+          >
+            <Settings size={14} />
+            {t('mgmt_comandi_new_copy_go_to_app')}
+          </a>
+        </div>
+      )}
 
       {/* Riepilogo Finanziario */}
       <div className="bg-slate-900/40 border border-slate-800/80 backdrop-blur-md rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6">

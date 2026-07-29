@@ -21,7 +21,7 @@ function getSupabase() {
  * - starter: +1 slot
  * - pro: +5 slot
  * - business: +20 slot
- * - credit_topup ("Ricarica Extra"): 0 slot, solo crediti (vedi getCreditsForPlan)
+ * - credit_topup ("Ricarica Extra"): +1 slot oltre ai crediti (vedi getCreditsForPlan)
  */
 function getSlotsForPlan(planId: string): number {
   const slotsMap: Record<string, number> = {
@@ -29,7 +29,7 @@ function getSlotsForPlan(planId: string): number {
     starter: 1,
     pro: 5,
     business: 50,
-    credit_topup: 0,
+    credit_topup: 1,
   };
   return slotsMap[planId] || 0;
 }
@@ -65,6 +65,14 @@ function planRank(plan: string | null | undefined): number {
  * POST /api/webhooks/stripe
  * Webhook per ricevere eventi da Stripe (da account connessi)
  * Gestisce checkout.session.completed e invoice.paid
+ *
+ * NON è l'endpoint webhook attivo su Stripe: backend/server.js è la fonte
+ * autoritativa (riceve anche invoice.payment_succeeded, customer.subscription
+ * .updated/deleted, invoice.payment_failed — eventi che questa route non
+ * gestisce). L'endpoint Stripe che puntava qui è stato disabilitato lato
+ * Dashboard per evitare doppia elaborazione dello stesso evento. Questo file
+ * resta funzionante perché backend/scripts/e2e_lifecycle_test.js lo chiama
+ * direttamente per il test end-to-end del checkout piani.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -239,6 +247,9 @@ async function handleCheckoutSessionCompleted(event: Stripe.Event, supabase: any
 
         if (rpcError) {
           console.error('[Stripe Webhook] Errore aggiunta slot:', rpcError);
+        } else if (planId === 'credit_topup') {
+          // "Ricarica Extra" non è un piano: aggiunge solo lo slot, non tocca tenants.plan
+          console.log(`[Stripe Webhook] Aggiunto ${slotsToAdd} slot (ricarica extra) al tenant ${tenantId}`);
         } else {
           const { data: currentTenant } = await supabase
             .from('tenants')

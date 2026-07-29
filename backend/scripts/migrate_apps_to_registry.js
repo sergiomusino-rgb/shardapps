@@ -40,7 +40,7 @@ async function migrateApps() {
       continue;
     }
 
-    const appUrl = `https://zeusx.vercel.app/a/${app.slug}`;
+    const appUrl = `https://zeusxapps.com/a/${app.slug}`;
 
     // Check if already in app_registry by app_url (more reliable)
     const { data: existing } = await supabase

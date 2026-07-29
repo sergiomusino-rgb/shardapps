@@ -5,6 +5,15 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 
+// Fonte autoritativa per la sincronizzazione del piano dopo il checkout
+// Stripe: il backend Express (unico registrato come webhook endpoint per gli
+// eventi subscription.updated/deleted e payment_failed, oltre a
+// checkout.session.completed — vedi backend/routes/stripe.js). Stessa route
+// chiamata anche da dashboard/page.tsx (SyncPlanBanner), invece di duplicarla
+// anche qui con un contratto diverso (era session_id/credits_added, il
+// backend usa sessionId/creditsAdded).
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+
 export default function SuccessPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -22,26 +31,26 @@ export default function SuccessPage() {
         setSyncStatus('Sincronizzazione del piano in corso...');
 
         supabaseBrowser.auth.getSession().then(({ data: { session } }) =>
-          fetch('/api/sync-plan', {
+          fetch(`${BACKEND_URL}/api/sync-plan`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
             },
-            body: JSON.stringify({ session_id: sessionId }),
+            body: JSON.stringify({ sessionId }),
           })
         )
         .then(res => res.json())
         .then(data => {
           console.log('[Sync Plan] Risultato:', data);
-          if (data.success && !data.plan && data.credits_added > 0) {
+          if (data.paid && !data.plan && data.creditsAdded > 0) {
             // Ricarica Extra (credit_topup): nessun piano/slot coinvolto,
             // solo crediti Vision accreditati.
-            setSyncStatus(`+${data.credits_added} crediti Vision accreditati!`);
-          } else if (data.success && data.credits_added > 0) {
-            setSyncStatus(`Piano ${data.plan} attivato con ${data.app_limit} slot e ${data.credits_added} crediti Vision!`);
-          } else if (data.success) {
-            setSyncStatus(`Piano ${data.plan} attivato con ${data.app_limit} slot!`);
+            setSyncStatus(`+${data.creditsAdded} crediti Vision accreditati!`);
+          } else if (data.paid && data.creditsAdded > 0) {
+            setSyncStatus(`Piano ${data.plan} attivato con ${data.appLimit} slot e ${data.creditsAdded} crediti Vision!`);
+          } else if (data.paid) {
+            setSyncStatus(`Piano ${data.plan} attivato con ${data.appLimit} slot!`);
           } else if (data.paid === false) {
             setSyncStatus('Attendi la conferma del pagamento...');
           } else {

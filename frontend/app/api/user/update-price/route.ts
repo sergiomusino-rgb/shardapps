@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[update-price] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno del server' },
+      { error: 'Errore interno del server' },
       { status: 500 }
     );
   }

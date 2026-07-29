@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('[GET /api/admin/stats] error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

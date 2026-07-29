@@ -80,7 +80,7 @@ export async function GET(
   } catch (error) {
     console.error('[GET /api/apps/:id] error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }
@@ -168,7 +168,7 @@ export async function DELETE(
   } catch (error) {
     console.error('[DELETE /api/apps/:id] error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }
@@ -253,7 +253,7 @@ export async function PATCH(
   } catch (error) {
     console.error('[PATCH /api/apps/:id] error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

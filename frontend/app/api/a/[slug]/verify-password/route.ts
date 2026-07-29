@@ -18,7 +18,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     const { data: app, error } = await supabase
       .from('apps')
-      .select('id, client_password, client_active, expires_at, config')
+      .select('id, client_password, client_active, expires_at, config, owner_trial_ends_at')
       .eq('slug', slug)
       .single();
 
@@ -32,6 +32,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     if (app.client_password !== password) {
       return NextResponse.json({ error: 'Password errata' }, { status: 401 });
+    }
+
+    // Primo accesso: avvia il trial di 30 giorni sulla fee di 25€/mese
+    // dell'owner (vedi mark-first-login/route.ts per il modello completo).
+    if (!app.owner_trial_ends_at) {
+      await supabase
+        .from('apps')
+        .update({ owner_trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() })
+        .eq('id', app.id)
+        .is('owner_trial_ends_at', null);
     }
 
     return NextResponse.json({

@@ -294,7 +294,7 @@ export async function POST(req: Request) {
     }
 
     // Registra l'app nella app_registry per la Management Console
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusx.vercel.app'}/a/${slug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
     const { error: registryError } = await supabase
       .from('app_registry')
       .insert({

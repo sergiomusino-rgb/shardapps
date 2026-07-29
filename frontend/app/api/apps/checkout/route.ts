@@ -247,7 +247,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('[App Checkout] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

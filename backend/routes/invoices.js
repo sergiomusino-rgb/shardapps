@@ -76,7 +76,7 @@ router.get('/a/:slug/invoices', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /a/:slug/invoices error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -183,7 +183,7 @@ router.post('/invoices', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/invoices error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -228,7 +228,7 @@ router.patch('/invoices/:id', async (req, res) => {
     return res.json({ success: true, fattura });
   } catch (err) {
     console.error('PATCH /invoices/:id error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -270,7 +270,7 @@ router.get('/invoices/:id', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /api/invoices/:id error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

@@ -6,6 +6,12 @@ import { useSearchParams } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
+// Fonte autoritativa per la sincronizzazione del piano dopo il checkout
+// Stripe: il backend Express (unico registrato come webhook endpoint per gli
+// eventi subscription.updated/deleted e payment_failed, oltre a
+// checkout.session.completed — vedi backend/routes/stripe.js). Anche
+// SuccessContent.tsx chiama questa stessa route, per evitare la duplicazione
+// con contratti diversi (sessionId vs session_id) che c'era prima qui.
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
 
 function SyncPlanBanner() {

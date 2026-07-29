@@ -61,9 +61,7 @@ export async function GET(request: NextRequest) {
     console.error('[Stripe Connect Callback] Errore:', error);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000';
     return NextResponse.redirect(
-      new URL(`/dashboard/settings?stripe_connect=error&reason=${encodeURIComponent(
-        error instanceof Error ? error.message : 'unknown_error'
-      )}`, appUrl)
+      new URL('/dashboard/settings?stripe_connect=error', appUrl)
     );
   }
 }

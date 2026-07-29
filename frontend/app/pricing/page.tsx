@@ -124,7 +124,7 @@ export default function PricingPage() {
     {
       id: 'pro',
       name: 'PRO',
-      setupPrice: '50',
+      setupPrice: '79',
       monthlyFee: '25',
       slots: '5',
       credits: '100',
@@ -135,13 +135,13 @@ export default function PricingPage() {
         'Supporto prioritario',
         'API illimitate'
       ],
-      priceId: 'price_1Tmd1tRZR2YaFu2sgHgxzcTC',
+      priceId: 'price_1TyX0yRZR2YaFu2s1nKkKHVw',
       highlighted: true,
     },
     {
       id: 'business',
       name: 'BUSINESS',
-      setupPrice: '250',
+      setupPrice: '299',
       monthlyFee: '25',
       slots: '50',
       credits: '500',
@@ -153,7 +153,7 @@ export default function PricingPage() {
         'API illimitate',
         'SLA garantito'
       ],
-      priceId: 'price_1Tmd4GRZR2YaFu2s0FZ4Btym',
+      priceId: 'price_1TyX0yRZR2YaFu2s4veOZc6r',
       highlighted: false,
     },
   ];

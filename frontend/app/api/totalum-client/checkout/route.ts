@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     console.log('ERRORE STRIPE DETTAGLIATO:', JSON.stringify(error, null, 2));
     console.error('[Totalum Client Checkout] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore durante la creazione della sessione di checkout' },
+      { error: 'Errore durante la creazione della sessione di checkout' },
       { status: 500 }
     );
   }

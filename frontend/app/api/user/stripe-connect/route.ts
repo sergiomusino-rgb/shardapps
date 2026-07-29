@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[Stripe Connect] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore durante la creazione del link di onboarding' },
+      { error: 'Errore durante la creazione del link di onboarding' },
       { status: 500 }
     );
   }

@@ -11,6 +11,13 @@ import type { AppUser, AppUserRole } from '@/types/rbac';
 import { supabaseBrowser } from './supabase-browser';
 const supabase = supabaseBrowser;
 
+// Avvia (se non già impostato) il trial di 30 giorni sulla fee di 25€/mese
+// dell'owner per questa app — vedi api/a/[slug]/mark-first-login/route.ts.
+// Fire-and-forget: un fallimento qui non deve mai bloccare il login.
+function markFirstLogin(slug: string) {
+  fetch(`/api/a/${slug}/mark-first-login`, { method: 'POST' }).catch(() => {});
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -76,6 +83,7 @@ export function AuthProvider({
       if (!error && appUser) {
         setUser(appUser);
         setRole(appUser.role);
+        if (slug) markFirstLogin(slug);
       }
     } else {
       // Controlla la sessione locale (per accesso con password)
@@ -139,11 +147,12 @@ export function AuthProvider({
       if (appUser) {
         setUser(appUser);
         setRole(appUser.role);
+        if (slug) markFirstLogin(slug);
       }
     }
-    
+
     setLoading(false);
-  }, []);
+  }, [slug]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();

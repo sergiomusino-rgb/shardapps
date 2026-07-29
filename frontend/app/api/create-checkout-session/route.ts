@@ -10,7 +10,9 @@ function getStripe() {
     throw new Error('STRIPE_SECRET_KEY non configurata');
   }
   return new Stripe(secretKey, {
-    apiVersion: '2026-06-24.dahlia',
+    // 2025-03-31.basil è la versione minima richiesta per Managed Payments
+    // (Merchant of Record) — vedi managed_payments sotto.
+    apiVersion: '2025-03-31.basil' as any,
   });
 }
 
@@ -58,8 +60,8 @@ function getFeePriceId(planId: string): string {
 function getSetupPriceId(planId: string): string | null {
   const setupPrices: Record<string, string> = {
     starter: process.env.STRIPE_SETUP_PRICE_STARTER || 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
-    pro: process.env.STRIPE_SETUP_PRICE_PRO || 'price_1Tmd1tRZR2YaFu2sgHgxzcTC',
-    business: process.env.STRIPE_SETUP_PRICE_BUSINESS || 'price_1Tmd4GRZR2YaFu2s0FZ4Btym',
+    pro: process.env.STRIPE_SETUP_PRICE_PRO || 'price_1TyX0yRZR2YaFu2s1nKkKHVw',
+    business: process.env.STRIPE_SETUP_PRICE_BUSINESS || 'price_1TyX0yRZR2YaFu2s4veOZc6r',
   };
   return setupPrices[planId] || null;
 }
@@ -212,13 +214,22 @@ export async function POST(req: NextRequest) {
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'payment',
-      payment_method_types: ['card'],
+      // payment_method_types NON va passato con Managed Payments: Stripe
+      // rifiuta la sessione con "Unsupported parameter: payment_method_types"
+      // perché è Managed Payments a decidere i metodi di pagamento disponibili.
       line_items: [
         {
           price: effectivePriceId,
           quantity: effectiveQuantity,
         },
       ],
+      // Managed Payments (Merchant of Record): Stripe diventa il venditore
+      // di riferimento (gestisce tasse/IVA, chargeback, compliance) al posto
+      // dell'account ZeusX. I Product collegati a effectivePriceId hanno già
+      // un tax_code impostato (richiesto da Stripe per l'idoneità al MoR).
+      managed_payments: {
+        enabled: true,
+      },
       success_url: `${req.nextUrl.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.nextUrl.origin}/pricing`,
       metadata: {
@@ -235,7 +246,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('[Checkout] Errore:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

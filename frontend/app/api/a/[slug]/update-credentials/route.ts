@@ -114,7 +114,7 @@ export async function POST(
   } catch (error) {
     console.error('[update-credentials] Unexpected error:', error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Errore interno del server' },
+      { success: false, error: 'Errore interno del server' },
       { status: 500 }
     );
   }

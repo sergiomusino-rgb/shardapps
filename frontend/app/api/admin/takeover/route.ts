@@ -122,8 +122,9 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (error) {
+      console.error('[admin/takeover GET] Supabase error:', error);
       return NextResponse.json(
-        { error: error.message },
+        { error: 'Errore nel recupero dei dati' },
         { status: 500 }
       );
     }
@@ -213,8 +214,9 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      console.error('[admin/takeover] Supabase error:', error);
       return NextResponse.json(
-        { error: error.message },
+        { error: 'Errore nell\'aggiornamento' },
         { status: 500 }
       );
     }

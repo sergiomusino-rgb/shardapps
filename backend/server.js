@@ -4,6 +4,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const { aiLimiter } = require('./middleware/rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
 const Groq = require('groq-sdk');
@@ -93,11 +94,11 @@ async function upsertSubscription(supabase, tenantId, data) {
   }
 }
 
-const PLAN_SLOTS = { starter: 1, pro: 5, business: 50, basic: 1, vip: 100 };
+const PLAN_SLOTS = { starter: 1, pro: 5, business: 50, basic: 1, vip: 100, credit_topup: 1 };
 
 // Crediti Vision inclusi in ogni piano (setup una tantum) e nella ricarica
-// extra "credit_topup" (ex "extra_slot", ora accredita crediti invece di uno
-// slot app — stesso Price Stripe da 15€, vedi routes/stripe.js).
+// extra "credit_topup" (ex "extra_slot" — stesso Price Stripe da 15€, vedi
+// routes/stripe.js), che oltre ai crediti concede anche 1 slot app.
 const PLAN_CREDITS = { starter: 20, pro: 100, business: 500, credit_topup: 50 };
 
 // Rango dei piani: gli eventi Stripe (checkout.session.completed,
@@ -246,7 +247,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
   } catch (err) {
     console.error(`Webhook signature verification failed: ${err.message}`);
-    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
   }
 
   const supabase = getSupabase();
@@ -281,13 +282,14 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
-        // Handle "Ricarica Extra" (ex slot extra) - accredita crediti Vision
-        // invece di slot app (0 slot, quantity * 50 crediti).
+        // Handle "Ricarica Extra" - accredita crediti Vision e slot app
+        // (quantity * 50 crediti, quantity * 1 slot).
         if (planId === 'credit_topup') {
           const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
-          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, 0, creditsToAdd, supabaseUserId);
+          const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
+          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
           if (applied) {
-            console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision (ricarica extra) per tenant ${tenantId}`);
+            console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
           }
         } else {
           // Regular plan - risolve il piano e somma slot + crediti Vision
@@ -303,39 +305,49 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           }
         }
 
-        const subscriptionId = session.subscription;
-        if (!subscriptionId) {
-          console.error('[Stripe Webhook] subscription id mancante');
-          break;
-        }
+        // Le sessioni di checkout sono in mode:'payment' (Managed Payments):
+        // session.subscription non esiste mai (era per il vecchio flusso
+        // mode:'subscription', rimosso). La fee subscription ricorrente da
+        // 25€/app va creata a parte, legata al customer — via primaria è
+        // /sync-plan in routes/stripe.js (chiamato subito dopo il checkout
+        // dalla pagina /success, non dipende dalla consegna del webhook);
+        // questo blocco è solo un backup idempotente nel caso sync-plan non
+        // venga mai chiamato (es. utente chiude la scheda prima del redirect).
+        if (planId !== 'credit_topup') {
+          const { data: existingSub } = await supabase
+            .from('subscriptions')
+            .select('stripe_subscription_id')
+            .eq('tenant_id', tenantId)
+            .maybeSingle();
 
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          if (!existingSub?.stripe_subscription_id) {
+            const feePriceId = getFeePriceId(planId);
+            try {
+              const feeSubscription = await stripe.subscriptions.create({
+                customer: session.customer,
+                items: [{ price: feePriceId, quantity: 0 }], // Inizia da 0, verrà incrementata con le app
+                metadata: { tenant_id: tenantId, type: 'app_fee' },
+                proration_behavior: 'always_invoice',
+                // Niente trial_period_days qui: il trial è per singola app
+                // (dal primo login dell'owner, vedi apps.owner_trial_ends_at
+                // e /update-app-fee), non sull'intera subscription.
+              });
 
-        await upsertSubscription(supabase, tenantId, {
-          stripe_customer_id: session.customer,
-          stripe_subscription_id: subscriptionId,
-          status: subscription.status,
-          current_period_start: getPeriodISO(subscription, 'current_period_start'),
-          current_period_end: getPeriodISO(subscription, 'current_period_end'),
-        });
+              // current_period_start/end non sono più sulla subscription ma
+              // sul subscription item in questa API version.
+              const feeSubItem = feeSubscription.items.data[0];
+              await upsertSubscription(supabase, tenantId, {
+                stripe_customer_id: session.customer,
+                stripe_subscription_id: feeSubscription.id,
+                status: feeSubscription.status,
+                current_period_start: getPeriodISO(feeSubItem, 'current_period_start'),
+                current_period_end: getPeriodISO(feeSubItem, 'current_period_end'),
+              });
 
-        console.log(`[Stripe Webhook] Subscription attivata per tenant ${tenantId}`);
-
-        // Crea automaticamente la fee subscription per le app (skip for credit_topup)
-        const feePriceId = getFeePriceId(planId);
-
-        if (planId !== 'credit_topup' && feePriceId) {
-          try {
-            const feeSubscription = await stripe.subscriptions.create({
-              customer: session.customer,
-              items: [{ price: feePriceId, quantity: 0 }], // Inizia da 0, verrà incrementata con le app
-              metadata: { tenant_id: tenantId, type: 'app_fee' },
-              proration_behavior: 'always_invoice',
-            });
-
-            console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
-          } catch (err) {
-            console.error(`[Stripe Webhook] Errore creazione fee subscription:`, err);
+              console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
+            } catch (err) {
+              console.error(`[Stripe Webhook] Errore creazione fee subscription:`, err);
+            }
           }
         }
 
@@ -452,9 +464,10 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         if (planId === 'credit_topup') {
           try {
             const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
-            const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, 0, creditsToAdd, supabaseUserId);
+            const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
+            const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
             if (applied) {
-              console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision (ricarica extra) per tenant ${tenantId}`);
+              console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
             }
           } catch (err) {
             console.error(`[Stripe Webhook] errore accredito crediti per credit_topup`, err);
@@ -486,7 +499,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     return res.json({ received: true });
   } catch (err) {
     console.error('Errore webhook Stripe:', err);
-    res.status(500).json({ error: err.message || 'Errore webhook' });
+    res.status(500).json({ error: 'Errore webhook' });
   }
 });
 
@@ -548,7 +561,7 @@ app.get('/api/health', (_req, res) => {
 // Assistente conversazionale generico: task "chat" -> tier "fast" dell'AI
 // Router centralizzato (./lib/ai-router.js), nessuna generazione complessa di
 // app/codice qui.
-app.post('/api/chat', requireAuth, async (req, res) => {
+app.post('/api/chat', requireAuth, aiLimiter, async (req, res) => {
   try {
     const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -567,14 +580,14 @@ app.post('/api/chat', requireAuth, async (req, res) => {
       return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
     }
     if (err instanceof AiRouterError) {
-      return res.status(502).json({ error: err.message });
+      return res.status(502).json({ error: 'Errore interno' });
     }
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
 // --- VISION API ---
-app.post('/api/vision/analyze', requireAuth, async (req, res) => {
+app.post('/api/vision/analyze', requireAuth, aiLimiter, async (req, res) => {
   try {
     const { prompt, image, provider = 'groq', model } = req.body;
     if (!image) return res.status(400).json({ error: 'Immagine richiesta' });
@@ -630,12 +643,12 @@ app.post('/api/vision/analyze', requireAuth, async (req, res) => {
     return res.status(400).json({ error: `Provider ${provider} non supportato per vision` });
   } catch (err) {
     console.error('/api/vision/analyze error:', err);
-    res.status(500).json({ error: err.message || 'Errore vision' });
+    res.status(500).json({ error: 'Errore vision' });
   }
 });
 
 // --- GENERATE APP BLUEPRINT ---
-app.post('/api/generate-app', requireAuth, async (req, res) => {
+app.post('/api/generate-app', requireAuth, aiLimiter, async (req, res) => {
   try {
     const { sector, tenantId } = req.body;
     if (!sector) return res.status(400).json({ error: 'Settore richiesto' });
@@ -706,9 +719,9 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
       return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
     }
     if (err instanceof AiRouterError) {
-      return res.status(502).json({ error: err.message });
+      return res.status(502).json({ error: 'Errore interno' });
     }
-    res.status(500).json({ error: err.message || 'Errore generazione blueprint' });
+    res.status(500).json({ error: 'Errore generazione blueprint' });
   }
 });
 
@@ -734,7 +747,7 @@ app.use('/api', require('./routes/app-registry'));
 // --- ERROR HANDLER ---
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: err.message || 'Errore interno del server' });
+  res.status(500).json({ error: 'Errore interno del server' });
 });
 
 // Cron job per controllo scadenze app

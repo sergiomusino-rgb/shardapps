@@ -41,7 +41,7 @@ router.get('/app-registry', requireAuth, async (req, res) => {
 
     if (error) {
       console.error('get_reseller_apps_with_total error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     // Estrai il totale dalla prima riga (è lo stesso per tutte)
@@ -53,7 +53,7 @@ router.get('/app-registry', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('/api/app-registry error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -85,7 +85,7 @@ router.get('/app-registry/:id', requireAuth, async (req, res) => {
     return res.json({ app: data });
   } catch (err) {
     console.error('/api/app-registry/:id error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -123,13 +123,13 @@ router.post('/app-registry', requireAuth, async (req, res) => {
 
     if (error) {
       console.error('app_registry insert error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     return res.status(201).json({ app: data });
   } catch (err) {
     console.error('/api/app-registry POST error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -163,13 +163,13 @@ router.patch('/app-registry/:id', requireAuth, async (req, res) => {
       .single();
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     return res.json({ app: data });
   } catch (err) {
     console.error('/api/app-registry PATCH error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -194,13 +194,13 @@ router.delete('/app-registry/:id', requireAuth, async (req, res) => {
       .eq('reseller_id', user.id);
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     return res.json({ success: true });
   } catch (err) {
     console.error('/api/app-registry DELETE error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

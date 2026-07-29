@@ -373,7 +373,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
     }
 
     // Register app in app_registry for Management Console
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusx.vercel.app'}/a/${slug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
     const { error: registryError } = await supabaseAdmin
       .from('app_registry')
       .insert({

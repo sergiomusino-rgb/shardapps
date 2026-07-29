@@ -93,7 +93,7 @@ router.get('/client/apps/:appId/custom-tables', clientAuthMiddleware, async (req
 
     if (error) {
       console.error('GET custom-tables error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     // Ogni record ha: { id, data: { name, label, labelPlural, icon, color, columns: [{ name, type, label, required }] } }
@@ -106,7 +106,7 @@ router.get('/client/apps/:appId/custom-tables', clientAuthMiddleware, async (req
     res.json({ tables, count: tables.length });
   } catch (err) {
     console.error('GET custom-tables exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -166,13 +166,13 @@ router.post('/client/apps/:appId/custom-tables', clientAuthMiddleware, async (re
 
     if (error) {
       console.error('POST custom-table error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ table: { id: record.id, ...(record.data || {}) } });
   } catch (err) {
     console.error('POST custom-table exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -228,13 +228,13 @@ router.put('/client/apps/:appId/custom-tables/:tableId', clientAuthMiddleware, a
 
     if (error) {
       console.error('PUT custom-table error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ table: { id: record.id, ...(record.data || {}) } });
   } catch (err) {
     console.error('PUT custom-table exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -278,13 +278,13 @@ router.delete('/client/apps/:appId/custom-tables/:tableId', clientAuthMiddleware
 
     if (error) {
       console.error('DELETE custom-table error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true, deletedTable: tableName });
   } catch (err) {
     console.error('DELETE custom-table exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -307,13 +307,13 @@ router.get('/client/apps/:appId/custom-records/:customTableName', clientAuthMidd
 
     if (error) {
       console.error('GET custom-records error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ records: data || [], count: data?.length || 0 });
   } catch (err) {
     console.error('GET custom-records exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -342,13 +342,13 @@ router.post('/client/apps/:appId/custom-records/:customTableName', clientAuthMid
 
     if (error) {
       console.error('POST custom-record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST custom-record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -374,7 +374,7 @@ router.put('/client/apps/:appId/custom-records/:customTableName/:recordId', clie
 
     if (error) {
       console.error('PUT custom-record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!record) {
@@ -384,7 +384,7 @@ router.put('/client/apps/:appId/custom-records/:customTableName/:recordId', clie
     res.json({ record });
   } catch (err) {
     console.error('PUT custom-record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -403,13 +403,13 @@ router.delete('/client/apps/:appId/custom-records/:customTableName/:recordId', c
 
     if (error) {
       console.error('DELETE custom-record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE custom-record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
