@@ -15,15 +15,13 @@ services:
         value: 10000
       - key: ALLOWED_ORIGINS
         value: https://zeusx-zwu8.vercel.app
-      - key: PREFERRED_AI_PROVIDER
-        value: groq
+      - key: OPENROUTER_API_KEY
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: OPENAI_API_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false

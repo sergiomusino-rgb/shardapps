@@ -18,12 +18,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'Parametro table mancante' }, { status: 400 });
   }
 
-  // Verifica che la tabella sia una tabella fissa supportata
-  const fixedTables = ['clienti', 'prodotti', 'ordini', 'magazzino'];
-  if (!fixedTables.includes(tableName)) {
-    return NextResponse.json({ error: `Tabella '${tableName}' non supportata. Usa le API custom-records per tabelle personalizzate.` }, { status: 400 });
-  }
-
   try {
     // Il backend è registrato con prefisso /api nel server.js
     const targetUrl = `${BACKEND_URL}/api/client/apps/${id}/records?table=${tableName}`;
@@ -74,61 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string; recordId: string }> }) {
-  const { id, recordId } = await params;
-  console.log(`[PROXY PUT] Chiamata ricevuta per App: ${id}, Record: ${recordId}`);
-
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader) {
-    return NextResponse.json({ error: 'Authorization header mancante' }, { status: 401 });
-  }
-
-  try {
-    const body = await req.json();
-    // Il backend è registrato con prefisso /api nel server.js
-    const targetUrl = `${BACKEND_URL}/api/client/apps/${id}/records/${recordId}`;
-    console.log(`[PROXY PUT] Inoltro a: ${targetUrl}`);
-
-    const res = await fetch(targetUrl, {
-      method: 'PUT',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-
-    const result = await res.json();
-    return NextResponse.json(result, { status: res.status });
-  } catch (err) {
-    console.error('[records] proxy error:', err);
-    return NextResponse.json({ error: 'Errore connessione backend' }, { status: 500 });
-  }
-}
-
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string; recordId: string }> }) {
-  const { id, recordId } = await params;
-  console.log(`[PROXY DELETE] Chiamata ricevuta per App: ${id}, Record: ${recordId}`);
-
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader) {
-    return NextResponse.json({ error: 'Authorization header mancante' }, { status: 401 });
-  }
-
-  try {
-    // Il backend è registrato con prefisso /api nel server.js
-    const targetUrl = `${BACKEND_URL}/api/client/apps/${id}/records/${recordId}`;
-    console.log(`[PROXY DELETE] Inoltro a: ${targetUrl}`);
-
-    const res = await fetch(targetUrl, {
-      method: 'DELETE',
-      headers: { 'Authorization': authHeader },
-    });
-
-    const result = await res.json();
-    return NextResponse.json(result, { status: res.status });
-  } catch (err) {
-    console.error('[records] proxy error:', err);
-    return NextResponse.json({ error: 'Errore connessione backend' }, { status: 500 });
-  }
-}
+// Gli handler per il singolo record (PUT/DELETE) sono in
+// app/api/client/apps/[id]/records/[recordId]/route.ts: qui il segmento
+// dinamico è solo [id], quindi non possono intercettare
+// /records/{recordId} (vedi audit tsc — Next.js non li instradava mai).

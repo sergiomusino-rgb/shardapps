@@ -18,43 +18,54 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first strategy for API calls, cache-first for static assets
+// Network-first per navigazioni HTML e chiamate API, cache-first per asset
+// statici. In tutti i casi si cachano solo risposte GET con response.ok:
+// una 404/500 transitoria (es. durante un rebuild del dev server) non deve
+// restare bloccata in cache per sempre, altrimenti route valide continuano
+// a risultare 404 anche dopo che il problema a monte è stato risolto.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API calls - network first (cache only GET requests)
-  if (url.pathname.startsWith('/api/') || url.hostname !== self.location.hostname) {
+  const cachePut = (response) => {
+    if (request.method === 'GET' && response.ok) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+    }
+    return response;
+  };
+
+  // Navigazioni HTML - network first: in sviluppo/uso online mostra sempre
+  // la versione corrente della route, cade sulla cache solo se offline.
+  if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          // Only cache GET requests (POST/PUT/DELETE are not supported by Cache API)
-          if (request.method === 'GET') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, clone);
-            });
-          }
-          return response;
-        })
+        .then(cachePut)
         .catch(() => caches.match(request))
     );
     return;
   }
 
-  // Static assets - cache first (only GET requests)
+  // API calls - network first (cache only GET + ok requests)
+  if (url.pathname.startsWith('/api/') || url.hostname !== self.location.hostname) {
+    event.respondWith(
+      fetch(request)
+        .then(cachePut)
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Static assets - network first, come navigazioni/API. Prima era
+  // cache-first: senza un CACHE_NAME che cambia ad ogni deploy, un chunk
+  // richiesto una volta restava servito dalla cache per sempre anche dopo
+  // un aggiornamento del codice (riprodotto durante un test: il dev server
+  // veniva riavviato con codice nuovo ma il browser continuava a eseguire i
+  // vecchi bundle JS). La cache resta comunque popolata (cachePut) e serve
+  // da fallback per il funzionamento offline.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      return cached || fetch(request).then((response) => {
-        // Only cache GET requests
-        if (request.method === 'GET') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, clone);
-          });
-        }
-        return response;
-      });
-    })
+    fetch(request)
+      .then(cachePut)
+      .catch(() => caches.match(request))
   );
 });

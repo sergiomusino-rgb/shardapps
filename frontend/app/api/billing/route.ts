@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { Database } from '@/types/database';
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { ensureTenantAccess } from "../../../src/lib/tenant";
@@ -6,7 +7,7 @@ import { ensureTenantAccess } from "../../../src/lib/tenant";
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
 
 function getSupabase() {
-  return createClient(
+  return createClient<Database>(
     process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
     process.env.SUPABASE_SERVICE_ROLE_KEY || ""
   );

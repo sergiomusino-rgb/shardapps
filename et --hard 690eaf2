@@ -1,0 +1,103 @@
+[33me0102c0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/totalium-clean[m[33m, [m[1;31morigin/feature/totalium-clean[m[33m)[m feat: add Demo App showcase section
+[33m690eaf2[m Integrazione gestione pagamenti in Management Page con QR code
+[33m3d2fc52[m fix: collegare card stato app nella pagina admin - correggere logica calcolo stato app
+[33mae6211d[m feat: internazionalizzazione pagine attesa e successo (IT/EN)
+[33m8f03a3c[m Fix: Defer slot decrement until after successful Totalum API call
+[33mc5a350f[m Fix: Use correct Supabase env variable in generate.js route
+[33m74bbd42[m fix: update Totalium API URL and add Supabase singleton pattern
+[33m5ade6c6[m[33m ([m[1;32mfeature/totalium-bridge[m[33m)[m feat: configure Totalium API route with correct endpoint and api-key header
+[33m7384969[m feat: configure Totalium API route with correct endpoint and api-key header
+[33m5a1fff8[m[33m ([m[1;31morigin/feature/totalium-bridge[m[33m)[m chore: remove 'Pronto a iniziare' section from info page
+[33m4deafc3[m fix: add local chat API endpoint to fix non-responding chat
+[33mdc6f250[m Remove PRO badge from sidebar footer
+[33m9b86693[m Remove PRO badge from home page footer
+[33m8cf7f0e[m Add favicon icon to home page footer
+[33m88b6821[m Fix info page: make header sticky
+[33m84db46b[m Fix info page: remove duplicate back button, add header spacing
+[33m73175b3[m Add header bar to info page with language selector
+[33m9bee503[m Fix info page pricing: Starter 4.99€ setup, Business 100 slots
+[33md36660b[m Fix Business plan: 100 slots instead of 250
+[33m8fecd43[m Fix pricing: Starter 4.99€ setup, Business 25€/month
+[33m73bbe7a[m Move logout button to sidebar, add language selector to mobile headers, fix translations
+[33m1cc4f7e[m Fix: Correct storageKey in supabase.ts to use project ref instead of hardcoded value
+[33mdda43f5[m Fix admin page access and add sidebar to management guide
+[33md76aaa7[m Move settings to last position in sidebar and update management layout to use sidebar for hamburger menu
+[33m75fc61c[m feat: setup stripe payments, fix checkout 500 errors and implement plan-based access logic
+[33m91f46bf[m feat: Implement Totalium bridge integration
+[33m65c339d[m feat: complete ZEUSX rebrand - implement Totalium bridge integration
+[33m380eca3[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m fix: implement global ThemeProvider to persist theme across routes
+[33m56d4ee2[m Remove aggressive reload from layout to fix page flickering
+[33md5cbf7b[m Rewrite admin page with complete company settings form
+[33m622ebc1[m Add theme-change event listener to admin page
+[33m438ff01[m Add theme-change event listener to layout for real-time updates
+[33m02c8f65[m Add theme-change event dispatch for real-time theme updates
+[33m020cabe[m Fix theme reading in admin and fatture pages
+[33m8c6a359[m Add company settings page with theme support and update sidebar
+[33m24c65fd[m feat: add invoice total calculation and status dropdown
+[33m83e958a[m fix: resolve invoices feature issues
+[33mee64f55[m Feat: add RBAC imports to page.tsx
+[33m3a0738a[m Feat: 100% completed RBAC implementation with secure wrapper and protected table actions
+[33ma3086d3[m feat: use translations in Dashboard component
+[33m36689df[m feat: use translations in Dashboard component
+[33maa18087[m feat: add dashboard translations to all language files
+[33m9b247b8[m fix: handle undefined field name in EditTableModal
+[33ma2f97b6[m fix: add API route for change-password and update frontend to use proxy
+[33maddb893[m feat: add /api/a/[slug]/app route to proxy to backend
+[33m51dfd21[m fix: correct backend URL in /api/a/[slug] route - remove /api prefix
+[33m77ef98c[m fix: use proxy for change-password endpoint instead of direct backend URL
+[33mffe3da5[m fix: add rewrite for /a/:path* routes to proxy to backend
+[33m8d19d4b[m UI: fix global dark scrollbar, implement text-only language selector, and fix i18n JSON syntax
+[33m5f0c64d[m i18n: Inherit app language on login - save lang to localStorage and wrap with LanguageProvider
+[33m758e944[m style: Add custom dark scrollbar styles globally
+[33mcf91f93[m i18n: Add 'loading' translation key to all language files
+[33m8083108[m i18n: Add translations for client app login page (5 languages)
+[33mdcdb37b[m style: Add dark semi-transparent scrollbar to sidebar for better dark theme integration
+[33mf3fceb8[m i18n: Update legal pages to load content from locale-specific text files
+[33m1f9ae9c[m i18n: Add German and Spanish translations for legal documents
+[33m3cb2ff4[m i18n: Add Italian translation for Privacy Policy
+[33mc6918dd[m i18n: Add Italian translation for Terms and Conditions
+[33m36ec8bc[m i18n: Add Terms and Conditions content (English version)
+[33m5fc5108[m i18n: Add placeholder for Terms and Conditions (English)
+[33mc474d46[m i18n: Add Privacy Policy content (English version)
+[33m73c0205[m i18n: Update terms page to use file-based legal content loader
+[33m535248f[m i18n: Add Privacy Policy page with file-based legal content loader
+[33mf94b581[m i18n: Add Terms & Conditions page with translations
+[33m8c279dd[m i18n: Translate sector cards in generator page
+[33me846791[m ui: Move language selector to top right on login page
+[33m0237aa4[m i18n: Add translations for success page
+[33m7ab0a8a[m i18n: Add translations for generator page
+[33md4e0e57[m i18n: Add translations for admin page
+[33md96d714[m i18n: Add translations for pricing page
+[33mf1e7c34[m i18n: Add translations for login, dashboard, calendar, projects and chat pages
+[33m2cc9239[m fix: normalizza record JSONB nel frontend e corregge crash su update tabella nel backend
+[33m39b99fb[m Fix Next.js dynamic route conflict (recordId vs tableName) and rewrite prefix
+[33m685b94f[m Aggiunto modulo fatturazione completo: backend, form di creazione e layout di stampa A4
+[33m59dba72[m nomr tabelle
+[33mf99752d[m errore 500
+[33m6a2b919[m correzione cors e password
+[33m9b60173[m Aggiunta nuova modifica
+[33m8b2b9f2[m Add EditTableModal with gear icon for modifica tabella
+[33m416a77b[m Aggiunta modifica tabelle
+[33mdf8dc73[m Aggiunta nuova modifica
+[33mf44dcb5[m salvataggio tabelle
+[33mabd8e00[m Merge pull request #2 from sergiomusino-rgb/tabelle-dinamiche
+[33mea7b994[m[33m ([m[1;31morigin/tabelle-dinamiche[m[33m)[m Merge branch 'main' into tabelle-dinamiche
+[33m6df38b4[m Fix api routes e isolamento client Supabase
+[33m98dbbe3[m Fix JSX syntax error in sidebar conditional render
+[33mf9ff213[m Fix responsive sidebar bug on mobile devices
+[33mca2989a[m Remove smartphone/tablet layout options from app settings
+[33mc57503e[m Fix custom-tables 404 and change-password 500 errors
+[33mb2970e5[m Fix manifest CORS error and change-password 500 error
+[33mf22cff0[m feat: implementa tabelle dinamiche e sidebar mobile hamburger
+[33m46cdb5b[m Aggiunta infrastruttura per creazione tabelle personalizzate e sidebar dinamica
+[33md24db04[m fix: header desktop mostra 'Torna alla Dashboard' anche su /pricing e /admin
+[33ma07c25e[m fix: aggiunto path /admin a shouldShowSidebar per mostrare hamburger su mobile anche in admin
+[33m1e91aed[m fix: centralizzato header con hamburger in DashboardLayoutClient, rimosse ridondanze min-h-screen/header/footer dalle pagine dashboard
+[33md382745[m Remove dashboard button from admin page, enable sidebar on pricing page
+[33m9a303ef[m feat: add dashboard layout to /pricing and /admin pages
+[33m64fb98b[m Uniform layout: centralize Dashboard back button in DashboardLayoutClient, remove custom buttons from generator/vision/projects/settings pages
+[33mee237d2[m Fix hamburger sidebar on all dashboard pages + add Dashboard button on generator page
+[33m407deb1[m Design: inserito hamburger menu responsive + security: RLS policy database
+[33mecbba2b[m Design: inserito hamburger menu e ottimizzazione mobile per la sidebar
+[33mdb6e55e[m Salvataggio locale prima del pull
+[33m7e3b4f4[m fix: generator ora incrementa total_apps_created nel ten

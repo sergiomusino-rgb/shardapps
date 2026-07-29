@@ -54,7 +54,14 @@ export default function Home() {
       </main>
 
       {/* BRAND FOOTER FISSO (In basso a sinistra) */}
-      <BrandFooter />
+      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-center gap-2 pointer-events-none">
+        <img
+          src="/favicon.png"
+          alt="ZeusX"
+          className="h-14 w-14 rounded-full object-cover"
+        />
+        <p className="text-xs font-semibold text-slate-400">{t('sidebar_by')}</p>
+      </div>
 
     </div>
   );

@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { Eye, EyeOff, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
+import { supabase } from '@/src/lib/supabase';
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -42,10 +42,6 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -89,10 +85,6 @@ function LoginForm() {
     }
 
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -135,10 +127,6 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         email.trim(),
         { redirectTo: `${window.location.origin}/login` }

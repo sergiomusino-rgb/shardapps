@@ -10,7 +10,8 @@ export interface FieldDef {
   name: string;
   id?: string;
   label: string;
-  type: 'text' | 'number' | 'email' | 'tel' | 'date' | 'select' | 'textarea' | 'checkbox';
+  type: 'text' | 'number' | 'email' | 'tel' | 'date' | 'datetime' | 'select' | 'multiselect'
+    | 'textarea' | 'checkbox' | 'currency' | 'image' | 'file' | 'relation';
   required?: boolean;
   options?: string[];
   /** Se true, questo campo non può essere rinominato o rimosso dall'utente */
@@ -36,6 +37,50 @@ export interface TableDef {
  */
 export function fieldName(f: FieldDef): string {
   return f.name || f.id || '';
+}
+
+// Tabelle di sistema (iniettate sempre da blueprint-schema.ts) che nel menu
+// laterale devono comparire in fondo, dopo le tabelle di lavoro del settore
+// (Pazienti, Ordini, ...) e prima di Impostazioni/Logout.
+const FATTURE_TABLE_NAMES = new Set(['fatture', 'documenti']);
+// "Dati Azienda" non compare nella lista tabelle: è una voce a sé, mostrata
+// appena sotto "Impostazioni" (vedi getDatiAziendaliTable).
+const DATI_AZIENDALI_TABLE_NAMES = new Set(['dati_aziendali', 'impostazioni_azienda']);
+const SYSTEM_TABLE_NAMES = new Set([...FATTURE_TABLE_NAMES, ...DATI_AZIENDALI_TABLE_NAMES]);
+
+/**
+ * Estrae la tabella "Dati Azienda" (se presente) dall'elenco tabelle, per
+ * renderizzarla separatamente come voce fissa vicino a Impostazioni invece
+ * che nella lista delle tabelle di lavoro.
+ */
+export function getDatiAziendaliTable<T extends { name: string }>(tables: T[]): T | undefined {
+  return tables.find((t) => DATI_AZIENDALI_TABLE_NAMES.has(t.name));
+}
+
+/**
+ * Ordina le tabelle per la sidebar: le tabelle di lavoro restano in cima
+ * nell'ordine originale, "Fatture" viene spostata in fondo, "Dati Azienda"
+ * viene rimossa dalla lista (renderizzata a parte vicino a Impostazioni).
+ * Ordinamento stabile, solo per la visualizzazione — non modifica l'array/i
+ * dati sottostanti.
+ */
+export function sortTablesForSidebar<T extends { name: string }>(tables: T[]): T[] {
+  const work = tables.filter((t) => !SYSTEM_TABLE_NAMES.has(t.name));
+  const system = tables.filter((t) => FATTURE_TABLE_NAMES.has(t.name));
+  return [...work, ...system];
+}
+
+/**
+ * Trova il campo prezzo "da mostrare al cliente" (es. prezzo di vendita)
+ * distinguendolo da campi di costo interno (prezzo di acquisto): tabelle
+ * come "prodotti" hanno spesso ENTRAMBI prezzo_acquisto e prezzo_vendita —
+ * un semplice match su /prezzo/i sceglierebbe sempre il primo dei due
+ * (di solito il costo d'acquisto, non il prezzo di vendita).
+ */
+export function findDisplayPriceField<T extends { name?: string; id?: string; type: string }>(fields: T[]): T | undefined {
+  return fields.find((f) => f.type === 'currency')
+    || fields.find((f) => f.type === 'number' && /vendita|totale|importo/i.test(fieldName(f as any)))
+    || fields.find((f) => f.type === 'number' && /prezzo|costo/i.test(fieldName(f as any)) && !/acquist/i.test(fieldName(f as any)));
 }
 
 /**

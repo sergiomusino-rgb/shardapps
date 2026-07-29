@@ -5,7 +5,7 @@
  *
  * REGOLE:
  * - Nessun routing basato su URL (niente /it/, /en/ ecc.)
- * - Nessuna modifica a middleware.ts o al routing di Next.js
+ * - Nessuna modifica a proxy.ts o al routing di Next.js
  * - La lingua scelta viene salvata in localStorage (client-side) e
  *   letta al mount. Nessuna dipendenza da next-intl / cookie NEXT_LOCALE.
  * - Il dizionario JSON corrispondente viene caricato dinamicamente da

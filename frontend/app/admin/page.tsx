@@ -8,6 +8,51 @@ import {
 } from 'recharts';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
+// ============================================================================
+// Takeover Modal Component
+// ============================================================================
+
+function TakeoverModal({ 
+  isOpen, 
+  onClose, 
+  appName, 
+  onConfirm 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  appName: string;
+  onConfirm: () => void;
+}) {
+  const { t } = useLanguage();
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full">
+        <h3 className="text-lg font-bold text-white mb-4">{t('admin_takeover_confirm_title')}</h3>
+        <p className="text-slate-300 mb-6">
+          {t('admin_takeover_confirm_message').replace('{appName}', appName || 'Nome App')}
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-slate-400 hover:text-white transition"
+          >
+            {t('admin_takeover_cancel')}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition font-medium"
+          >
+            {t('admin_takeover_confirm')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
 
 const PLAN_PRICES: Record<string, number> = {
@@ -39,7 +84,15 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [denied, setDenied] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [resellerDebts, setResellerDebts] = useState<any[]>([]);
+  const [debtsLoading, setDebtsLoading] = useState(false);
   const [tab, setTab] = useState('dash');
+  const [takeoverModal, setTakeoverModal] = useState<{
+    isOpen: boolean;
+    appId: string | null;
+    appName: string;
+  }>({ isOpen: false, appId: null, appName: '' });
+  const [takeoverLoading, setTakeoverLoading] = useState(false);
   const { t } = useLanguage();
 
   useEffect(() => { boot(); }, []);
@@ -49,6 +102,13 @@ export default function AdminPage() {
     if (!user || user.id !== ADMIN_USER_ID) { setDenied(true); setLoading(false); return; }
     await loadData();
   }
+
+  // Load reseller debts when switching to debts tab
+  useEffect(() => {
+    if (tab === 'debts' && !denied) {
+      loadResellerDebts();
+    }
+  }, [tab, denied]);
 
   async function loadData() {
     try {
@@ -65,6 +125,74 @@ export default function AdminPage() {
       setData(json);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
+  }
+
+  async function loadResellerDebts() {
+    setDebtsLoading(true);
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/reseller-debts', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        setResellerDebts(json.data || []);
+      }
+    } catch (err) { console.error(err); }
+    finally { setDebtsLoading(false); }
+  }
+
+  async function markAsPaid(resellerId: string) {
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/mark-paid', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ resellerId }),
+      });
+
+      if (res.ok) {
+        loadResellerDebts();
+      }
+    } catch (err) { console.error(err); }
+  }
+
+  async function executeTakeover(appId: string) {
+    setTakeoverLoading(true);
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return;
+
+      const res = await fetch('/api/admin/takeover', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ app_id: appId }),
+      });
+
+      if (res.ok) {
+        // Refresh data after takeover
+        loadData();
+        setTakeoverModal({ isOpen: false, appId: null, appName: '' });
+      } else {
+        const error = await res.json();
+        alert(error.error || t('admin_takeover_error'));
+      }
+    } catch (err) { console.error(err); }
+    finally { setTakeoverLoading(false); }
   }
 
   if (loading) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center text-xl">{t('admin_loading')}</div>;
@@ -96,6 +224,7 @@ export default function AdminPage() {
              { id: 'revenue', label: t('admin_tab_revenue') },
              { id: 'plans', label: t('admin_tab_plans') },
              { id: 'apps', label: t('admin_tab_apps') },
+             { id: 'debts', label: t('admin_tab_debts') },
            ].map(item => (
              <button
                key={item.id}
@@ -208,7 +337,9 @@ export default function AdminPage() {
                <h3 className="text-sm font-semibold text-slate-300 mb-4">{t('admin_recent_apps')}</h3>
                <div className="space-y-2">
                  {recentApps.slice(0, 8).map((a: any) => {
-                   const expired = a.expires_at && new Date(a.expires_at) < new Date();
+                    // Controlla sia trial_ends_at che expires_at per la scadenza
+                    const expiryDate = a.trial_ends_at || a.expires_at;
+                    const expired = expiryDate && new Date(expiryDate) < new Date();
                    return (
                      <div key={a.id} className="flex items-center justify-between bg-slate-800 rounded-lg px-4 py-3">
                        <div>
@@ -216,11 +347,15 @@ export default function AdminPage() {
                          <div className="text-xs text-slate-500">{new Date(a.created_at).toLocaleDateString('it-IT')}</div>
                        </div>
                        <div className="flex items-center gap-4">
-                         {a.slug && (
-                           <a href={`/a/${a.slug}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
-                             /a/{a.slug}
-                           </a>
-                         )}
+                          {a.production_url ? (
+                            <a href={a.production_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
+                              {a.production_url}
+                            </a>
+                          ) : a.slug ? (
+                            <a href={`/a/${a.slug}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300">
+                              /a/{a.slug}
+                            </a>
+                          ) : null}
                          <span className={`text-xs font-medium ${expired ? 'text-red-400' : 'text-emerald-400'}`}>
                            {expired ? t('admin_status_expired_badge') : t('admin_status_active_badge')}
                          </span>
@@ -342,37 +477,124 @@ export default function AdminPage() {
                      <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_table_expiry')}</th>
                      <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_table_created')}</th>
                      <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_table_link')}</th>
+                     <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_table_actions')}</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-800">
                    {recentApps.map((a: any) => {
-                     const expired = a.expires_at && new Date(a.expires_at) < new Date();
-                     return (
-                       <tr key={a.id} className="hover:bg-slate-800/50">
-                         <td className="px-5 py-3 font-medium">{a.name}</td>
-                         <td className="px-5 py-3">
-                           {expired ? (
-                             <span className="px-2 py-1 rounded text-xs font-medium bg-red-600/20 text-red-400">{t('admin_status_expired_badge')}</span>
-                           ) : (
-                             <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-600/20 text-emerald-400">{t('admin_status_active_badge')}</span>
-                           )}
-                         </td>
-                         <td className="px-5 py-3 text-slate-400">{a.expires_at ? new Date(a.expires_at).toLocaleDateString('it-IT') : '-'}</td>
+                      // Controlla sia trial_ends_at che expires_at per la scadenza
+                      const expiryDate = a.trial_ends_at || a.expires_at;
+                      const expired = expiryDate && new Date(expiryDate) < new Date();
+                      const isOwnedByAdmin = a.ownership_status === 'admin_owned';
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-800/50">
+                          <td className="px-5 py-3 font-medium">{a.name}</td>
+                          <td className="px-5 py-3">
+                            {expired ? (
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-red-600/20 text-red-400">{t('admin_status_expired_badge')}</span>
+                            ) : isOwnedByAdmin ? (
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-orange-600/20 text-orange-400">{t('admin_status_admin_owned')}</span>
+                            ) : (
+                              <span className="px-2 py-1 rounded text-xs font-medium bg-emerald-600/20 text-emerald-400">{t('admin_status_active_badge')}</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-slate-400">{expiryDate ? new Date(expiryDate).toLocaleDateString('it-IT') : '-'}</td>
                          <td className="px-5 py-3 text-slate-400">{new Date(a.created_at).toLocaleDateString('it-IT')}</td>
                          <td className="px-5 py-3">
-                           {a.slug && (
-                             <a href={`/a/${a.slug}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs">
-                               /a/{a.slug}
-                             </a>
+                          {a.production_url ? (
+                            <a href={a.production_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs">
+                              {a.production_url}
+                            </a>
+                          ) : a.slug ? (
+                            <a href={`/a/${a.slug}`} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-xs">
+                              /a/{a.slug}
+                            </a>
+                          ) : null}
+                         </td>
+                         <td className="px-5 py-3">
+                           {!isOwnedByAdmin && (
+                             <button
+                               onClick={() => setTakeoverModal({ isOpen: true, appId: a.id, appName: a.name })}
+                               disabled={takeoverLoading}
+                               className="px-3 py-1 bg-orange-600/20 text-orange-400 rounded hover:bg-orange-600/30 text-xs font-medium disabled:opacity-50"
+                             >
+                               {t('admin_takeover_button')}
+                             </button>
                            )}
                          </td>
                        </tr>
                      );
                    })}
-                   {recentApps.length === 0 && <tr><td colSpan={5} className="px-5 py-12 text-center text-slate-500">{t('admin_no_apps')}</td></tr>}
+           {recentApps.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-500">{t('admin_no_apps')}</td></tr>}
                  </tbody>
                </table>
              </div>
+           </div>
+         )}
+
+         {/* Takeover Modal */}
+         <TakeoverModal
+           isOpen={takeoverModal.isOpen}
+           appName={takeoverModal.appName}
+           onClose={() => setTakeoverModal({ isOpen: false, appId: null, appName: '' })}
+           onConfirm={() => takeoverModal.appId && executeTakeover(takeoverModal.appId)}
+         />
+
+         {/* DEBITI RIVENDITORI */}
+         {tab === 'debts' && (
+           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+             <div className="p-5 border-b border-slate-800">
+               <h3 className="text-sm font-semibold text-slate-300">{t('admin_tab_debts')}</h3>
+             </div>
+             {debtsLoading ? (
+               <div className="p-6 text-center">
+                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                 <p className="text-slate-400 mt-2">{t('admin_loading')}</p>
+               </div>
+             ) : (
+               <div className="overflow-x-auto">
+                 <table className="w-full text-sm">
+                   <thead className="bg-slate-800">
+                     <tr>
+                       <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_debt_reseller')}</th>
+                       <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_debt_email')}</th>
+                       <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_debt_amount')}</th>
+                       <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_debt_transactions')}</th>
+                       <th className="px-5 py-3 text-left font-semibold text-slate-300">{t('admin_debt_actions')}</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-800">
+                     {resellerDebts.map((debt: any) => (
+                       <tr key={debt.reseller_id} className="hover:bg-slate-800/50">
+                         <td className="px-5 py-3 font-medium">{debt.reseller_name || t('admin_debt_unknown')}</td>
+                         <td className="px-5 py-3 text-slate-400">{debt.reseller_email}</td>
+                         <td className="px-5 py-3">
+                           <span className="font-bold text-red-400">
+                             {fmtEur(debt.total_debt || 0)}
+                           </span>
+                         </td>
+                         <td className="px-5 py-3 text-slate-400">{debt.pending_transactions_count}</td>
+                         <td className="px-5 py-3">
+                           <button
+                             onClick={() => markAsPaid(debt.reseller_id)}
+                             className="px-3 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 text-xs font-medium"
+                           >
+                             {t('admin_debt_mark_paid')}
+                           </button>
+                         </td>
+                       </tr>
+                     ))}
+                     {resellerDebts.length === 0 && (
+                       <tr>
+                         <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
+                           {t('admin_debt_no_debts')}
+                         </td>
+                       </tr>
+                     )}
+                   </tbody>
+                 </table>
+               </div>
+             )}
            </div>
          )}
        </div>

@@ -1,14 +1,16 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const { aiLimiter } = require('./middleware/rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
-const Anthropic = require('@anthropic-ai/sdk');
+const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -92,6 +94,98 @@ async function upsertSubscription(supabase, tenantId, data) {
   }
 }
 
+const PLAN_SLOTS = { starter: 1, pro: 5, business: 50, basic: 1, vip: 100, credit_topup: 1 };
+
+// Crediti Vision inclusi in ogni piano (setup una tantum) e nella ricarica
+// extra "credit_topup" (ex "extra_slot" — stesso Price Stripe da 15€, vedi
+// routes/stripe.js), che oltre ai crediti concede anche 1 slot app.
+const PLAN_CREDITS = { starter: 20, pro: 100, business: 500, credit_topup: 50 };
+
+// Rango dei piani: gli eventi Stripe (checkout.session.completed,
+// payment_intent.succeeded) non arrivano garantiti in ordine cronologico.
+// Se un tenant compra business e poi arriva in ritardo l'evento del vecchio
+// acquisto starter, un update incondizionato di tenants.plan lo farebbe
+// retrocedere. Si applica solo un piano pari o superiore a quello già salvato.
+const PLAN_RANK = { free: 0, starter: 1, basic: 1, pro: 2, business: 3, vip: 3 };
+function planRank(plan) {
+  return PLAN_RANK[plan] ?? 0;
+}
+
+// Somma slot/crediti e (opzionalmente) aggiorna il piano del tenant una sola
+// volta per checkout session, indipendentemente da quale dei punti di sync
+// (webhook, pagina /success, banner dashboard) la processa per primo o se
+// Stripe re-invia lo stesso evento webhook. Il modello degli slot è cumulativo
+// (vedi supabase_migrations/20260722_update_tenants_slots_cumulative.sql),
+// quindi senza questa guardia una stessa sessione sommerebbe slot/crediti più
+// volte.
+// `creditsToAdd`/`userId`: i crediti Vision sono legati all'utente che ha
+// pagato (profiles.user_id), non al tenant/workspace — coerenti con come
+// vengono spesi in frontend/app/api/generate-video. Se creditsToAdd > 0 ma
+// userId manca (non dovrebbe succedere: create-checkout-session imposta
+// sempre supabase_user_id nei metadata) si salta solo l'accredito invece di
+// far fallire l'intera sincronizzazione di slot/piano.
+async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slotsToAdd, creditsToAdd = 0, userId = null) {
+  const { error: insertError } = await supabase
+    .from('processed_checkout_sessions')
+    .insert({ session_id: sessionId, tenant_id: tenantId, plan: plan || 'credit_topup', slots_added: slotsToAdd });
+
+  if (insertError) {
+    if (insertError.code === '23505') {
+      console.log(`[Stripe Webhook] sessione ${sessionId} già processata, skip`);
+      return false;
+    }
+    throw insertError;
+  }
+
+  if (creditsToAdd > 0) {
+    if (userId) {
+      const { error: creditsError } = await supabase.rpc('grant_credits', {
+        p_user_id: userId,
+        p_amount: creditsToAdd,
+        p_type: 'purchase',
+        p_description: `Acquisto piano ${plan || 'credit_topup'}`,
+        p_reference_id: sessionId,
+        p_metadata: { plan_id: plan || 'credit_topup', session_id: sessionId },
+      });
+      if (creditsError) {
+        console.error('[Stripe Webhook] errore accredito crediti Vision:', creditsError);
+      } else {
+        console.log(`[Stripe Webhook] accreditati ${creditsToAdd} crediti Vision a utente ${userId}`);
+      }
+    } else {
+      console.error(`[Stripe Webhook] impossibile accreditare crediti: supabase_user_id mancante nei metadata (session ${sessionId})`);
+    }
+  }
+
+  if (slotsToAdd > 0) {
+    const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
+      tenant_id: tenantId,
+      slots_to_add: slotsToAdd,
+    });
+    if (rpcError) throw rpcError;
+  }
+
+  if (plan) {
+    const { data: currentTenant } = await supabase
+      .from('tenants')
+      .select('plan')
+      .eq('id', tenantId)
+      .single();
+
+    if (planRank(plan) >= planRank(currentTenant?.plan)) {
+      const { error: planError } = await supabase
+        .from('tenants')
+        .update({ plan, updated_at: new Date().toISOString() })
+        .eq('id', tenantId);
+      if (planError) throw planError;
+    } else {
+      console.log(`[Stripe Webhook] piano ${plan} non applicato: tenant ${tenantId} ha già ${currentTenant?.plan}`);
+    }
+  }
+
+  return true;
+}
+
 async function getTenantIdBySubscriptionId(supabase, subscriptionId) {
   const { data, error } = await supabase
     .from('subscriptions')
@@ -103,23 +197,39 @@ async function getTenantIdBySubscriptionId(supabase, subscriptionId) {
   return data.tenant_id;
 }
 
+const KNOWN_PLANS = ['starter', 'pro', 'business', 'basic', 'vip'];
+
 async function resolvePlanFromSession(stripe, session) {
+  // Il piano scelto è già salvato correttamente in metadata.plan_id al
+  // momento della creazione della sessione (vedi routes/stripe.js) — è la
+  // stessa fonte usata da /api/sync-plan. Prima questa funzione indovinava
+  // il piano solo dal nome del prodotto Stripe (vip/pro/basic) e faceva
+  // fallback a "pro" per QUALSIASI nome non riconosciuto (es. "starter" o
+  // "business") o in caso di errore: il webhook, che è la fonte autoritativa
+  // lato server, sovrascriveva così il piano corretto già impostato dal
+  // client con "pro". Il match sul nome resta solo come fallback per
+  // sessioni vecchie prive di questo metadata.
+  const metadataPlan = session.metadata?.plan_id;
+  if (metadataPlan && KNOWN_PLANS.includes(metadataPlan)) return metadataPlan;
+
   try {
     const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
     const priceId = lineItems.data[0]?.price?.id;
-    if (!priceId) return 'pro';
+    if (!priceId) return metadataPlan || 'starter';
     const price = await stripe.prices.retrieve(priceId);
     const productId = typeof price.product === 'string' ? price.product : price.product?.id;
-    if (!productId) return 'pro';
+    if (!productId) return metadataPlan || 'starter';
     const product = await stripe.products.retrieve(productId);
     const name = (product.name || '').toLowerCase();
+    if (name.includes('business')) return 'business';
     if (name.includes('vip')) return 'vip';
     if (name.includes('pro')) return 'pro';
+    if (name.includes('starter')) return 'starter';
     if (name.includes('basic') || name.includes('base')) return 'basic';
-    return 'pro';
+    return metadataPlan || 'starter';
   } catch (err) {
     console.error('[resolvePlanFromSession] errore:', err);
-    return 'pro';
+    return metadataPlan || 'starter';
   }
 }
 
@@ -137,7 +247,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
   } catch (err) {
     console.error(`Webhook signature verification failed: ${err.message}`);
-    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+    return res.status(400).json({ error: 'Webhook signature verification failed' });
   }
 
   const supabase = getSupabase();
@@ -156,12 +266,14 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
-        const plan = await resolvePlanFromSession(stripe, session);
-        console.log(`[Stripe Webhook] piano risolto: ${plan}`);
+        const planId = session.metadata?.plan_id || 'starter';
+        const quantity = parseInt(session.metadata?.quantity || '1', 10);
+        const supabaseUserId = session.metadata?.supabase_user_id || null;
 
+        // Verifica che il tenant esista
         const { data: tenant, error: tenantError } = await supabase
           .from('tenants')
-          .select('id, name, owner_id')
+          .select('id')
           .eq('id', tenantId)
           .single();
 
@@ -170,50 +282,72 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
-        const { error: updateTenantError } = await supabase
-          .from('tenants')
-          .update({ plan, updated_at: new Date().toISOString() })
-          .eq('id', tenantId);
+        // Handle "Ricarica Extra" - accredita crediti Vision e slot app
+        // (quantity * 50 crediti, quantity * 1 slot).
+        if (planId === 'credit_topup') {
+          const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
+          const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
+          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
+          if (applied) {
+            console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
+          }
+        } else {
+          // Regular plan - risolve il piano e somma slot + crediti Vision
+          // (cumulativo), il campo "plan" mostra sempre l'ultimo piano acquistato
+          const plan = await resolvePlanFromSession(stripe, session);
+          console.log(`[Stripe Webhook] piano risolto: ${plan}`);
 
-        if (updateTenantError) {
-          console.error(`[Stripe Webhook] errore aggiornamento tenant ${tenantId}`, updateTenantError);
-          throw updateTenantError;
+          const slotsToAdd = PLAN_SLOTS[plan] || 1;
+          const creditsToAdd = PLAN_CREDITS[plan] || 0;
+          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, plan, slotsToAdd, creditsToAdd, supabaseUserId);
+          if (applied) {
+            console.log(`[Stripe Webhook] tenant ${tenantId} aggiornato: plan=${plan}, +${slotsToAdd} slot, +${creditsToAdd} crediti`);
+          }
         }
 
-        const subscriptionId = session.subscription;
-        if (!subscriptionId) {
-          console.error('[Stripe Webhook] subscription id mancante');
-          break;
-        }
+        // Le sessioni di checkout sono in mode:'payment' (Managed Payments):
+        // session.subscription non esiste mai (era per il vecchio flusso
+        // mode:'subscription', rimosso). La fee subscription ricorrente da
+        // 25€/app va creata a parte, legata al customer — via primaria è
+        // /sync-plan in routes/stripe.js (chiamato subito dopo il checkout
+        // dalla pagina /success, non dipende dalla consegna del webhook);
+        // questo blocco è solo un backup idempotente nel caso sync-plan non
+        // venga mai chiamato (es. utente chiude la scheda prima del redirect).
+        if (planId !== 'credit_topup') {
+          const { data: existingSub } = await supabase
+            .from('subscriptions')
+            .select('stripe_subscription_id')
+            .eq('tenant_id', tenantId)
+            .maybeSingle();
 
-        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          if (!existingSub?.stripe_subscription_id) {
+            const feePriceId = getFeePriceId(planId);
+            try {
+              const feeSubscription = await stripe.subscriptions.create({
+                customer: session.customer,
+                items: [{ price: feePriceId, quantity: 0 }], // Inizia da 0, verrà incrementata con le app
+                metadata: { tenant_id: tenantId, type: 'app_fee' },
+                proration_behavior: 'always_invoice',
+                // Niente trial_period_days qui: il trial è per singola app
+                // (dal primo login dell'owner, vedi apps.owner_trial_ends_at
+                // e /update-app-fee), non sull'intera subscription.
+              });
 
-        await upsertSubscription(supabase, tenantId, {
-          stripe_customer_id: session.customer,
-          stripe_subscription_id: subscriptionId,
-          status: subscription.status,
-          current_period_start: getPeriodISO(subscription, 'current_period_start'),
-          current_period_end: getPeriodISO(subscription, 'current_period_end'),
-        });
+              // current_period_start/end non sono più sulla subscription ma
+              // sul subscription item in questa API version.
+              const feeSubItem = feeSubscription.items.data[0];
+              await upsertSubscription(supabase, tenantId, {
+                stripe_customer_id: session.customer,
+                stripe_subscription_id: feeSubscription.id,
+                status: feeSubscription.status,
+                current_period_start: getPeriodISO(feeSubItem, 'current_period_start'),
+                current_period_end: getPeriodISO(feeSubItem, 'current_period_end'),
+              });
 
-        console.log(`[Stripe Webhook] Subscription attivata per tenant ${tenantId}`);
-
-        // Crea automaticamente la fee subscription per le app
-        const planId = session.metadata?.plan_id || 'starter';
-        const feePriceId = getFeePriceId(planId);
-        
-        if (feePriceId) {
-          try {
-            const feeSubscription = await stripe.subscriptions.create({
-              customer: session.customer,
-              items: [{ price: feePriceId, quantity: 0 }], // Inizia da 0, verrà incrementata con le app
-              metadata: { tenant_id: tenantId, type: 'app_fee' },
-              proration_behavior: 'always_invoice',
-            });
-
-            console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
-          } catch (err) {
-            console.error(`[Stripe Webhook] Errore creazione fee subscription:`, err);
+              console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
+            } catch (err) {
+              console.error(`[Stripe Webhook] Errore creazione fee subscription:`, err);
+            }
           }
         }
 
@@ -299,6 +433,65 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         break;
       }
 
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object;
+        const tenantId = paymentIntent.metadata?.tenant_id;
+        const planId = paymentIntent.metadata?.plan_id;
+        const quantity = parseInt(paymentIntent.metadata?.quantity || '1', 10);
+        const feePriceId = paymentIntent.metadata?.fee_price_id;
+        const supabaseUserId = paymentIntent.metadata?.supabase_user_id || null;
+
+        if (!tenantId) {
+          break;
+        }
+
+        console.log(`[Stripe Webhook] payment_intent.succeeded for tenant ${tenantId}, plan ${planId}`);
+
+        // Verifica che il tenant esista
+        const { data: tenant, error: tenantError } = await supabase
+          .from('tenants')
+          .select('id')
+          .eq('id', tenantId)
+          .single();
+
+        if (tenantError || !tenant) {
+          console.error(`[Stripe Webhook] tenant ${tenantId} non trovato`, tenantError);
+          break;
+        }
+
+        // Handle "Ricarica Extra" (ex slot extra) - accredita crediti Vision,
+        // idempotente su paymentIntent.id
+        if (planId === 'credit_topup') {
+          try {
+            const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
+            const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
+            const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
+            if (applied) {
+              console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
+            }
+          } catch (err) {
+            console.error(`[Stripe Webhook] errore accredito crediti per credit_topup`, err);
+          }
+        } else {
+          // Regular plan upgrade - create subscription
+          if (feePriceId) {
+            try {
+              const feeSubscription = await stripe.subscriptions.create({
+                customer: paymentIntent.customer,
+                items: [{ price: feePriceId, quantity: 0 }],
+                metadata: { tenant_id: tenantId, type: 'app_fee' },
+                proration_behavior: 'always_invoice',
+              });
+
+              console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);
+            } catch (err) {
+              console.error(`[Stripe Webhook] Errore creazione fee subscription:`, err);
+            }
+          }
+        }
+        break;
+      }
+
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
@@ -306,21 +499,57 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     return res.json({ received: true });
   } catch (err) {
     console.error('Errore webhook Stripe:', err);
-    res.status(500).json({ error: err.message || 'Errore webhook' });
+    res.status(500).json({ error: 'Errore webhook' });
   }
 });
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Client AI inizializzati solo se le chiavi sono presenti
+// Client AI inizializzati solo se le chiavi sono presenti — usati solo da
+// /api/vision/analyze (input multimodale, non ancora supportato dall'AI
+// Router centralizzato in ./lib/ai-router.js). /api/chat e /api/generate-app
+// usano invece callAiRouter (OpenRouter), vedi sotto.
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 
 function clientMissing(res, provider) {
   return res.status(503).json({ error: `${provider} non configurato. Aggiungi la chiave API.` });
+}
+
+// Le route AI sotto (chat, vision, generate-app) chiamano provider a pagamento
+// (OpenRouter via ./lib/ai-router.js per chat/generate-app; Groq/OpenAI/Gemini
+// diretti per vision) con le chiavi del proprietario del sito: senza
+// autenticazione chiunque conoscesse l'URL del backend potrebbe consumare
+// budget illimitato. Accetta sia un JWT Supabase reale (chiamata diretta dal
+// browser) sia il BACKEND_SERVICE_TOKEN condiviso + X-User-ID (stesso schema
+// di routes/stripe.js::getUser, per le chiamate server-to-server dal
+// frontend Next.js che già autentica l'utente a monte).
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const serviceToken = process.env.BACKEND_SERVICE_TOKEN;
+
+  if (serviceToken && authHeader === `Bearer ${serviceToken}`) {
+    const userId = req.headers['x-user-id'];
+    if (!userId) return res.status(401).json({ error: 'x-user-id mancante' });
+    req.user = { id: userId, email: req.headers['x-user-email'] };
+    return next();
+  }
+
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Autenticazione richiesta' });
+
+  try {
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return res.status(401).json({ error: 'Token non valido' });
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('[requireAuth] errore:', err);
+    res.status(401).json({ error: 'Token non valido' });
+  }
 }
 
 // --- HEALTH CHECK ---
@@ -329,60 +558,36 @@ app.get('/api/health', (_req, res) => {
 });
 
 // --- CHAT API ---
-app.post('/api/chat', async (req, res) => {
+// Assistente conversazionale generico: task "chat" -> tier "fast" dell'AI
+// Router centralizzato (./lib/ai-router.js), nessuna generazione complessa di
+// app/codice qui.
+app.post('/api/chat', requireAuth, aiLimiter, async (req, res) => {
   try {
-    const { messages, provider = 'groq', model } = req.body;
+    const { messages } = req.body;
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages array richiesto' });
     }
 
-    const content = messages[messages.length - 1]?.content || '';
-
-    if (provider === 'groq') {
-      if (!groq) return clientMissing(res, 'Groq');
-      const chatModel = model || 'llama-3.3-70b-versatile';
-      const completion = await groq.chat.completions.create({
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
-        model: chatModel
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    if (provider === 'gemini') {
-      if (!genAI) return clientMissing(res, 'Gemini');
-      const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-2.0-flash' });
-      const result = await geminiModel.generateContent(content);
-      return res.json({ reply: result.response.text() });
-    }
-
-    if (provider === 'openai') {
-      if (!openai) return clientMissing(res, 'OpenAI');
-      const completion = await openai.chat.completions.create({
-        model: model || 'gpt-4o-mini',
-        messages: messages.map(m => ({ role: m.role, content: m.content }))
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    if (provider === 'anthropic') {
-      if (!anthropic) return clientMissing(res, 'Anthropic');
-      const msg = await anthropic.messages.create({
-        model: model || 'claude-3-5-sonnet-20240620',
-        max_tokens: 2048,
-        messages: messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
-      });
-      return res.json({ reply: msg.content.map(c => c.type === 'text' ? c.text : '').join('') });
-    }
-
-    return res.status(400).json({ error: `Provider ${provider} non supportato` });
+    const { content: reply } = await callAiRouter({
+      task: 'chat',
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      context: { userId: req.user?.id },
+    });
+    return res.json({ reply });
   } catch (err) {
     console.error('/api/chat error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    if (err instanceof AiRouterConfigError) {
+      return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
+    }
+    if (err instanceof AiRouterError) {
+      return res.status(502).json({ error: 'Errore interno' });
+    }
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
 // --- VISION API ---
-app.post('/api/vision/analyze', async (req, res) => {
+app.post('/api/vision/analyze', requireAuth, aiLimiter, async (req, res) => {
   try {
     const { prompt, image, provider = 'groq', model } = req.body;
     if (!image) return res.status(400).json({ error: 'Immagine richiesta' });
@@ -438,52 +643,53 @@ app.post('/api/vision/analyze', async (req, res) => {
     return res.status(400).json({ error: `Provider ${provider} non supportato per vision` });
   } catch (err) {
     console.error('/api/vision/analyze error:', err);
-    res.status(500).json({ error: err.message || 'Errore vision' });
+    res.status(500).json({ error: 'Errore vision' });
   }
 });
 
 // --- GENERATE APP BLUEPRINT ---
-app.post('/api/generate-app', async (req, res) => {
+app.post('/api/generate-app', requireAuth, aiLimiter, async (req, res) => {
   try {
     const { sector, tenantId } = req.body;
     if (!sector) return res.status(400).json({ error: 'Settore richiesto' });
 
-    const provider = 'groq';
+    // Carica design system per il settore
+    const { getDesignSystemForSector } = require('./utils/designSystemLoader');
+    const designSystem = getDesignSystemForSector(sector);
+    
     const prompt = `Sei un architetto software. Genera un blueprint JSON per un gestionale SaaS per il settore "${sector}".
+
+${designSystem.designContent ? `## DESIGN SYSTEM DA APPLICARE\n${designSystem.designContent}\n` : ''}
+
 Il JSON deve contenere:
 - appName: nome dell'app
 - sector: settore normalizzato in kebab-case
 - description: descrizione breve
 - schema: { tables: [{ name, label, labelPlural, icon, fields: [{ id, type, label, required, options, target, targetLabel }] }] }
-- ui: { primaryColor, sidebar, dashboardCards: [{ type, table, label, field }] }
+- ui: { 
+  primaryColor: "${designSystem.designTokens?.colors?.primary || '#6366f1'}",
+  secondaryColor: "${designSystem.designTokens?.colors?.secondary || '#a855f7'}",
+  background: "${designSystem.designTokens?.colors?.background || '#ffffff'}",
+  surface: "${designSystem.designTokens?.colors?.surface || '#ffffff'}",
+  headlineFont: "${designSystem.designTokens?.typography?.headline || 'Inter'}",
+  bodyFont: "${designSystem.designTokens?.typography?.body || 'Inter'}",
+  sidebar: [], 
+  dashboardCards: [{ type, table, label, field }] 
+}
+
 Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
 
-    console.log('[generate-app] provider:', provider);
+    console.log('[generate-app] sector:', sector);
 
-    let raw = '';
-
-    if (provider === 'groq' && groq) {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }]
-      });
-      raw = completion.choices[0].message.content;
-    } else if (provider === 'openai' && openai) {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }]
-      });
-      raw = completion.choices[0].message.content;
-    } else if (provider === 'gemini' && genAI) {
-      const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await geminiModel.generateContent(prompt);
-      raw = result.response.text();
-    } else {
-      return res.status(503).json({ error: 'Nessun provider AI disponibile' });
-    }
-
-    const jsonMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, raw];
-    const parsed = JSON.parse(jsonMatch[1].trim());
+    // Generazione completa di una nuova app da zero: task "app-generation" ->
+    // tier "advanced" dell'AI Router centralizzato (es. Claude Sonnet 5).
+    const { content: raw } = await callAiRouter({
+      task: 'app-generation',
+      jsonMode: true,
+      messages: [{ role: 'user', content: prompt }],
+      context: { tenantId },
+    });
+    const parsed = extractJsonFromAiContent(raw);
 
     // Normalizza al formato BlueprintJSON atteso
     const blueprint = {
@@ -491,13 +697,31 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
       sector: parsed.sector || sector.toLowerCase().replace(/\s+/g, '-'),
       description: parsed.description || '',
       schema: parsed.schema || { tables: [] },
-      ui: parsed.ui || { primaryColor: '#6366f1', sidebar: [], dashboardCards: [] },
+      ui: parsed.ui || { 
+        primaryColor: designSystem.designTokens?.colors?.primary || '#6366f1',
+        secondaryColor: designSystem.designTokens?.colors?.secondary || '#a855f7',
+        background: designSystem.designTokens?.colors?.background || '#ffffff',
+        surface: designSystem.designTokens?.colors?.surface || '#ffffff',
+        sidebarBg: designSystem.designTokens?.colors?.sidebarBg || '#1e293b',
+        headlineFont: designSystem.designTokens?.typography?.headline || 'Inter',
+        bodyFont: designSystem.designTokens?.typography?.body || 'Inter',
+        sidebar: [], 
+        dashboardCards: [] 
+      },
     };
+
+    console.log('[generate-app] Blueprint generato per settore:', sector, 'design:', designSystem.designContent ? 'loaded' : 'default');
 
     return res.json({ blueprint, tenantId });
   } catch (err) {
     console.error('/api/generate-app error:', err);
-    res.status(500).json({ error: err.message || 'Errore generazione blueprint' });
+    if (err instanceof AiRouterConfigError) {
+      return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
+    }
+    if (err instanceof AiRouterError) {
+      return res.status(502).json({ error: 'Errore interno' });
+    }
+    res.status(500).json({ error: 'Errore generazione blueprint' });
   }
 });
 
@@ -514,10 +738,16 @@ app.use('/api', require('./routes/custom-tables'));
 // --- INVOICES ROUTES (fatturazione) ---
 app.use('/api', require('./routes/invoices'));
 
+// --- GENERATE ROUTE (Totalium Dynamic UI) ---
+app.use('/api', require('./routes/generate'));
+
+// --- APP REGISTRY ROUTES (Management Console) ---
+app.use('/api', require('./routes/app-registry'));
+
 // --- ERROR HANDLER ---
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: err.message || 'Errore interno del server' });
+  res.status(500).json({ error: 'Errore interno del server' });
 });
 
 // Cron job per controllo scadenze app

@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
+import type { Database } from '@/types/database';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -8,29 +10,29 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
 
 function getServiceSupabase() {
-  return createClient(supabaseUrl, serviceRoleKey);
+  return createClient<Database>(supabaseUrl, serviceRoleKey);
 }
 
 async function getUserFromRequest(req: Request) {
   const authHeader = req.headers.get('authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return null;
+  if (!token) return { user: null, token: null };
 
-  const supabase = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+  const supabase = createClient<Database>(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  return user;
+  if (error || !user) return { user: null, token: null };
+  return { user, token };
 }
 
-async function getOrCreateTenant(supabase: ReturnType<typeof createClient>, user: { id: string; email?: string }) {
+async function getOrCreateTenant(supabase: any, user: { id: string; email?: string }, accessToken?: string | null) {
   const { data: memberships, error: membershipError } = await supabase
     .from('tenant_members')
     .select('tenant_id')
     .eq('user_id', user.id)
-    .limit(1);
+    .limit(1) as any;
 
   if (membershipError) {
     console.error('[getOrCreateTenant] membership error:', membershipError);
@@ -45,11 +47,11 @@ async function getOrCreateTenant(supabase: ReturnType<typeof createClient>, user
       name: user.email ? `Tenant di ${user.email}` : 'Tenant personale',
       slug: `tenant-${user.id.slice(0, 8)}`,
       plan: 'free',
-      app_limit: 5,
+      app_limit: 0,
       total_apps_created: 0,
     })
     .select('id')
-    .single();
+    .single() as any;
 
   if (tenantError || !tenant) {
     throw new Error('Errore creazione tenant');
@@ -59,21 +61,36 @@ async function getOrCreateTenant(supabase: ReturnType<typeof createClient>, user
     tenant_id: tenant.id,
     user_id: user.id,
     role: 'owner',
-  });
+  } as any);
+
+  // Comandi AI è un'app omaggio inclusa di default in ogni tenant (non
+  // consuma slot, vedi comandi-provisioning.ts). Best-effort, solo al
+  // momento della creazione del tenant: un fallimento qui non deve mai
+  // impedire la creazione dell'app che l'utente ha effettivamente richiesto.
+  if (accessToken) {
+    try {
+      const result = await provisionComandiAppAction({ accessToken });
+      if (!result.success) {
+        console.error('[getOrCreateTenant] Provisioning Comandi AI non riuscito:', result.error);
+      }
+    } catch (err) {
+      console.error('[getOrCreateTenant] Errore provisioning Comandi AI:', err);
+    }
+  }
 
   return tenant.id;
 }
 
 const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
 
-async function canCreateApp(supabase: ReturnType<typeof createClient>, tenantId: string, userId?: string): Promise<{ allowed: boolean; reason?: string; slotsAvailable?: number; tenant?: any }> {
+async function canCreateApp(supabase: any, tenantId: string, userId?: string): Promise<{ allowed: boolean; reason?: string; slotsAvailable?: number; tenant?: any }> {
   // Admin: app illimitate
   if (userId === ADMIN_USER_ID) {
     const { data: tenant, error: tenantError } = await supabase
       .from('tenants')
       .select('plan, app_limit, total_apps_created')
       .eq('id', tenantId)
-      .single();
+      .single() as any;
     if (tenantError || !tenant) {
       // Crea tenant se non esiste
       const { data: newTenant } = await supabase
@@ -83,11 +100,11 @@ async function canCreateApp(supabase: ReturnType<typeof createClient>, tenantId:
           name: 'Admin Tenant',
           slug: `admin-${userId.slice(0, 8)}`,
           plan: 'free',
-          app_limit: 5,
+          app_limit: 0,
           total_apps_created: 0,
         })
         .select('plan, app_limit, total_apps_created')
-        .single();
+        .single() as any;
       console.log('[canCreateApp] admin tenant created:', newTenant);
       return { allowed: true, slotsAvailable: Infinity, tenant: newTenant };
     }
@@ -101,7 +118,7 @@ async function canCreateApp(supabase: ReturnType<typeof createClient>, tenantId:
     .from('tenants')
     .select('plan, app_limit, total_apps_created')
     .eq('id', tenantId)
-    .single();
+    .single() as any;
 
   console.log('[canCreateApp] tenant:', tenant, 'error:', tenantError);
 
@@ -113,7 +130,7 @@ async function canCreateApp(supabase: ReturnType<typeof createClient>, tenantId:
       free: 0,
       starter: 1,
       pro: 5,
-      business: 250,
+      business: 100,
     };
 
     const appLimit = tenant.app_limit ?? planLimits[tenant.plan] ?? 1;
@@ -148,7 +165,7 @@ function generatePassword(): string {
 
 export async function POST(req: Request) {
   try {
-    const user = await getUserFromRequest(req);
+    const { user, token } = await getUserFromRequest(req);
     if (!user) {
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
     }
@@ -161,7 +178,7 @@ export async function POST(req: Request) {
     }
 
     const supabase = getServiceSupabase();
-    const tenantId = await getOrCreateTenant(supabase, user);
+    const tenantId = await getOrCreateTenant(supabase, user, token);
 
     // Controlla limite 5 app
     const { allowed, reason, tenant } = await canCreateApp(supabase, tenantId, user.id);
@@ -177,11 +194,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: reason || 'Errore controllo limite app' }, { status: 500 });
     }
 
-    // Genera blueprint dal backend
+    // Genera blueprint dal backend. L'endpoint richiede autenticazione (vedi
+    // requireAuth in backend/server.js): questa è una chiamata server-to-server
+    // per un utente già autenticato sopra in questo stesso handler, quindi si
+    // usa il BACKEND_SERVICE_TOKEN condiviso invece di re-inoltrare il JWT.
     const blueprintRes = await fetch(`${backendUrl}/api/generate-app`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sector, prompt, lang: 'it', provider: 'groq' }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.BACKEND_SERVICE_TOKEN}`,
+        'X-User-ID': user.id,
+        'X-User-Email': user.email || '',
+      },
+      body: JSON.stringify({ sector, prompt, lang: 'it' }),
     });
 
     if (!blueprintRes.ok) {
@@ -208,21 +233,21 @@ export async function POST(req: Request) {
       .from('blueprints')
       .select('id')
       .eq('sector', normalizedSector)
-      .single();
+      .single() as any;
 
     let blueprintId = existingBlueprint?.id;
-    if (!blueprintId) {
-      const { data: newBlueprint, error: blueprintError } = await supabase
-        .from('blueprints')
-        .insert({
-          sector: normalizedSector,
-          display_name: blueprint.appName,
-          description: blueprint.description || '',
-          schema: blueprint.schema,
-          ui_config: blueprint.ui,
-        })
-        .select('id')
-        .single();
+     if (!blueprintId) {
+       const { data: newBlueprint, error: blueprintError } = await supabase
+         .from('blueprints')
+         .insert({
+           sector: normalizedSector,
+           display_name: blueprint.appName,
+           description: blueprint.description || '',
+           schema: blueprint.schema,
+           ui_config: blueprint.ui,
+         } as any)
+         .select('id')
+         .single() as any;
 
       if (blueprintError || !newBlueprint) {
         console.error('[API /apps] blueprint insert error:', blueprintError);
@@ -242,38 +267,55 @@ export async function POST(req: Request) {
     const slug = generateSlug(finalName, sector);
     const clientPassword = generatePassword();
 
-    // Salva app
-    const { data: app, error: appError } = await supabase
-      .from('apps')
-      .insert({
-        tenant_id: tenantId,
-        blueprint_id: blueprintId,
-        name: finalName,
-        config: blueprint,
-        trial_ends_at: trialEndsAt.toISOString(),
-        expires_at: expiresAt.toISOString(),
-        slug,
-        client_password: clientPassword,
-        client_email: user.email, // Email di default dell'utente ZeusX
-        client_active: true,
-        expiry_warning_sent: false,
-        is_active: true,
-      })
-      .select('id, name, trial_ends_at, expires_at, slug, client_password, client_email')
-      .single();
+     // Salva app
+     const { data: app, error: appError } = await supabase
+       .from('apps')
+       .insert({
+         tenant_id: tenantId,
+         blueprint_id: blueprintId,
+         name: finalName,
+         config: blueprint,
+         trial_ends_at: trialEndsAt.toISOString(),
+         expires_at: expiresAt.toISOString(),
+         slug,
+         client_password: clientPassword,
+         client_email: user.email, // Email di default dell'utente ZeusX
+         client_active: true,
+         expiry_warning_sent: false,
+         is_active: true,
+         status: 'trial', // Stato iniziale: trial
+       } as any)
+       .select('id, name, trial_ends_at, expires_at, slug, client_password, client_email, status')
+       .single() as any;
 
     if (appError || !app) {
       console.error('[API /apps] app insert error:', appError);
       return NextResponse.json({ error: 'Errore salvataggio app' }, { status: 500 });
     }
 
-    // Incrementa il contatore permanente di app create (non si libera mai)
-    if (user.id !== ADMIN_USER_ID) {
-      await supabase
-        .from('tenants')
-        .update({ total_apps_created: (tenant?.total_apps_created || 0) + 1 })
-        .eq('id', tenantId);
+    // Registra l'app nella app_registry per la Management Console
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
+    const { error: registryError } = await supabase
+      .from('app_registry')
+      .insert({
+        reseller_id: user.id,
+        app_name: finalName,
+        app_url: appUrl,
+        status: 'active',
+        monthly_fee: 0.00,
+        zeusx_share: 0.00,
+      } as any);
+
+    if (registryError) {
+      console.error('[API /apps] app_registry insert error:', registryError);
+      // Non bloccare la creazione app se fallisce l'aggiornamento registry
     }
+
+     // Incrementa il contatore permanente di app create (non si libera mai)
+     if (user.id !== ADMIN_USER_ID) {
+       const updateData: any = { total_apps_created: (tenant?.total_apps_created || 0) + 1 };
+       await (supabase.from('tenants') as any).update(updateData).eq('id', tenantId);
+     }
 
     // Incrementa fee mensile per la nuova app
     try {

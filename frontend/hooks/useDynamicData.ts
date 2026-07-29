@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
+
+// tableName è dinamico a runtime (tabelle custom per-tenant, non fanno parte
+// dello schema statico generato): il client tipizzato <Database> non può
+// inferire relazioni/colonne per un nome tabella arbitrario, quindi qui si
+// usa deliberatamente la vista non tipizzata dello stesso client.
+const untypedSupabase = supabaseBrowser as unknown as SupabaseClient;
 
 export interface DynamicRecord {
   id: string;
@@ -45,7 +52,7 @@ export function useDynamicData(
     setError(null);
 
     try {
-      const { data, error: queryError } = await supabaseBrowser
+      const { data, error: queryError } = await untypedSupabase
         .from(tableName)
         .select('*')
         .eq('tenant_id', tenantId)

@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
-import {
-  Search, Plus, Pencil, Trash2, X, ChevronDown, Download, Upload
-} from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Search, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { renderCellValue } from './cellRenderers';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 interface ColumnDef {
   name: string;
@@ -39,36 +42,15 @@ interface CustomTableRendererProps {
   onEdit: (record: CustomRecord) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
-  colors: ReturnType<typeof getThemeVars>;
-  radius: string;
-  shadow: string;
-}
-
-function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
-  const isDark = theme === 'dark';
-  return {
-    bg: isDark ? '#0a0e1a' : '#f8fafc',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    cardBg: isDark ? '#1e293b' : '#ffffff',
-    cardBgAlt: isDark ? '#162032' : '#f1f5f9',
-    border: isDark ? '#334155' : '#e2e8f0',
-    inputBg: isDark ? '#0f172a' : '#f1f5f9',
-    inputBorder: isDark ? '#334155' : '#cbd5e1',
-    primary: primaryColor,
-    primaryHover: primaryColor + 'dd',
-    danger: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-  };
+  colors?: unknown;
+  radius?: string;
+  shadow?: string;
 }
 
 export default function CustomTableRenderer({
   tableDef, records, loading, searchQuery, onSearchChange,
-  onEdit, onDelete, onAddNew, colors, radius, shadow,
+  onEdit, onDelete, onAddNew,
 }: CustomTableRendererProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const filteredRecords = useMemo(() => {
     if (!searchQuery.trim()) return records;
     const q = searchQuery.toLowerCase();
@@ -82,72 +64,37 @@ export default function CustomTableRenderer({
     });
   }, [records, searchQuery, tableDef.columns]);
 
-  const inputStyle: React.CSSProperties = {
-    flex: 1, border: 'none', outline: 'none', background: 'transparent',
-    color: colors.text, fontSize: '14px',
-  };
+  const label = tableDef.labelPlural || `${tableDef.label}i`;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        flexWrap: 'wrap', gap: '12px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <h2 style={{ color: colors.text, fontSize: '24px', fontWeight: 700, margin: 0 }}>
-            {tableDef.labelPlural || tableDef.label + 'i'}
-          </h2>
-          {tableDef.color && (
-            <div style={{
-              width: '12px', height: '12px', borderRadius: '50%',
-              background: tableDef.color,
-            }} />
-          )}
-          <span style={{
-            padding: '2px 8px', borderRadius: '4px',
-            background: colors.primary + '15', color: colors.primary,
-            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
-          }}>
-            Personalizzata
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="m-0 text-2xl font-bold text-tenant-text">{label}</h2>
+          {tableDef.color && <div className="h-3 w-3 rounded-full" style={{ background: tableDef.color }} />}
+          <Badge variant="primary">Personalizzata</Badge>
         </div>
-        <button
-          onClick={onAddNew}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '10px 18px', borderRadius: '10px', border: 'none',
-            background: colors.primary, color: '#fff', fontSize: '14px',
-            fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-        >
+        <Button onClick={onAddNew}>
           <Plus size={16} /> Nuovo
-        </button>
+        </Button>
       </div>
 
       {/* Search Bar */}
-      <div
-        className={`${radius}`}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          padding: '10px 16px',
-        }}
-      >
-        <Search size={18} style={{ color: colors.textSecondary }} />
-        <input
+      <div className="relative">
+        <Search size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+        <Input
           type="text"
-          placeholder={`Cerca in ${tableDef.labelPlural || tableDef.label + 'i'}...`}
+          placeholder={`Cerca in ${label}...`}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          style={inputStyle}
+          className="pl-10 pr-9"
         />
         {searchQuery && (
           <button
+            type="button"
             onClick={() => onSearchChange('')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: colors.textSecondary, padding: '2px' }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary hover:text-tenant-text"
           >
             <X size={16} />
           </button>
@@ -155,43 +102,21 @@ export default function CustomTableRenderer({
       </div>
 
       {/* Tabella */}
-      <div
-        className={`${radius} ${shadow}`}
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-              <tr style={{ background: colors.cardBgAlt }}>
+      <Card className="overflow-hidden">
+        <div className="max-h-[600px] overflow-x-auto overflow-y-auto">
+          <table className="w-full border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-tenant-card-alt">
                 {tableDef.columns.map((col) => (
                   <th
                     key={col.name}
-                    style={{
-                      textAlign: 'left', padding: '12px 16px',
-                      borderBottom: `2px solid ${colors.border}`,
-                      color: colors.textSecondary, fontSize: '12px',
-                      fontWeight: 600, textTransform: 'uppercase',
-                      letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                    }}
+                    className="whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary"
                   >
                     {col.label}
-                    {col.required && (
-                      <span style={{ color: colors.danger, marginLeft: '2px' }}>*</span>
-                    )}
+                    {col.required && <span className="ml-0.5 text-tenant-danger">*</span>}
                   </th>
                 ))}
-                <th
-                  style={{
-                    textAlign: 'center', padding: '12px 16px',
-                    borderBottom: `2px solid ${colors.border}`,
-                    color: colors.textSecondary, fontSize: '12px',
-                    fontWeight: 600, textTransform: 'uppercase',
-                    letterSpacing: '0.05em', width: '100px',
-                  }}
-                >
+                <th className="w-[100px] whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">
                   Azioni
                 </th>
               </tr>
@@ -199,19 +124,13 @@ export default function CustomTableRenderer({
             <tbody>
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={tableDef.columns.length + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
+                  <td colSpan={tableDef.columns.length + 1} className="p-10 text-center text-tenant-text-secondary">
                     Caricamento records...
                   </td>
                 </tr>
               ) : filteredRecords.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={tableDef.columns.length + 1}
-                    style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}
-                  >
+                  <td colSpan={tableDef.columns.length + 1} className="p-10 text-center text-tenant-text-secondary">
                     {searchQuery ? 'Nessun risultato per la ricerca' : 'Nessun record presente'}
                   </td>
                 </tr>
@@ -219,58 +138,23 @@ export default function CustomTableRenderer({
                 filteredRecords.map((record, idx) => {
                   const data = (record.data || record) as Record<string, unknown>;
                   return (
-                    <tr
-                      key={record.id || idx}
-                      style={{
-                        borderBottom: `1px solid ${colors.border}`,
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = colors.cardBgAlt; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
+                    <tr key={record.id || idx} className="border-b border-tenant-border transition-colors hover:bg-tenant-card-alt">
                       {tableDef.columns.map((col) => (
                         <td
                           key={col.name}
-                          style={{
-                            padding: '12px 16px', color: colors.text,
-                            fontSize: '14px', whiteSpace: 'nowrap',
-                            maxWidth: '200px', overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
+                          className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap px-4 py-3 text-sm text-tenant-text"
                         >
                           {renderCellValue(data, col.name, col.type)}
                         </td>
                       ))}
-                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                          <button
-                            onClick={() => onEdit(record)}
-                            title="Modifica"
-                            style={{
-                              background: colors.primary + '20', border: 'none',
-                              borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                              color: colors.primary, display: 'flex', alignItems: 'center',
-                              transition: 'background 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = colors.primary + '40'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary + '20'; }}
-                          >
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica">
                             <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => onDelete(record.id)}
-                            title="Elimina"
-                            style={{
-                              background: colors.danger + '20', border: 'none',
-                              borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                              color: colors.danger, display: 'flex', alignItems: 'center',
-                              transition: 'background 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
-                          >
+                          </Button>
+                          <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina">
                             <Trash2 size={15} />
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -282,37 +166,13 @@ export default function CustomTableRenderer({
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            padding: '12px 16px', borderTop: `1px solid ${colors.border}`,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          }}
-        >
-          <span style={{ color: colors.textSecondary, fontSize: '13px' }}>
-            {filteredRecords.length} di {records.length} record
-          </span>
+        <div className="flex items-center justify-between border-t border-tenant-border px-4 py-3">
+          <span className="text-[13px] text-tenant-text-secondary">{filteredRecords.length} di {records.length} record</span>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-function renderCellValue(data: Record<string, unknown>, colName: string, type: string): React.ReactNode {
-  const val = data[colName];
-  if (type === 'checkbox') {
-    return val ? 'Si' : 'No';
-  }
-  if (type === 'number') {
-    const n = Number(val);
-    if (!isNaN(n)) return n.toLocaleString('it-IT');
-    return String(val ?? '');
-  }
-  if (type === 'date' && val) {
-    try {
-      return new Date(val as string).toLocaleDateString('it-IT');
-    } catch {
-      return String(val);
-    }
-  }
-  return String(val ?? '');
-}
+// renderCellValue ora in ./cellRenderers.tsx, condivisa con DynamicDataTable
+// e DynamicLayoutRenderer (badge di stato, valuta, date, immagini).

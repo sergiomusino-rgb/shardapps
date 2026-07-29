@@ -8,10 +8,15 @@ import type { AppUser, AppUserRole } from '@/types/rbac';
 // Supabase Client
 // ============================================================================
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+import { supabaseBrowser } from './supabase-browser';
+const supabase = supabaseBrowser;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Avvia (se non già impostato) il trial di 30 giorni sulla fee di 25€/mese
+// dell'owner per questa app — vedi api/a/[slug]/mark-first-login/route.ts.
+// Fire-and-forget: un fallimento qui non deve mai bloccare il login.
+function markFirstLogin(slug: string) {
+  fetch(`/api/a/${slug}/mark-first-login`, { method: 'POST' }).catch(() => {});
+}
 
 // ============================================================================
 // Types
@@ -63,17 +68,22 @@ export function AuthProvider({
     
     if (session?.user && appId) {
       // Utente Supabase autenticato - carica i suoi dati app_user
-      const { data: appUser, error } = await supabase
-        .from('app_users')
+      // Cast mirato: frontend/types/database.ts non copre app_users, quindi
+      // il client tipizzato risolverebbe qui a `never` come altrove nel
+      // progetto (vedi audit tsc).
+      const { data: appUserRaw, error } = await supabase
+        .from('app_users' as any)
         .select('*')
         .eq('user_id', session.user.id)
         .eq('app_id', appId)
         .eq('is_active', true)
         .single();
-      
+      const appUser = appUserRaw as AppUser | null;
+
       if (!error && appUser) {
         setUser(appUser);
         setRole(appUser.role);
+        if (slug) markFirstLogin(slug);
       }
     } else {
       // Controlla la sessione locale (per accesso con password)
@@ -122,22 +132,27 @@ export function AuthProvider({
     
     if (data.session?.user) {
       // Carica i dati app_user
-      const { data: appUser } = await supabase
-        .from('app_users')
+      // Cast mirato: frontend/types/database.ts non copre app_users, quindi
+      // il client tipizzato risolverebbe qui a `never` come altrove nel
+      // progetto (vedi audit tsc).
+      const { data: appUserRaw } = await supabase
+        .from('app_users' as any)
         .select('*')
         .eq('user_id', data.session.user.id)
         .eq('app_id', appId)
         .eq('is_active', true)
         .single();
-      
+      const appUser = appUserRaw as AppUser | null;
+
       if (appUser) {
         setUser(appUser);
         setRole(appUser.role);
+        if (slug) markFirstLogin(slug);
       }
     }
-    
+
     setLoading(false);
-  }, []);
+  }, [slug]);
 
   const logout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -217,32 +232,38 @@ export function usePermissions() {
     (tableName: string, action: 'read' | 'write' | 'delete'): boolean => {
       if (!role) return false;
       
-      const ROLE_PERMISSIONS: Record<AppUserRole, Record<string, { read: boolean; write: boolean; delete: boolean }>> = {
-        admin: {
-          clienti: { read: true, write: true, delete: true },
-          prodotti: { read: true, write: true, delete: true },
-          ordini: { read: true, write: true, delete: true },
-          magazzino: { read: true, write: true, delete: true },
-        },
-        agent: {
-          ordini: { read: true, write: true, delete: true },
-          prodotti: { read: true, write: false, delete: false },
-          clienti: { read: true, write: false, delete: false },
-          magazzino: { read: false, write: false, delete: false },
-        },
-        viewer: {
-          clienti: { read: true, write: false, delete: false },
-          prodotti: { read: true, write: false, delete: false },
-          ordini: { read: true, write: false, delete: false },
-          magazzino: { read: true, write: false, delete: false },
-        },
-        editor: {
-          clienti: { read: true, write: true, delete: true },
-          prodotti: { read: true, write: true, delete: true },
-          ordini: { read: true, write: true, delete: true },
-          magazzino: { read: true, write: true, delete: true },
-        },
-      };
+const ROLE_PERMISSIONS: Record<AppUserRole, Record<string, { read: boolean; write: boolean; delete: boolean }>> = {
+  admin: {
+    clienti: { read: true, write: true, delete: true },
+    prodotti: { read: true, write: true, delete: true },
+    ordini: { read: true, write: true, delete: true },
+    magazzino: { read: true, write: true, delete: true },
+  },
+  agent: {
+    ordini: { read: true, write: true, delete: true },
+    prodotti: { read: true, write: false, delete: false },
+    clienti: { read: true, write: false, delete: false },
+    magazzino: { read: false, write: false, delete: false },
+  },
+  viewer: {
+    clienti: { read: true, write: false, delete: false },
+    prodotti: { read: true, write: false, delete: false },
+    ordini: { read: true, write: false, delete: false },
+    magazzino: { read: true, write: false, delete: false },
+  },
+  editor: {
+    clienti: { read: true, write: true, delete: true },
+    prodotti: { read: true, write: true, delete: true },
+    ordini: { read: true, write: true, delete: true },
+    magazzino: { read: true, write: true, delete: true },
+  },
+  reseller: {
+    clienti: { read: true, write: true, delete: false },
+    prodotti: { read: true, write: true, delete: false },
+    ordini: { read: true, write: true, delete: false },
+    magazzino: { read: true, write: false, delete: false },
+  },
+};
       
       const tablePerms = ROLE_PERMISSIONS[role]?.[tableName];
       return tablePerms?.[action] ?? false;

@@ -1,13 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
+import { cookies } from 'next/headers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Nessun fallback alla anon key: questo client deve bypassare la RLS (usato
+// dopo i controlli di autorizzazione già fatti in ciascun handler). Degradare
+// silenziosamente alla anon key se la service role key manca farebbe fallire
+// in modo imprevedibile le query sulle colonne/righe protette da RLS, invece
+// di un errore di configurazione chiaro.
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-export async function DELETE(
+// Campi anagrafici dell'acquirente/titolare dell'app (distinti dalle
+// credenziali di login gestite da client-access/route.ts). Whitelist
+// esplicita così il body della richiesta non può scrivere altre colonne.
+const CLIENT_PROFILE_FIELDS = [
+  'client_full_name',
+  'client_phone',
+  'client_tax_id',
+  'client_billing_address',
+  'client_notes',
+] as const;
+
+export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -17,8 +35,7 @@ export async function DELETE(
 
     const token = authHeader.slice(7);
 
-    // Usa anon key per autenticare l'utente
-    const authClient = createClient(supabaseUrl, anonKey, {
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
@@ -28,10 +45,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Utente non autenticato' }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
 
-    // Usa service role per bypassare RLS e verificare ownership
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
@@ -48,7 +64,72 @@ export async function DELETE(
 
     const { data: app, error: appError } = await adminClient
       .from('apps')
-      .select('id, tenant_id')
+      .select('id, name, slug, tenant_id, status, trial_ends_at, client_email, client_password, auth_mode, config')
+      .eq('id', id)
+      .single();
+
+    if (appError || !app) {
+      return NextResponse.json({ error: 'App non trovata' }, { status: 404 });
+    }
+
+    if (app.tenant_id !== tenantId) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
+    }
+
+    return NextResponse.json({ app });
+  } catch (error) {
+    console.error('[GET /api/apps/:id] error:', error);
+    return NextResponse.json(
+      { error: 'Errore interno' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
+    const token = authHeader.slice(7);
+
+    // Usa anon key per autenticare l'utente
+    const authClient = createClient<Database>(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+
+    const { data: { user }, error: authError } = await authClient.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Utente non autenticato' }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    // Usa service role per bypassare RLS e verificare ownership
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: memberships } = await adminClient
+      .from('tenant_members')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .limit(1);
+
+    const tenantId = memberships?.[0]?.tenant_id;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trovato' }, { status: 404 });
+    }
+
+    const { data: app, error: appError } = await adminClient
+      .from('apps')
+      .select('id, tenant_id, client_active, expires_at')
       .eq('id', id)
       .single();
 
@@ -87,7 +168,92 @@ export async function DELETE(
   } catch (error) {
     console.error('[DELETE /api/apps/:id] error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Errore interno' },
+      { error: 'Errore interno' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    // Autenticazione via cookie di sessione Supabase, stesso schema di
+    // client-access/route.ts: questa route viene chiamata da
+    // dashboard/projects/[id]/page.tsx con un fetch "nudo" (same-origin),
+    // senza header Authorization.
+    const cookieStore = await cookies();
+    const authCookie = cookieStore.getAll().find(c => c.name.endsWith('-auth-token') || c.name === 'sb-access-token');
+
+    let accessToken: string | undefined;
+    if (authCookie) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(authCookie.value));
+        accessToken = parsed.access_token || parsed[0];
+      } catch {
+        accessToken = decodeURIComponent(authCookie.value);
+      }
+    }
+
+    if (!accessToken) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
+    const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: { user } } = await adminClient.auth.getUser(accessToken);
+    if (!user) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const { data: memberships } = await adminClient
+      .from('tenant_members')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .limit(1);
+
+    const tenantId = memberships?.[0]?.tenant_id;
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant non trovato' }, { status: 404 });
+    }
+
+    const body = await req.json();
+    const updates: Record<string, string | null> = {};
+    for (const field of CLIENT_PROFILE_FIELDS) {
+      if (field in body) {
+        updates[field] = typeof body[field] === 'string' ? body[field] : null;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 });
+    }
+
+    const { data: app, error: updateError } = await adminClient
+      .from('apps')
+      // updates è costruito dinamicamente da una whitelist (CLIENT_PROFILE_FIELDS):
+      // il cast bypassa la corrispondenza esatta col tipo Update generato.
+      .update(updates as any)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
+      .single();
+
+    if (updateError || !app) {
+      console.error('[PATCH /api/apps/:id] update error:', updateError);
+      return NextResponse.json({ error: 'App non trovata o non autorizzata' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, app });
+  } catch (error) {
+    console.error('[PATCH /api/apps/:id] error:', error);
+    return NextResponse.json(
+      { error: 'Errore interno' },
       { status: 500 }
     );
   }

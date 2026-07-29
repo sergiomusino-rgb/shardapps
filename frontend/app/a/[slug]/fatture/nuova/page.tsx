@@ -1,8 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTheme } from '@/src/lib/ThemeContext';
+import { Plus, Trash2, ArrowLeft, Receipt, FileText } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { getTenantColors } from '../tenantBranding';
 
 interface RigaFattura {
   id: string;
@@ -12,105 +18,84 @@ interface RigaFattura {
   aliquota_iva: number;
 }
 
+type TipoDocumento = 'fattura' | 'ricevuta';
+
 export default function NuovaFatturaPage() {
   const router = useRouter();
   const params = useParams();
   const slug = params.slug as string;
-  
-  // Usa il tema dal context globale
-  const { theme } = useTheme();
 
+  const [{ style: tenantStyle }] = useState(() => getTenantColors(slug));
+
+  const [tipoDocumento, setTipoDocumento] = useState<TipoDocumento>('fattura');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Dati testata fattura
   const [clienteNome, setClienteNome] = useState('');
   const [clientePiva, setClientePiva] = useState('');
   const [clienteIndirizzo, setClienteIndirizzo] = useState('');
   const [metodoPagamento, setMetodoPagamento] = useState('');
 
-  // Righe fattura
   const [righe, setRighe] = useState<RigaFattura[]>([
-    { id: '1', descrizione: '', quantita: 1, prezzo_unitario: 0, aliquota_iva: 22 }
+    { id: '1', descrizione: '', quantita: 1, prezzo_unitario: 0, aliquota_iva: 22 },
   ]);
 
-  // Recupera tenant_id dalla sessione
   const getSessionData = (): { tenantId: string; password: string } | null => {
     if (typeof window === 'undefined') return null;
-    const sessionKey = `app_session_${slug}`;
-    const raw = localStorage.getItem(sessionKey);
+    const raw = localStorage.getItem(`app_session_${slug}`);
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
-      return {
-        tenantId: parsed.appInfo?.id || parsed.appInfo?.tenant_id,
-        password: parsed.password
-      };
+      return { tenantId: parsed.appInfo?.id || parsed.appInfo?.tenant_id, password: parsed.password };
     } catch {
       return null;
     }
   };
 
-  // Calcoli totali in tempo reale
   const calcolaTotali = () => {
     let imponibile = 0;
     let totaleIva = 0;
-
     righe.forEach((riga) => {
       const totaleRiga = riga.quantita * riga.prezzo_unitario;
       imponibile += totaleRiga;
       totaleIva += totaleRiga * (riga.aliquota_iva / 100);
     });
-
-    const totaleGenerale = imponibile + totaleIva;
-
-    return { imponibile, totaleIva, totaleGenerale };
+    return { imponibile, totaleIva, totaleGenerale: imponibile + totaleIva };
   };
 
   const { imponibile, totaleIva, totaleGenerale } = calcolaTotali();
 
-  // Aggiungi riga
   const aggiungiRiga = () => {
-    const newId = Date.now().toString();
-    setRighe([...righe, {
-      id: newId,
-      descrizione: '',
-      quantita: 1,
-      prezzo_unitario: 0,
-      aliquota_iva: 22
-    }]);
+    setRighe([...righe, { id: Date.now().toString(), descrizione: '', quantita: 1, prezzo_unitario: 0, aliquota_iva: 22 }]);
   };
 
-  // Rimuovi riga
   const rimuoviRiga = (id: string) => {
     if (righe.length === 1) {
       setError('Deve essere presente almeno una riga');
       return;
     }
-    setRighe(righe.filter(r => r.id !== id));
+    setRighe(righe.filter((r) => r.id !== id));
     setError(null);
   };
 
-  // Aggiorna campo riga
   const aggiornaRiga = (id: string, campo: keyof RigaFattura, valore: string | number) => {
-    setRighe(righe.map(r => {
-      if (r.id !== id) return r;
-      return { ...r, [campo]: valore };
-    }));
+    setRighe(righe.map((r) => (r.id !== id ? r : { ...r, [campo]: valore })));
   };
 
-  // Submit form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Validazioni
     if (!clienteNome.trim()) {
       setError('Il nome del cliente è obbligatorio');
       return;
     }
+    if (tipoDocumento === 'fattura' && !clientePiva.trim()) {
+      setError('La P.IVA/Codice Fiscale è obbligatoria per una fattura (non per una ricevuta)');
+      return;
+    }
 
-    const righeValide = righe.filter(r => r.descrizione.trim() && r.quantita > 0 && r.prezzo_unitario > 0);
+    const righeValide = righe.filter((r) => r.descrizione.trim() && r.quantita > 0 && r.prezzo_unitario > 0);
     if (righeValide.length === 0) {
       setError('Inserire almeno una riga valida');
       return;
@@ -125,37 +110,27 @@ export default function NuovaFatturaPage() {
     setSaving(true);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
-
-      // Genera numero fattura (semplice: timestamp)
-      const numeroFattura = Date.now().toString();
-      const anno = new Date().getFullYear();
-      const dataEmissione = new Date().toISOString().split('T')[0];
-
       const payload = {
         tenant_id: sessionData.tenantId,
-        numero_fattura: numeroFattura,
-        anno: anno,
-        data_emissione: dataEmissione,
+        tipo_documento: tipoDocumento,
+        anno: new Date().getFullYear(),
+        data_emissione: new Date().toISOString().split('T')[0],
         cliente_nome: clienteNome,
         cliente_piva: clientePiva || null,
         cliente_indirizzo: clienteIndirizzo || null,
         stato: 'bozza',
         metodo_pagamento: metodoPagamento || null,
-        righe: righeValide.map(r => ({
+        righe: righeValide.map((r) => ({
           descrizione: r.descrizione,
           quantita: r.quantita,
           prezzo_unitario: r.prezzo_unitario,
-          aliquota_iva: r.aliquota_iva
-        }))
+          aliquota_iva: r.aliquota_iva,
+        })),
       };
 
       const res = await fetch(`/a/${slug}/api/invoices`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionData.password}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionData.password}` },
         body: JSON.stringify(payload),
       });
 
@@ -165,98 +140,98 @@ export default function NuovaFatturaPage() {
       }
 
       const data = await res.json();
-      
-      // Redirect alla pagina della fattura creata
       router.push(`/a/${slug}/fatture/${data.fattura.id}`);
     } catch (err) {
-      console.error('Errore creazione fattura:', err);
-      setError(err instanceof Error ? err.message : 'Errore nella creazione della fattura');
+      console.error('Errore creazione documento:', err);
+      setError(err instanceof Error ? err.message : 'Errore nella creazione del documento');
       setSaving(false);
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  };
-
-  // Colori in base al tema
-  const isDark = theme === 'dark';
-  const bgColor = isDark ? 'bg-slate-950' : 'bg-slate-100';
-  const cardBg = isDark ? 'bg-slate-900' : 'bg-white';
-  const textPrimary = isDark ? 'text-white' : 'text-slate-900';
-  const textSecondary = isDark ? 'text-slate-400' : 'text-slate-600';
-  const textMuted = isDark ? 'text-slate-500' : 'text-slate-400';
-  const border = isDark ? 'border-slate-800' : 'border-slate-200';
-  const inputBg = isDark ? 'bg-slate-900' : 'bg-white';
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
 
   return (
-    <div className={`min-h-screen ${bgColor} transition-colors duration-300 py-8`}>
-      <div className="max-w-4xl mx-auto px-4">
-        {/* Header */}
+    <div className="min-h-screen bg-tenant-bg py-8" style={tenantStyle}>
+      <div className="mx-auto max-w-4xl px-4">
+        <button
+          type="button"
+          onClick={() => router.push(`/a/${slug}/fatture`)}
+          className="mb-4 flex items-center gap-1.5 text-sm text-tenant-text-secondary transition-colors hover:text-tenant-text"
+        >
+          <ArrowLeft size={15} /> Torna ai documenti
+        </button>
+
         <div className="mb-8">
-          <h1 className={`text-3xl font-bold ${textPrimary} mb-2`}>Nuova Fattura</h1>
-          <p className={`text-sm ${textSecondary}`}>Compila i dati della fattura e aggiungi le righe</p>
+          <h1 className="m-0 text-3xl font-bold text-tenant-text">Nuovo Documento</h1>
+          <p className="mt-1 text-sm text-tenant-text-secondary">Scegli il tipo, compila i dati e le righe</p>
         </div>
 
         <form onSubmit={handleSubmit}>
           {error && (
-            <div className={`mb-6 p-4 bg-red-500/10 border border-red-500/20 ${isDark ? 'text-red-400' : 'text-red-700'} rounded-lg text-sm`}>
+            <div className="mb-6 rounded-lg border border-tenant-danger/20 bg-tenant-danger/10 p-4 text-sm text-tenant-danger">
               {error}
             </div>
           )}
 
+          {/* Tipo Documento */}
+          <Card className="mb-6">
+            <CardContent className="p-6">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTipoDocumento('fattura')}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all',
+                    tipoDocumento === 'fattura' ? 'border-tenant-primary bg-tenant-primary/10' : 'border-tenant-border'
+                  )}
+                >
+                  <FileText size={22} className="text-tenant-primary" />
+                  <div>
+                    <div className="text-sm font-semibold text-tenant-text">Fattura</div>
+                    <div className="text-xs text-tenant-text-secondary">Richiede P.IVA/CF del cliente</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipoDocumento('ricevuta')}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all',
+                    tipoDocumento === 'ricevuta' ? 'border-tenant-primary bg-tenant-primary/10' : 'border-tenant-border'
+                  )}
+                >
+                  <Receipt size={22} className="text-tenant-primary" />
+                  <div>
+                    <div className="text-sm font-semibold text-tenant-text">Ricevuta</div>
+                    <div className="text-xs text-tenant-text-secondary">P.IVA/CF opzionale</div>
+                  </div>
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Dati Cliente */}
-          <div className={`${cardBg} rounded-lg shadow-md p-6 mb-6 border ${border}`}>
-            <h2 className={`text-xl font-semibold ${textPrimary} mb-4`}>Dati Cliente</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Dati Cliente</CardTitle></CardHeader>
+            <CardContent className="grid grid-cols-1 gap-4 pt-0 md:grid-cols-2">
               <div>
-                <label className={`block text-sm font-medium ${textSecondary} mb-2`}>
-                  Nome Cliente *
-                </label>
-                <input
-                  type="text"
-                  value={clienteNome}
-                  onChange={(e) => setClienteNome(e.target.value)}
-                  className={`w-full px-4 py-2 border ${border} ${inputBg} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${textPrimary}`}
-                  placeholder="Mario Rossi"
-                  required
-                />
+                <Label>Nome Cliente *</Label>
+                <Input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} placeholder="Mario Rossi" required />
               </div>
               <div>
-                <label className={`block text-sm font-medium ${textSecondary} mb-2`}>
-                  Partita IVA / Codice Fiscale
-                </label>
-                <input
-                  type="text"
-                  value={clientePiva}
-                  onChange={(e) => setClientePiva(e.target.value)}
-                  className={`w-full px-4 py-2 border ${border} ${inputBg} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${textPrimary}`}
-                  placeholder="IT12345678901"
-                />
+                <Label>Partita IVA / Codice Fiscale{tipoDocumento === 'fattura' && ' *'}</Label>
+                <Input value={clientePiva} onChange={(e) => setClientePiva(e.target.value)} placeholder="IT12345678901" />
               </div>
               <div className="md:col-span-2">
-                <label className={`block text-sm font-medium ${textSecondary} mb-2`}>
-                  Indirizzo
-                </label>
-                <input
-                  type="text"
-                  value={clienteIndirizzo}
-                  onChange={(e) => setClienteIndirizzo(e.target.value)}
-                  className={`w-full px-4 py-2 border ${border} ${inputBg} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${textPrimary}`}
-                  placeholder="Via Roma 123, 00100 Roma (RM)"
-                />
+                <Label>Indirizzo</Label>
+                <Input value={clienteIndirizzo} onChange={(e) => setClienteIndirizzo(e.target.value)} placeholder="Via Roma 123, 00100 Roma (RM)" />
               </div>
               <div>
-                <label className={`block text-sm font-medium ${textSecondary} mb-2`}>
-                  Metodo di Pagamento
-                </label>
+                <Label>Metodo di Pagamento</Label>
                 <select
                   value={metodoPagamento}
                   onChange={(e) => setMetodoPagamento(e.target.value)}
-                  className={`w-full px-4 py-2 border ${border} ${inputBg} rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${textPrimary}`}
+                  className="h-10 w-full rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3.5 text-sm text-tenant-text outline-none focus:border-tenant-primary"
                 >
                   <option value="">Seleziona...</option>
                   <option value="bonifico">Bonifico Bancario</option>
@@ -266,126 +241,67 @@ export default function NuovaFatturaPage() {
                   <option value="paypal">PayPal</option>
                 </select>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Righe Fattura */}
-          <div className={`${cardBg} rounded-lg shadow-md p-6 mb-6 border ${border}`}>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className={`text-xl font-semibold ${textPrimary}`}>Righe Fattura</h2>
-              <button
-                type="button"
-                onClick={aggiungiRiga}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                style={{ fontSize: '14px', fontWeight: 600 }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                Aggiungi Riga
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {righe.map((riga, index) => (
-                <div key={riga.id} className={`grid grid-cols-12 gap-3 items-start p-4 ${isDark ? 'bg-slate-800' : 'bg-gray-50'} rounded-lg`}>
+          {/* Righe */}
+          <Card className="mb-6">
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle>Righe {tipoDocumento === 'ricevuta' ? 'Ricevuta' : 'Fattura'}</CardTitle>
+              <Button type="button" variant="soft" size="sm" onClick={aggiungiRiga}>
+                <Plus size={14} /> Aggiungi Riga
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0">
+              {righe.map((riga) => (
+                <div key={riga.id} className="grid grid-cols-12 items-end gap-3 rounded-xl bg-tenant-card-alt p-4">
                   <div className="col-span-12 md:col-span-5">
-                    <label className={`block text-xs font-medium ${textSecondary} mb-1`}>Descrizione</label>
-                    <input
-                      type="text"
-                      value={riga.descrizione}
-                      onChange={(e) => aggiornaRiga(riga.id, 'descrizione', e.target.value)}
-                      className={`w-full px-3 py-2 border ${border} ${inputBg} rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${textPrimary}`}
-                      placeholder="Descrizione prodotto/servizio"
-                    />
+                    <Label className="text-xs">Descrizione</Label>
+                    <Input value={riga.descrizione} onChange={(e) => aggiornaRiga(riga.id, 'descrizione', e.target.value)} placeholder="Descrizione prodotto/servizio" />
                   </div>
                   <div className="col-span-6 md:col-span-2">
-                    <label className={`block text-xs font-medium ${textSecondary} mb-1`}>Quantità</label>
-                    <input
-                      type="number"
-                      value={riga.quantita}
-                      onChange={(e) => aggiornaRiga(riga.id, 'quantita', parseFloat(e.target.value) || 0)}
-                      className={`w-full px-3 py-2 border ${border} ${inputBg} rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${textPrimary}`}
-                      min="0"
-                      step="0.01"
-                    />
+                    <Label className="text-xs">Quantità</Label>
+                    <Input type="number" min="0" step="0.01" value={riga.quantita} onChange={(e) => aggiornaRiga(riga.id, 'quantita', parseFloat(e.target.value) || 0)} />
                   </div>
                   <div className="col-span-6 md:col-span-2">
-                    <label className={`block text-xs font-medium ${textSecondary} mb-1`}>Prezzo Unitario</label>
-                    <input
-                      type="number"
-                      value={riga.prezzo_unitario}
-                      onChange={(e) => aggiornaRiga(riga.id, 'prezzo_unitario', parseFloat(e.target.value) || 0)}
-                      className={`w-full px-3 py-2 border ${border} ${inputBg} rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${textPrimary}`}
-                      min="0"
-                      step="0.01"
-                    />
+                    <Label className="text-xs">Prezzo Unitario</Label>
+                    <Input type="number" min="0" step="0.01" value={riga.prezzo_unitario} onChange={(e) => aggiornaRiga(riga.id, 'prezzo_unitario', parseFloat(e.target.value) || 0)} />
                   </div>
                   <div className="col-span-6 md:col-span-2">
-                    <label className={`block text-xs font-medium ${textSecondary} mb-1`}>IVA %</label>
-                    <input
-                      type="number"
-                      value={riga.aliquota_iva}
-                      onChange={(e) => aggiornaRiga(riga.id, 'aliquota_iva', parseFloat(e.target.value) || 0)}
-                      className={`w-full px-3 py-2 border ${border} ${inputBg} rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${textPrimary}`}
-                      min="0"
-                      max="100"
-                    />
+                    <Label className="text-xs">IVA %</Label>
+                    <Input type="number" min="0" max="100" value={riga.aliquota_iva} onChange={(e) => aggiornaRiga(riga.id, 'aliquota_iva', parseFloat(e.target.value) || 0)} />
                   </div>
-                  <div className="col-span-6 md:col-span-1 flex items-end">
-                    <button
-                      type="button"
-                      onClick={() => rimuoviRiga(riga.id)}
-                      className="w-full px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                      style={{ fontSize: '12px' }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mx-auto">
-                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                      </svg>
-                    </button>
+                  <div className="col-span-6 md:col-span-1">
+                    <Button type="button" variant="destructive" size="icon" className="w-full" onClick={() => rimuoviRiga(riga.id)}>
+                      <Trash2 size={15} />
+                    </Button>
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* Totali */}
-          <div className={`${cardBg} rounded-lg shadow-md p-6 mb-6 border ${border}`}>
-            <h2 className={`text-xl font-semibold ${textPrimary} mb-4`}>Riepilogo Totali</h2>
-            <div className="space-y-2">
-              <div className={`flex justify-between text-sm ${textSecondary}`}>
-                <span>Imponibile:</span>
-                <span className="font-medium">{formatCurrency(imponibile)}</span>
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Riepilogo Totali</CardTitle></CardHeader>
+            <CardContent className="flex flex-col gap-2 pt-0">
+              <div className="flex justify-between text-sm text-tenant-text-secondary">
+                <span>Imponibile:</span><span className="font-medium">{formatCurrency(imponibile)}</span>
               </div>
-              <div className={`flex justify-between text-sm ${textSecondary}`}>
-                <span>IVA:</span>
-                <span className="font-medium">{formatCurrency(totaleIva)}</span>
+              <div className="flex justify-between text-sm text-tenant-text-secondary">
+                <span>IVA:</span><span className="font-medium">{formatCurrency(totaleIva)}</span>
               </div>
-              <div className={`flex justify-between text-lg font-bold ${textPrimary} border-t-2 ${border} pt-2`}>
-                <span>TOTALE:</span>
-                <span>{formatCurrency(totaleGenerale)}</span>
+              <div className="flex justify-between border-t border-tenant-border pt-2 text-lg font-bold text-tenant-text">
+                <span>TOTALE:</span><span>{formatCurrency(totaleGenerale)}</span>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          {/* Bottoni */}
-          <div className="flex justify-end gap-4">
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className={`px-6 py-3 border ${border} ${textSecondary} rounded-lg hover:${isDark ? 'bg-slate-800' : 'bg-gray-50'} transition-colors`}
-              style={{ fontSize: '14px', fontWeight: 600 }}
-            >
-              Annulla
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              style={{ fontSize: '14px', fontWeight: 600 }}
-            >
-              {saving ? 'Salvataggio...' : 'Salva e Genera Fattura'}
-            </button>
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => router.back()}>Annulla</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Salvataggio...' : `Salva ${tipoDocumento === 'ricevuta' ? 'Ricevuta' : 'Fattura'}`}
+            </Button>
           </div>
         </form>
       </div>

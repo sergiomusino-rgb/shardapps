@@ -39,3 +39,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# data files (local registry)
+data/*.json
+
+# Test scripts with API keys
+create-test-checkout.js
+check-account.js
+check-account2.js
+check-main-account.js
+create-connect-account.js
+create-final-checkout.js
+create-minimal-checkout.js
+create-standard-account.js
+create-test-checkout-simple.js
+call-api-checkout.js

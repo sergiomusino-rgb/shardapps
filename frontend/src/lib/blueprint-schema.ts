@@ -39,12 +39,33 @@ function normalizeFieldType(type: string): string {
   return mapping[type] || 'text';
 }
 
+// L'AI a volte etichetta un campo prezzo come "text" nonostante il prompt
+// richieda esplicitamente "number" — questo fa sì che renderCellValue non lo
+// formatti mai come valuta. Forziamo qui il tipo in base al nome/label, invece
+// di fidarci ciecamente dell'output del modello.
+const PRICE_FIELD_KEYWORDS = [
+  'prezzo', 'totale', 'importo', 'costo', 'subtotale', 'imponibile',
+  'tariffa', 'canone', 'price', 'amount', 'cost', 'total', 'fee',
+];
+
+function looksLikePriceField(id: string, label: string): boolean {
+  const haystack = `${id} ${label}`.toLowerCase();
+  return PRICE_FIELD_KEYWORDS.some((k) => haystack.includes(k));
+}
+
+function withPriceFieldOverride<T extends { id: string; label: string; type: string }>(field: T): T {
+  if (field.type === 'text' && looksLikePriceField(field.id, field.label)) {
+    return { ...field, type: 'number' };
+  }
+  return field;
+}
+
 const FieldOptionsSchema = z
   .union([
     z.array(z.string()),
     z.array(z.any()).transform((arr) => arr.map((o: any) => (typeof o === 'string' ? o : o?.label || o?.value || String(o))).filter(Boolean)),
-    z.record(z.string()).transform((rec) => Object.values(rec)),
-    z.record(z.any()).transform((rec) => Object.values(rec).map((v: any) => String(v))),
+    z.record(z.string(), z.string()).transform((rec) => Object.values(rec)),
+    z.record(z.string(), z.any()).transform((rec) => Object.values(rec).map((v: any) => String(v))),
     z.null(),
   ])
   .optional()
@@ -67,7 +88,7 @@ export const FieldSchema = z.object({
     .union([z.string(), z.null(), z.undefined()])
     .optional()
     .transform((v) => v || undefined),
-});
+}).transform(withPriceFieldOverride);
 
 export const TableSchema = z.object({
   name: z
@@ -116,15 +137,15 @@ export const UIConfigSchema = z.object({
       z.string().default('#6366f1'),
     ])
     .default('#6366f1'),
-  sidebar: z.union([
+sidebar: z.union([
     z.array(SidebarItemSchema),
     z.boolean().transform(() => []),
-    z.record(z.any()).transform((obj) => Object.keys(obj)),
+    z.record(z.string(), z.any()).transform((obj) => Object.keys(obj)),
     z.any().transform(() => []),
   ]).default([]),
-  dashboardCards: z.union([
+dashboardCards: z.union([
     z.array(DashboardCardSchema),
-    z.record(z.unknown()).transform((obj) => Object.values(obj).map((v: unknown) => {
+    z.record(z.string(), z.unknown()).transform((obj) => Object.values(obj).map((v: unknown) => {
       if (typeof v === 'object' && v !== null) {
         const entry = v as Record<string, unknown>;
         return {
@@ -157,6 +178,68 @@ export type DashboardCard = z.infer<typeof DashboardCardSchema>;
 export type UIConfig = z.infer<typeof UIConfigSchema>;
 export type BlueprintJSON = z.infer<typeof BlueprintJSONSchema>;
 
+// ─── Tabelle di sistema obbligatorie ────────────────────────────────────────
+// Ogni app generata deve SEMPRE includere questi dati anagrafici/fiscali di
+// base, a prescindere dal settore: senza questi campi (P.IVA, IBAN, fatture,
+// stato pagamento...) il cliente finale non ha modo di gestire i dati fiscali
+// della propria attività. L'AI di settore genera solo le tabelle di dominio
+// (pazienti, ordini, ...); queste due vengono iniettate sempre in coda.
+function coreField(f: { id: string; type: string; label: string; required?: boolean; options?: string[] }): Field {
+  return { required: false, options: [], target: undefined, targetLabel: undefined, ...f };
+}
+
+const CORE_TABLE_DATI_AZIENDALI: Table = {
+  name: 'dati_aziendali',
+  label: 'Dato Aziendale',
+  labelPlural: 'Dati Azienda',
+  icon: '🏢',
+  fields: [
+    coreField({ id: 'ragione_sociale', type: 'text', label: 'Ragione Sociale', required: true }),
+    coreField({ id: 'partita_iva', type: 'text', label: 'P.IVA' }),
+    coreField({ id: 'codice_fiscale', type: 'text', label: 'Codice Fiscale' }),
+    coreField({ id: 'indirizzo', type: 'text', label: 'Indirizzo' }),
+    coreField({ id: 'email_pec_sdi', type: 'text', label: 'Email PEC / Codice SDI' }),
+    coreField({ id: 'telefono', type: 'phone', label: 'Telefono' }),
+    coreField({ id: 'iban', type: 'text', label: 'IBAN' }),
+    coreField({ id: 'logo', type: 'image', label: 'Logo' }),
+  ],
+};
+
+const CORE_TABLE_FATTURE: Table = {
+  name: 'fatture',
+  label: 'Fattura',
+  labelPlural: 'Fatture',
+  icon: '🧾',
+  fields: [
+    coreField({ id: 'numero_documento', type: 'text', label: 'Numero Documento', required: true }),
+    coreField({ id: 'data', type: 'date', label: 'Data', required: true }),
+    coreField({ id: 'cliente', type: 'text', label: 'Cliente', required: true }),
+    coreField({ id: 'importo_totale', type: 'currency', label: 'Importo Totale', required: true }),
+    coreField({ id: 'iva', type: 'number', label: 'IVA (%)' }),
+    coreField({ id: 'stato_pagamento', type: 'select', label: 'Stato Pagamento', options: ['Pagata', 'In attesa', 'Scaduta', 'Annullata'] }),
+    coreField({ id: 'link_pdf', type: 'text', label: 'Link PDF/Stampa' }),
+  ],
+};
+
+// Nomi/alias che, se già presenti nello schema generato dall'AI, evitano la
+// doppia iniezione della relativa tabella di sistema.
+const DATI_AZIENDALI_ALIASES = new Set(['dati_aziendali', 'impostazioni_azienda']);
+const FATTURE_ALIASES = new Set(['fatture', 'documenti']);
+
+export function ensureCoreSystemTables(tables: Table[]): Table[] {
+  const existingNames = new Set(tables.map((t) => t.name));
+  const result = [...tables];
+
+  if (![...DATI_AZIENDALI_ALIASES].some((alias) => existingNames.has(alias))) {
+    result.push(CORE_TABLE_DATI_AZIENDALI);
+  }
+  if (![...FATTURE_ALIASES].some((alias) => existingNames.has(alias))) {
+    result.push(CORE_TABLE_FATTURE);
+  }
+
+  return result;
+}
+
 function safeString(v: unknown, fallback = ''): string {
   if (v == null) return fallback;
   return String(v);
@@ -173,7 +256,7 @@ function safeNormalizeFieldType(type: unknown): string {
 }
 
 function normalizeField(raw: any): Field {
-  return {
+  return withPriceFieldOverride({
     id: safeNormalizeId(raw?.id ?? raw?.name ?? raw?.key, 'campo'),
     type: safeNormalizeFieldType(raw?.type),
     label: safeString(raw?.label ?? raw?.title ?? raw?.name, 'Campo'),
@@ -181,7 +264,7 @@ function normalizeField(raw: any): Field {
     options: normalizeOptions(raw?.options),
     target: raw?.target || undefined,
     targetLabel: raw?.targetLabel || undefined,
-  };
+  });
 }
 
 function normalizeOptions(v: unknown): string[] {
@@ -251,7 +334,9 @@ export function sanitizeBlueprint(raw: unknown): BlueprintJSON | null {
   // Try Zod parse first
   try {
     const result = BlueprintJSONSchema.parse(raw);
-    if (result.schema.tables.length > 0) return result;
+    if (result.schema.tables.length > 0) {
+      return { ...result, schema: { tables: ensureCoreSystemTables(result.schema.tables) } };
+    }
   } catch (e) {
     console.warn('[sanitizeBlueprint] Zod parse failed, doing manual extraction:', (e as any)?.message?.slice(0, 200));
   }
@@ -262,7 +347,7 @@ export function sanitizeBlueprint(raw: unknown): BlueprintJSON | null {
     const sector = safeString(r.sector ?? r.settore, 'custom');
     const description = safeString(r.description ?? r.descrizione, '');
     const logo = safeString(r.logo, '');
-    const tables = extractTables(r);
+    const tables = ensureCoreSystemTables(extractTables(r));
 
     // UI
     const uiRaw = r.ui ?? {};

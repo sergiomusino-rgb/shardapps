@@ -1,8 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, ChevronDown } from 'lucide-react';
 import { TableDef, fieldName } from './table-definitions';
+import { Dialog, DialogHeader } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 interface AppRecord {
   id: string;
@@ -16,7 +21,7 @@ interface DynamicRecordModalProps {
   onSave: (data: Record<string, unknown>) => void;
   onClose: () => void;
   saving: boolean;
-  colors: ReturnType<typeof getThemeVars>;
+  colors: unknown;
   /** Lista di record clienti per popolare select relazionate */
   clientiRecords?: Array<{ id: string; ragione_sociale?: string; [key: string]: unknown }>;
   /** Lista di record prodotti per popolare select relazionate */
@@ -25,31 +30,10 @@ interface DynamicRecordModalProps {
   ordiniRecords?: Array<{ id: string; numero_ordine?: string; [key: string]: unknown }>;
 }
 
-/** Helper per tema */
-function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
-  const isDark = theme === 'dark';
-  return {
-    bg: isDark ? '#0a0e1a' : '#f8fafc',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    cardBg: isDark ? '#1e293b' : '#ffffff',
-    cardBgAlt: isDark ? '#162032' : '#f1f5f9',
-    border: isDark ? '#334155' : '#e2e8f0',
-    sidebarBg: isDark ? '#0f172a' : '#1e293b',
-    sidebarText: '#e2e8f0',
-    sidebarHover: isDark ? '#1e293b' : '#334155',
-    inputBg: isDark ? '#0f172a' : '#f1f5f9',
-    inputBorder: isDark ? '#334155' : '#cbd5e1',
-    primary: primaryColor,
-    primaryHover: primaryColor + 'dd',
-    danger: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-  };
-}
+const SELECT_CLASSES = 'flex h-10 w-full appearance-none rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3.5 pr-9 py-2 text-sm text-tenant-text outline-none transition-colors focus:border-tenant-primary';
 
 export default function DynamicRecordModal({
-  table, record, onSave, onClose, saving, colors,
+  table, record, onSave, onClose, saving,
   clientiRecords = [], prodottiRecords = [], ordiniRecords = [],
 }: DynamicRecordModalProps) {
   const isEdit = record !== null;
@@ -143,319 +127,159 @@ export default function DynamicRecordModal({
     }));
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', borderRadius: '8px',
-    border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-    color: colors.text, fontSize: '14px', outline: 'none',
-    transition: 'border-color 0.2s', boxSizing: 'border-box',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block', marginBottom: '6px', fontSize: '13px',
-    fontWeight: 600, color: colors.textSecondary,
-  };
-
-  const sectionTitle: React.CSSProperties = {
-    color: colors.text, fontSize: '15px', fontWeight: 700,
-    marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em',
-  };
-
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="rounded-2xl"
-        style={{
-          background: colors.cardBg, border: `1px solid ${colors.border}`,
-          width: '100%', maxWidth: '640px', maxHeight: '90vh',
-          overflow: 'auto', padding: '32px',
-          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-          <h2 style={{ color: colors.text, fontSize: '20px', fontWeight: 700, margin: 0 }}>
-            {isEdit ? `Modifica ${table.label}` : `Nuovo ${table.label}`}
-          </h2>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              color: colors.textSecondary, padding: '4px',
-            }}
-          >
-            <X size={20} />
-          </button>
+    <Dialog open onClose={onClose} maxWidthClassName="max-w-[640px]">
+      <DialogHeader title={isEdit ? `Modifica ${table.label}` : `Nuovo ${table.label}`} onClose={onClose} />
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4.5">
+        {/* ─── CAMPI FISSI ─── */}
+        <div className="rounded-xl border border-tenant-border bg-tenant-card-alt p-5">
+          <div className="mb-3 text-[15px] font-bold uppercase tracking-wide text-tenant-text">Campi Fissi</div>
+          {table.fields.map((field) => {
+            const fn = fieldName(field);
+            return (
+              <div key={fn} className="mb-3.5">
+                <Label>
+                  {field.label}
+                  {field.required && <span className="ml-1 text-tenant-danger">*</span>}
+                </Label>
+
+                {/* Campo di relazione (select con dati da altra tabella) */}
+                {field.targetTable ? (
+                  <div className="relative">
+                    <select
+                      value={String(formData[fn] ?? '')}
+                      onChange={(e) => handleChange(fn, e.target.value)}
+                      className={SELECT_CLASSES}
+                    >
+                      <option value="">Seleziona {field.targetLabel || field.label}...</option>
+                      {getTargetRecords(field.targetTable).map((r) => (
+                        <option key={r.id} value={r.id}>{r.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+                  </div>
+                ) : field.type === 'textarea' ? (
+                  <Textarea
+                    value={String(formData[fn] ?? '')}
+                    onChange={(e) => handleChange(fn, e.target.value)}
+                    rows={3}
+                  />
+                ) : field.type === 'select' ? (
+                  <div className="relative">
+                    <select
+                      value={String(formData[fn] ?? '')}
+                      onChange={(e) => handleChange(fn, e.target.value)}
+                      className={SELECT_CLASSES}
+                    >
+                      <option value="">Seleziona...</option>
+                      {(field.options || []).map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
+                  </div>
+                ) : field.type === 'checkbox' ? (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData[fn])}
+                      onChange={(e) => handleChange(fn, e.target.checked)}
+                      className="h-[18px] w-[18px] accent-tenant-primary"
+                    />
+                    <span className="text-sm text-tenant-text">
+                      {formData[fn] ? 'Attivo' : 'Non attivo'}
+                    </span>
+                  </label>
+                ) : field.type === 'number' ? (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={String(formData[fn] ?? '')}
+                    onChange={(e) => handleChange(fn, e.target.value)}
+                  />
+                ) : field.type === 'date' ? (
+                  <Input
+                    type="date"
+                    value={String(formData[fn] ?? '')}
+                    onChange={(e) => handleChange(fn, e.target.value)}
+                  />
+                ) : (
+                  <Input
+                    type={field.type === 'email' ? 'email' : field.type === 'tel' ? 'tel' : 'text'}
+                    value={String(formData[fn] ?? '')}
+                    onChange={(e) => handleChange(fn, e.target.value)}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {/* ─── CAMP FISSI ─── */}
-          <div style={{
-            background: colors.cardBgAlt, borderRadius: '12px',
-            padding: '20px', border: `1px solid ${colors.border}`,
-          }}>
-            <div style={sectionTitle}>Campi Fissi</div>
-            {table.fields.map((field) => {
-              const fn = fieldName(field);
-              return (
-                <div key={fn} style={{ marginBottom: '14px' }}>
-                  <label style={labelStyle}>
-                    {field.label}
-                    {field.required && <span style={{ color: colors.danger, marginLeft: '4px' }}>*</span>}
-                  </label>
-
-                  {/* Campo di relazione (select con dati da altra tabella) */}
-                  {field.targetTable ? (
-                    <div style={{ position: 'relative' }}>
-                      <select
-                        value={String(formData[fn] ?? '')}
-                        onChange={(e) => handleChange(fn, e.target.value)}
-                        style={{ ...inputStyle, appearance: 'none', paddingRight: '36px' }}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                      >
-                        <option value="">Seleziona {field.targetLabel || field.label}...</option>
-                        {getTargetRecords(field.targetTable).map((r) => (
-                          <option key={r.id} value={r.id}>{r.label}</option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={16}
-                        style={{
-                          position: 'absolute', right: '12px', top: '50%',
-                          transform: 'translateY(-50%)', color: colors.textSecondary,
-                          pointerEvents: 'none',
-                        }}
-                      />
-                    </div>
-                  ) : field.type === 'textarea' ? (
-                    <textarea
-                      value={String(formData[fn] ?? '')}
-                      onChange={(e) => handleChange(fn, e.target.value)}
-                      rows={3}
-                      style={{ ...inputStyle, resize: 'vertical' }}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                    />
-                  ) : field.type === 'select' ? (
-                    <div style={{ position: 'relative' }}>
-                      <select
-                        value={String(formData[fn] ?? '')}
-                        onChange={(e) => handleChange(fn, e.target.value)}
-                        style={{ ...inputStyle, appearance: 'none', paddingRight: '36px' }}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                      >
-                        <option value="">Seleziona...</option>
-                        {(field.options || []).map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={16}
-                        style={{
-                          position: 'absolute', right: '12px', top: '50%',
-                          transform: 'translateY(-50%)', color: colors.textSecondary,
-                          pointerEvents: 'none',
-                        }}
-                      />
-                    </div>
-                  ) : field.type === 'checkbox' ? (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(formData[fn])}
-                        onChange={(e) => handleChange(fn, e.target.checked)}
-                        style={{ width: '18px', height: '18px', accentColor: colors.primary }}
-                      />
-                      <span style={{ color: colors.text, fontSize: '14px' }}>
-                        {formData[fn] ? 'Attivo' : 'Non attivo'}
-                      </span>
-                    </label>
-                  ) : field.type === 'number' ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={String(formData[fn] ?? '')}
-                      onChange={(e) => handleChange(fn, e.target.value)}
-                      style={inputStyle}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                    />
-                  ) : field.type === 'date' ? (
-                    <input
-                      type="date"
-                      value={String(formData[fn] ?? '')}
-                      onChange={(e) => handleChange(fn, e.target.value)}
-                      style={inputStyle}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                    />
-                  ) : (
-                    <input
-                      type={field.type === 'email' ? 'email' : field.type === 'tel' ? 'tel' : 'text'}
-                      value={String(formData[fn] ?? '')}
-                      onChange={(e) => handleChange(fn, e.target.value)}
-                      style={inputStyle}
-                      onFocus={(e) => { e.currentTarget.style.borderColor = colors.primary; }}
-                      onBlur={(e) => { e.currentTarget.style.borderColor = colors.inputBorder; }}
-                    />
-                  )}
-                </div>
-              );
-            })}
+        {/* ─── CAMPI PERSONALIZZATI (dinamici) ─── */}
+        <div className="rounded-xl border border-tenant-border bg-tenant-card-alt p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-[15px] font-bold uppercase tracking-wide text-tenant-text">Campi Personalizzati</div>
+            <span className="text-xs italic text-tenant-text-secondary">{Object.keys(dynamicFields).length} campi</span>
           </div>
 
-          {/* ─── CAMP PERSONALIZZATI (dinamici) ─── */}
-          <div style={{
-            background: colors.cardBgAlt, borderRadius: '12px',
-            padding: '20px', border: `1px solid ${colors.border}`,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={sectionTitle}>Campi Personalizzati</div>
-              <span style={{ color: colors.textSecondary, fontSize: '12px', fontStyle: 'italic' }}>
-                {Object.keys(dynamicFields).length} campi
-              </span>
-            </div>
-
-            {/* Lista campi dinamici esistenti */}
-            {Object.entries(dynamicFields).length === 0 ? (
-              <p style={{ color: colors.textSecondary, fontSize: '13px', textAlign: 'center', padding: '16px' }}>
-                Nessun campo personalizzato. Aggiungine uno qui sotto.
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
-                {Object.entries(dynamicFields).map(([key, val]) => (
-                  <div
-                    key={key}
-                    style={{
-                      display: 'flex', gap: '8px', alignItems: 'center',
-                      padding: '8px 12px', borderRadius: '8px',
-                      background: colors.cardBg, border: `1px solid ${colors.border}`,
-                    }}
-                  >
-                    <div style={{
-                      flex: '0 0 auto', padding: '4px 8px', borderRadius: '4px',
-                      background: colors.primary + '15', color: colors.primary,
-                      fontSize: '12px', fontWeight: 600, fontFamily: 'monospace',
-                    }}>
-                      {key}
-                    </div>
-                    <input
-                      type="text"
-                      value={val}
-                      onChange={(e) => handleDynamicChange(key, e.target.value)}
-                      style={{
-                        flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                        color: colors.text, fontSize: '14px',
-                      }}
-                      placeholder="Valore..."
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeDynamicField(key)}
-                      style={{
-                        background: colors.danger + '15', border: 'none',
-                        borderRadius: '6px', padding: '4px', cursor: 'pointer',
-                        color: colors.danger, display: 'flex',
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
+          {/* Lista campi dinamici esistenti */}
+          {Object.entries(dynamicFields).length === 0 ? (
+            <p className="p-4 text-center text-[13px] text-tenant-text-secondary">
+              Nessun campo personalizzato. Aggiungine uno qui sotto.
+            </p>
+          ) : (
+            <div className="mb-4 flex flex-col gap-2">
+              {Object.entries(dynamicFields).map(([key, val]) => (
+                <div key={key} className="flex items-center gap-2 rounded-lg border border-tenant-border bg-tenant-card px-3 py-2">
+                  <div className="shrink-0 rounded bg-tenant-primary/15 px-2 py-1 font-mono text-xs font-semibold text-tenant-primary">
+                    {key}
                   </div>
-                ))}
-              </div>
-            )}
-
-            {/* Aggiungi nuovo campo dinamico */}
-            <div style={{
-              display: 'flex', gap: '8px', alignItems: 'center',
-              padding: '12px', borderRadius: '8px',
-              border: `1px dashed ${colors.border}`,
-              background: colors.cardBg + '50',
-            }}>
-              <input
-                type="text"
-                value={newKey}
-                onChange={(e) => setNewKey(e.target.value)}
-                placeholder="Nome campo (es. sconto_fedelta)"
-                style={{
-                  flex: '0 0 auto', width: '160px', padding: '8px 12px', borderRadius: '6px',
-                  border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-                  color: colors.text, fontSize: '13px', outline: 'none', fontFamily: 'monospace',
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
-              />
-              <input
-                type="text"
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                placeholder="Valore iniziale"
-                style={{
-                  flex: 1, padding: '8px 12px', borderRadius: '6px',
-                  border: `1px solid ${colors.inputBorder}`, background: colors.inputBg,
-                  color: colors.text, fontSize: '13px', outline: 'none',
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
-              />
-              <button
-                type="button"
-                onClick={addDynamicField}
-                disabled={!newKey.trim()}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '4px',
-                  padding: '8px 14px', borderRadius: '6px', border: 'none',
-                  background: newKey.trim() ? colors.primary : colors.textSecondary,
-                  color: '#fff', fontSize: '13px', fontWeight: 600,
-                  cursor: newKey.trim() ? 'pointer' : 'not-allowed',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <Plus size={14} /> Aggiungi
-              </button>
+                  <input
+                    type="text"
+                    value={val}
+                    onChange={(e) => handleDynamicChange(key, e.target.value)}
+                    className="flex-1 border-none bg-transparent text-sm text-tenant-text outline-none"
+                    placeholder="Valore..."
+                  />
+                  <Button type="button" variant="destructive" size="icon" className="h-7 w-7" onClick={() => removeDynamicField(key)}>
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
 
-          {/* ─── BUTTONS ─── */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '10px 20px', borderRadius: '10px',
-                border: `1px solid ${colors.border}`, background: 'transparent',
-                color: colors.textSecondary, fontSize: '14px', fontWeight: 600,
-                cursor: 'pointer', transition: 'background 0.2s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.cardBgAlt; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              Annulla
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              style={{
-                padding: '10px 24px', borderRadius: '10px', border: 'none',
-                background: saving ? colors.textSecondary : colors.primary,
-                color: '#fff', fontSize: '14px', fontWeight: 600,
-                cursor: saving ? 'not-allowed' : 'pointer', transition: 'opacity 0.2s',
-              }}
-              onMouseEnter={(e) => { if (!saving) e.currentTarget.style.opacity = '0.85'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-            >
-              {saving ? 'Salvataggio...' : 'Salva'}
-            </button>
+          {/* Aggiungi nuovo campo dinamico */}
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-tenant-border bg-tenant-card/50 p-3">
+            <input
+              type="text"
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              placeholder="Nome campo (es. sconto_fedelta)"
+              className="w-full shrink-0 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 font-mono text-[13px] text-tenant-text outline-none focus:border-tenant-primary sm:w-40"
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
+            />
+            <input
+              type="text"
+              value={newValue}
+              onChange={(e) => setNewValue(e.target.value)}
+              placeholder="Valore iniziale"
+              className="flex-1 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 text-[13px] text-tenant-text outline-none focus:border-tenant-primary"
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
+            />
+            <Button type="button" variant={newKey.trim() ? 'default' : 'ghost'} disabled={!newKey.trim()} onClick={addDynamicField} className="whitespace-nowrap">
+              <Plus size={14} /> Aggiungi
+            </Button>
           </div>
-        </form>
-      </div>
-    </div>
+        </div>
+
+        {/* ─── BUTTONS ─── */}
+        <div className="mt-2 flex justify-end gap-3">
+          <Button type="button" variant="outline" onClick={onClose}>Annulla</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Salvataggio...' : 'Salva'}</Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

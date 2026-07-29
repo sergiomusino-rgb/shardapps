@@ -1,95 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase, getAccessTokenFromStorage } from '@/src/lib/supabase';
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+import { useState } from 'react';
+import { supabase } from '@/src/lib/supabase';
 
 export default function SettingsPage() {
-  const [plan, setPlan] = useState<string>('free');
-  const [loading, setLoading] = useState(true);
-  const [portalLoading, setPortalLoading] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
-
-  useEffect(() => {
-    async function loadPlan() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const { data: memberships, error: membershipError } = await supabase
-        .from('tenant_members')
-        .select('tenant_id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      if (membershipError || !memberships?.[0]?.tenant_id) {
-        setLoading(false);
-        return;
-      }
-
-      const tenantId = memberships[0].tenant_id;
-
-      const { data: tenant } = await supabase
-        .from('tenants')
-        .select('plan')
-        .eq('id', tenantId)
-        .single();
-
-      if (tenant?.plan) {
-        setPlan(tenant.plan);
-      }
-      setLoading(false);
-    }
-
-    loadPlan();
-  }, []);
-
-  const planLabel = loading ? 'Caricamento...' : `Piano ${plan.toUpperCase()} Attivo`;
-  const planColor = plan === 'vip'
-    ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-    : plan === 'pro'
-    ? 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20'
-    : 'text-slate-400 bg-slate-500/10 border-slate-500/20';
-
-  async function openStripePortal() {
-    setPortalLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || getAccessTokenFromStorage();
-      if (!token) {
-        alert('Sessione scaduta. Effettua di nuovo il login.');
-        return;
-      }
-
-      const res = await fetch(`${BACKEND_URL}/api/billing`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || 'Errore apertura portale Stripe');
-      }
-    } catch (err) {
-      console.error('[Settings] openStripePortal error:', err);
-      alert('Errore di connessione al portale Stripe');
-    } finally {
-      setPortalLoading(false);
-    }
-  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -107,9 +26,13 @@ export default function SettingsPage() {
 
     setPasswordLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      const { data, error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
-        setPasswordError(error.message);
+        if (error.message?.includes('Auth session missing') || error.message?.includes('session')) {
+          setPasswordError('Sessione non valida. Effettua di nuovo il login.');
+        } else {
+          setPasswordError(error.message);
+        }
       } else {
         setPasswordSuccess('Password cambiata con successo!');
         setNewPassword('');
@@ -199,45 +122,27 @@ export default function SettingsPage() {
           </form>
         </div>
 
-        {/* SEZIONE 3: PIANO E FATTURAZIONE */}
+        {/* SEZIONE 3: APP MOBILE */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800/60 pb-2">
-            <h3 className="text-base font-bold text-slate-200">Piano & Abbonamento</h3>
-            <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${planColor}`}>
-              {planLabel}
-            </span>
-          </div>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between bg-slate-950 border border-slate-800 p-4 rounded-xl gap-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-200">Rinnovo Automatico</p>
-              <p className="text-xs text-slate-500 mt-0.5">Il prossimo addebito avverrà tramite Stripe il mese prossimo.</p>
+          <h3 className="text-base font-bold text-slate-200 border-b border-slate-800/60 pb-2">App Mobile</h3>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex-1">
+              <p className="text-sm text-slate-300 mb-2">Scansiona il QR code per aprire l'app sul tuo telefono</p>
+              <p className="text-xs text-slate-500">
+                Collega la tua area riservata direttamente dal tuo dispositivo mobile.
+              </p>
             </div>
-            <button 
-              type="button"
-              disabled={portalLoading || plan === 'free'}
-              onClick={openStripePortal}
-              className="text-xs bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 hover:text-white px-4 py-2.5 rounded-xl transition font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {portalLoading ? 'Caricamento...' : 'Gestisci su Stripe 💳'}
-            </button>
-          </div>
-        </div>
-
-        {/* SEZIONE 4: SVILUPPO & CHIAVI (SUPABASE INTEGRAZIONE PREVISTA) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-          <h3 className="text-base font-bold text-slate-200 border-b border-slate-800/60 pb-2">Integrazione di Sistema</h3>
-          <div className="space-y-2">
-            <p className="text-xs text-slate-400">
-              L'autenticazione, la sicurezza dei dati e la persistenza dei progetti di questa dashboard sono pronte per essere agganciate a **Supabase**.
-            </p>
-            <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl font-mono text-[11px] text-slate-500 space-y-1">
-              <div>DB_STATUS: <span className="text-amber-500">READY_FOR_SETUP</span></div>
-              <div>AUTH_PROVIDER: <span className="text-indigo-400">Supabase Auth</span></div>
+            <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-4 flex items-center justify-center">
+              <img 
+                src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://zeusx.app" 
+                alt="QR Code App Mobile"
+                className="w-30 h-30 object-contain"
+              />
             </div>
           </div>
         </div>
 
-      </div>
+       </div>
     </div>
   );
 }

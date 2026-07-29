@@ -5,10 +5,17 @@
     "dev:all": "concurrently \"npm run backend\" \"npm run frontend\" \"npm run dev --prefix apps/mia-nuova-app\""
   },
   "devDependencies": {
-    "concurrently": "^10.0.3"
+    "concurrently": "^10.0.3",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.3",
-    "pg": "^8.22.0"
+    "next": "^16.2.10",
+    "next-intl": "^4.13.2",
+    "pg": "^8.22.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
   }
 }

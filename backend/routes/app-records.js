@@ -7,7 +7,11 @@ const { stringify } = require('csv-stringify/sync');
 const stream = require('stream');
 const XLSX = require('xlsx');
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Nessun limite di dimensione prima permetteva a un tenant autenticato di
+// caricare un file arbitrariamente grande (tenuto interamente in memoria,
+// poi decompresso da XLSX.read) per esaurire l'heap del processo Node e
+// mandare in DoS il backend per tutti i tenant.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function getSupabase() {
   return createClient(
@@ -19,25 +23,44 @@ function getSupabase() {
 // Middleware autenticazione
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
+  console.log('[AUTH-APP-RECORDS] Token ricevuto:', authHeader);
+  
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('[AUTH-APP-RECORDS] Header Authorization mancante o non in formato Bearer');
     return res.status(401).json({ error: 'Token mancante' });
   }
 
   const token = authHeader.substring(7);
+  console.log('[AUTH-APP-RECORDS] Token estratto (primi 20 caratteri):', token.substring(0, 20) + '...');
+  
   const supabase = createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_ANON_KEY || '',
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   );
 
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) {
-    return res.status(401).json({ error: 'Token non valido' });
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error('[AUTH-APP-RECORDS] Errore validazione token:', error.message);
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    
+    if (!user) {
+      console.error('[AUTH-APP-RECORDS] Utente non trovato nel token');
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    
+    console.log('[AUTH-APP-RECORDS] Utente autenticato:', user.id);
+    req.user = user;
+    req.supabase = supabase;
+    next();
+  } catch (error) {
+    console.error('[AUTH-APP-RECORDS] Errore durante validazione:', error.message);
+    console.error('[AUTH-APP-RECORDS] Stack:', error.stack);
+    return res.status(401).json({ error: 'Errore autenticazione' });
   }
-
-  req.user = user;
-  req.supabase = supabase;
-  next();
 }
 
 // Middleware verifica membership tenant
@@ -217,11 +240,11 @@ router.post('/apps', authMiddleware, async (req, res) => {
     res.status(201).json({ 
       app,
       clientPassword,
-      accessUrl: `${process.env.APP_URL || 'https://zeusx-zwu8.vercel.app'}/a/${slug}`
+      accessUrl: `${process.env.APP_URL || 'https://zeusxapps.com'}/a/${slug}`
     });
   } catch (err) {
     console.error('Create app exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -244,13 +267,13 @@ router.get('/apps/:appId/records', authMiddleware, tenantMiddleware, async (req,
 
     if (error) {
       console.error('GET records error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ records: data || [], count: data?.length || 0 });
   } catch (err) {
     console.error('GET records exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -276,13 +299,13 @@ router.post('/apps/:appId/records', authMiddleware, tenantMiddleware, async (req
 
     if (error) {
       console.error('POST record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -307,7 +330,7 @@ router.put('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware, a
 
     if (error) {
       console.error('PUT record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!record) {
@@ -317,7 +340,7 @@ router.put('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware, a
     res.json({ record });
   } catch (err) {
     console.error('PUT record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -336,13 +359,13 @@ router.delete('/apps/:appId/records/:recordId', authMiddleware, tenantMiddleware
 
     if (error) {
       console.error('DELETE record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -391,13 +414,13 @@ router.post('/apps/:appId/import', authMiddleware, tenantMiddleware, upload.sing
 
     if (error) {
       console.error('Import error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ imported: data?.length || 0 });
   } catch (err) {
     console.error('Import exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -420,14 +443,27 @@ router.get('/apps/:appId/export', authMiddleware, tenantMiddleware, async (req, 
 
     if (error) {
       console.error('Export query error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!data || data.length === 0) {
       return res.status(404).json({ error: 'Nessun record da esportare' });
     }
 
-    const flatData = data.map(row => row.data);
+    // Un valore di record che inizia con =/+/-/@ verrebbe interpretato come
+    // formula da Excel/Sheets all'apertura del CSV esportato (CSV/formula
+    // injection): lo si neutralizza anteponendo un apice, che lo forza a testo.
+    const sanitizeCsvValue = (value) => {
+      if (typeof value !== 'string') return value;
+      return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+    };
+    const flatData = data.map(row => {
+      const sanitized = {};
+      for (const [key, value] of Object.entries(row.data || {})) {
+        sanitized[key] = sanitizeCsvValue(value);
+      }
+      return sanitized;
+    });
     const csvOutput = stringify(flatData, { header: true });
 
     res.setHeader('Content-Type', 'text/csv');
@@ -435,7 +471,7 @@ router.get('/apps/:appId/export', authMiddleware, tenantMiddleware, async (req, 
     res.send(csvOutput);
   } catch (err) {
     console.error('Export exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

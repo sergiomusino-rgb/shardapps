@@ -81,10 +81,14 @@ function rbacMiddleware(action) {
     // In futuro si può aggiungere supporto per ruoli specifici
     const userRole = 'agent';
 
-    // Verifica permessi
-    if (table && !checkTablePermission(table, action, userRole)) {
-      return res.status(403).json({ 
-        error: `Accesso negato: ruolo '${userRole}' non può ${action} sulla tabella '${table}'` 
+    // Verifica permessi: senza 'table' non c'è nulla da autorizzare, quindi si
+    // nega (default-deny) invece di lasciar passare la richiesta — prima
+    // bastava omettere 'table' per bypassare completamente il controllo.
+    if (!table || !checkTablePermission(table, action, userRole)) {
+      return res.status(403).json({
+        error: table
+          ? `Accesso negato: ruolo '${userRole}' non può ${action} sulla tabella '${table}'`
+          : `Accesso negato: parametro 'table' mancante`
       });
     }
 

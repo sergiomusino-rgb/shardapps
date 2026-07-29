@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function getSupabase() {
-  return createClient(
+  return createClient<Database>(
     supabaseUrl || '',
     supabaseServiceKey || ''
   );
@@ -149,20 +150,52 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    
+
+    const tipoDocumento: 'fattura' | 'ricevuta' = body.tipo_documento === 'ricevuta' ? 'ricevuta' : 'fattura';
+    // La ricevuta non richiede la P.IVA del cliente (spesso un privato); la
+    // fattura sì, per restare un documento fiscale valido.
+    if (tipoDocumento === 'fattura' && !body.cliente_piva) {
+      return NextResponse.json(
+        { error: 'La P.IVA/Codice Fiscale del cliente è obbligatoria per una fattura' },
+        { status: 400 }
+      );
+    }
+
+    const anno: number = body.anno || new Date().getFullYear();
+
+    // Numero progressivo reale (non generato lato client): conta i documenti
+    // dello stesso tenant+tipo+anno e assegna il prossimo, zero-padded.
+    const { count, error: countError } = await supabase
+      .from('fatture')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', app.tenant_id)
+      .eq('tipo_documento', tipoDocumento)
+      .eq('anno', anno);
+
+    if (countError) {
+      console.error('Errore conteggio fatture per numerazione:', countError);
+      return NextResponse.json(
+        { error: 'Errore nella generazione del numero documento' },
+        { status: 500 }
+      );
+    }
+
+    const numeroProgressivo = String((count || 0) + 1).padStart(4, '0');
+
     // Create new invoice
     const { data: nuovaFattura, error: insertError } = await supabase
       .from('fatture')
       .insert({
         tenant_id: app.tenant_id,
-        numero_fattura: body.numero_fattura,
-        anno: body.anno,
+        numero_fattura: numeroProgressivo,
+        anno,
         data_emissione: body.data_emissione,
         cliente_nome: body.cliente_nome,
         cliente_piva: body.cliente_piva,
         cliente_indirizzo: body.cliente_indirizzo,
         stato: body.stato || 'bozza',
         metodo_pagamento: body.metodo_pagamento,
+        tipo_documento: tipoDocumento,
       })
       .select()
       .single();
@@ -177,7 +210,13 @@ export async function POST(request: NextRequest) {
 
     // Save righe if provided
     if (body.righe && Array.isArray(body.righe)) {
-      const righeToInsert = body.righe.map((r: any) => ({
+      interface RigaInput {
+        descrizione: string;
+        quantita: number;
+        prezzo_unitario: number;
+        aliquota_iva?: number;
+      }
+      const righeToInsert = (body.righe as RigaInput[]).map((r) => ({
         fattura_id: nuovaFattura.id,
         descrizione: r.descrizione,
         quantita: r.quantita,

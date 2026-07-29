@@ -18,6 +18,7 @@ function getSupabase() {
 }
 
 // POST /a/:slug - Client login with password
+// Supporta sia slug che totalum_app_id come identificatore
 router.post('/a/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
@@ -29,12 +30,25 @@ router.post('/a/:slug', async (req, res) => {
 
     const supabase = getSupabase();
 
-    // Find app by slug
-    const { data: app, error } = await supabase
+    // Find app by slug OR totalum_app_id (per supportare URL come /a/pizzeria)
+    // Prima cerca per slug, poi per totalum_app_id come fallback
+    let { data: app, error } = await supabase
       .from('apps')
       .select('*')
       .eq('slug', slug)
       .single();
+
+    // Se non trovata per slug, cerca per totalum_app_id
+    if (error || !app) {
+      const { data: appByTotalum, error: totalumError } = await supabase
+        .from('apps')
+        .select('*')
+        .eq('totalum_app_id', slug)
+        .single();
+      
+      app = appByTotalum;
+      error = totalumError;
+    }
 
     if (error || !app) {
       return res.status(404).json({ error: 'App non trovata' });
@@ -89,26 +103,28 @@ router.post('/a/:slug', async (req, res) => {
     return res.json({ appInfo });
   } catch (err) {
     console.error('[/api/a/:slug] error:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
-// Client auth middleware - uses password instead of JWT
+// Client auth middleware - dual-mode:
+// - auth_mode='legacy' (app esistenti): Bearer è la password in chiaro, invariato.
+// - auth_mode='supabase' (nuove app): Bearer è un vero JWT Supabase Auth,
+//   verificato con supabase.auth.getUser() + membership attiva su app_users.
 async function clientAuthMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Password mancante' });
+    return res.status(401).json({ error: 'Autenticazione mancante' });
   }
 
-  const password = authHeader.substring(7);
+  const token = authHeader.substring(7);
   const { appId } = req.params;
 
   const supabase = getSupabase();
 
-  // Verify app exists and password matches
   const { data: app, error } = await supabase
     .from('apps')
-    .select('id, tenant_id, client_password, client_active, expires_at')
+    .select('id, tenant_id, client_password, client_active, expires_at, auth_mode')
     .eq('id', appId)
     .single();
 
@@ -124,13 +140,38 @@ async function clientAuthMiddleware(req, res, next) {
     return res.status(403).json({ error: 'App scaduta' });
   }
 
-  if (app.client_password !== password) {
+  if (app.auth_mode === 'supabase') {
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) {
+      return res.status(401).json({ error: 'Utente non autenticato' });
+    }
+
+    const { data: appUser, error: appUserError } = await supabase
+      .from('app_users')
+      .select('role, is_active')
+      .eq('user_id', user.id)
+      .eq('app_id', appId)
+      .eq('is_active', true)
+      .single();
+
+    if (appUserError || !appUser) {
+      return res.status(403).json({ error: 'Utente non autorizzato per questa app' });
+    }
+
+    req.tenantId = app.tenant_id;
+    req.appId = appId;
+    req.appUserRole = appUser.role;
+    return next();
+  }
+
+  // Legacy: confronto password in chiaro, comportamento invariato
+  if (app.client_password !== token) {
     return res.status(401).json({ error: 'Password errata' });
   }
 
   req.tenantId = app.tenant_id;
   req.appId = appId;
-  req.clientPassword = password;
+  req.clientPassword = token;
   next();
 }
 
@@ -153,13 +194,13 @@ router.get('/client/apps/:appId/records', clientAuthMiddleware, async (req, res)
 
     if (error) {
       console.error('GET client records error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ records: data || [], count: data?.length || 0 });
   } catch (err) {
     console.error('GET client records exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -185,13 +226,13 @@ router.post('/client/apps/:appId/records', clientAuthMiddleware, async (req, res
 
     if (error) {
       console.error('POST client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -216,7 +257,7 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
 
     if (error) {
       console.error('PUT client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!record) {
@@ -226,7 +267,7 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
     res.json({ record });
   } catch (err) {
     console.error('PUT client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -245,13 +286,13 @@ router.delete('/client/apps/:appId/records/:recordId', clientAuthMiddleware, asy
 
     if (error) {
       console.error('DELETE client record error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE client record exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -289,13 +330,13 @@ router.post('/client/apps/:appId/import', clientAuthMiddleware, upload.single('f
 
     if (error) {
       console.error('Import error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     res.json({ imported: data?.length || 0 });
   } catch (err) {
     console.error('Import exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -373,7 +414,7 @@ router.put('/client/apps/:appId/tables/:tableName', clientAuthMiddleware, async 
     res.json({ success: true, table: tables[tableIndex] });
   } catch (err) {
     console.error('PUT table-def exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
@@ -396,7 +437,7 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
 
     if (error) {
       console.error('Export query error:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Errore interno' });
     }
 
     if (!data || data.length === 0) {
@@ -411,11 +452,35 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
     res.send(csvOutput);
   } catch (err) {
     console.error('Export exception:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
+// Helper: Find app by slug or totalum_app_id
+async function findAppBySlugOrTotalum(supabase, identifier) {
+  // Prima cerca per slug, poi per totalum_app_id come fallback
+  let { data: app, error } = await supabase
+    .from('apps')
+    .select('id, slug, totalum_app_id, config')
+    .eq('slug', identifier)
+    .single();
+
+  if (error || !app) {
+    const { data: appByTotalum, error: totalumError } = await supabase
+      .from('apps')
+      .select('id, slug, totalum_app_id, config')
+      .eq('totalum_app_id', identifier)
+      .single();
+    
+    app = appByTotalum;
+    error = totalumError;
+  }
+
+  return { app, error };
+}
+
 // POST /a/:slug/settings - Save admin settings (branding)
+// Supporta sia slug che totalum_app_id come identificatore
 router.post('/a/:slug/settings', async (req, res) => {
   try {
     const { slug } = req.params;
@@ -427,12 +492,8 @@ router.post('/a/:slug/settings', async (req, res) => {
 
     const supabase = getSupabase();
 
-    // Find app by slug
-    const { data: app, error: appError } = await supabase
-      .from('apps')
-      .select('id, config')
-      .eq('slug', slug)
-      .single();
+    // Find app by slug or totalum_app_id
+    const { app, error: appError } = await findAppBySlugOrTotalum(supabase, slug);
 
     if (appError || !app) {
       return res.status(404).json({ error: 'App non trovata' });
@@ -465,11 +526,12 @@ router.post('/a/:slug/settings', async (req, res) => {
     res.json({ success: true, message: 'Impostazioni salvate con successo' });
   } catch (err) {
     console.error('Save settings exception:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 
 // POST /a/:slug/change-password - Change client password
+// Supporta sia slug che totalum_app_id come identificatore
 router.post('/a/:slug/change-password', async (req, res) => {
   try {
     const { slug } = req.params;
@@ -485,12 +547,8 @@ router.post('/a/:slug/change-password', async (req, res) => {
 
     const supabase = getSupabase();
 
-    // Find app by slug
-    const { data: app, error: appError } = await supabase
-      .from('apps')
-      .select('id, tenant_id, client_password')
-      .eq('slug', slug)
-      .single();
+    // Find app by slug or totalum_app_id
+    const { app, error: appError } = await findAppBySlugOrTotalum(supabase, slug);
 
     if (appError || !app) {
       return res.status(404).json({ error: 'App non trovata' });
@@ -515,7 +573,7 @@ router.post('/a/:slug/change-password', async (req, res) => {
     res.json({ success: true, message: 'Password cambiata con successo' });
   } catch (err) {
     console.error('Change password exception:', err);
-    res.status(500).json({ error: err.message || 'Errore interno' });
+    res.status(500).json({ error: 'Errore interno' });
   }
 });
 

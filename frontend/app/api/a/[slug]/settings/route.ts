@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 // GET /api/a/[slug]/settings - Get admin settings
-export async function GET(request: NextRequest, { params }: { params: { slug: string } }) {
-  const slug = params.slug;
+export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   
   if (!slug) {
     return NextResponse.json({ error: 'Slug parameter required' }, { status: 400 });
@@ -27,8 +27,8 @@ export async function GET(request: NextRequest, { params }: { params: { slug: st
 }
 
 // POST /api/a/[slug]/settings - Save admin settings
-export async function POST(request: NextRequest, { params }: { params: { slug: string } }) {
-  const slug = params.slug;
+export async function POST(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   
   if (!slug) {
     return NextResponse.json({ error: 'Slug parameter required' }, { status: 400 });

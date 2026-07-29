@@ -9,6 +9,7 @@ export default function PricingPage() {
   const [currentPlan, setCurrentPlan] = useState<string>('free');
   const [slotsUsed, setSlotsUsed] = useState(0);
   const [slotsTotal, setSlotsTotal] = useState(0);
+  const [credits, setCredits] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const { t } = useLanguage();
 
@@ -34,20 +35,61 @@ export default function PricingPage() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // Saldo crediti Vision in tempo reale: stesso pattern usato in dashboard/
+  // page.tsx e vision/page.tsx (guardia anti-duplicato sul topic del canale,
+  // necessaria perché supabase-js riusa un canale già sottoscritto con lo
+  // stesso nome invece di crearne uno nuovo).
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function loadCredits() {
+      const { data } = await supabase
+        .from('profiles')
+        .select('credits')
+        .eq('user_id', userId as string)
+        .single();
+
+      if (cancelled) return;
+      setCredits(data?.credits ?? 0);
+
+      const topic = `pricing-credits-${userId}`;
+      const stale = supabase.getChannels().find((c) => c.topic === `realtime:${topic}`);
+      if (stale) await supabase.removeChannel(stale);
+      if (cancelled) return;
+
+      channel = supabase
+        .channel(topic)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${userId}` },
+          (payload) => setCredits((payload.new as { credits: number }).credits ?? 0)
+        )
+        .subscribe();
+    }
+
+    loadCredits();
+    return () => {
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
   async function loadCurrentPlan(userId: string) {
     try {
       const { data: memberships } = await supabase
         .from('tenant_members')
         .select('tenant_id')
         .eq('user_id', userId)
-        .limit(1);
+        .limit(1) as any;
 
       if (memberships?.[0]?.tenant_id) {
         const { data: tenant } = await supabase
           .from('tenants')
           .select('plan, app_limit, total_apps_created')
           .eq('id', memberships[0].tenant_id)
-          .single();
+          .single() as any;
 
         if (tenant) {
           setCurrentPlan(tenant.plan || 'free');
@@ -66,49 +108,52 @@ export default function PricingPage() {
     {
       id: 'starter',
       name: 'STARTER',
-      setupPrice: '0',
-      monthlyFee: '50',
+      setupPrice: '10',
+      monthlyFee: '25',
       slots: '1',
+      credits: '20',
       features: [
         t('pricing_slots_included_singular'),
-        t('pricing_per_app').replace('{fee}', '50€') + ' (dopo 1 mese gratis)',
-        t('calendar_all_day') + ' 30 giorni inclusi',
+        `20 ${t('pricing_credits_included')}`,
+        t('pricing_per_app').replace('{fee}', '25€') + ' (dopo 1 mese gratis)',
         'Supporto email'
       ],
-      priceId: 'price_1TmcprRZR2YaFu2sU0m1kbFC',
+      priceId: 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
       highlighted: false,
     },
     {
       id: 'pro',
       name: 'PRO',
-      setupPrice: '50',
+      setupPrice: '79',
       monthlyFee: '25',
       slots: '5',
+      credits: '100',
       features: [
         '5 ' + t('pricing_slots_included'),
+        `100 ${t('pricing_credits_included')}`,
         t('pricing_per_app').replace('{fee}', '25€'),
-        t('calendar_all_day') + ' 30 giorni inclusi',
         'Supporto prioritario',
         'API illimitate'
       ],
-      priceId: 'price_1Tmd1tRZR2YaFu2sgHgxzcTC',
+      priceId: 'price_1TyX0yRZR2YaFu2s1nKkKHVw',
       highlighted: true,
     },
     {
       id: 'business',
       name: 'BUSINESS',
-      setupPrice: '250',
-      monthlyFee: '50',
-      slots: '250',
+      setupPrice: '299',
+      monthlyFee: '25',
+      slots: '50',
+      credits: '500',
       features: [
-        '250 ' + t('pricing_slots_included'),
-        t('pricing_per_app').replace('{fee}', '50€'),
-        t('calendar_all_day') + ' 30 giorni inclusi',
+        '50 ' + t('pricing_slots_included'),
+        `500 ${t('pricing_credits_included')}`,
+        t('pricing_per_app').replace('{fee}', '25€'),
         'Supporto dedicato 24/7',
         'API illimitate',
         'SLA garantito'
       ],
-      priceId: 'price_1Tmd4GRZR2YaFu2s0FZ4Btym',
+      priceId: 'price_1TyX0yRZR2YaFu2s4veOZc6r',
       highlighted: false,
     },
   ];
@@ -130,11 +175,7 @@ export default function PricingPage() {
 
   const handleUpgrade = async (planId: string, quantity: number = 1) => {
     const { data: { session } } = await supabase.auth.getSession();
-    let token = session?.access_token;
-
-    if (!token) {
-      token = getAccessTokenFromStorage();
-    }
+    const token = session?.access_token || getAccessTokenFromStorage();
 
     if (!token || !session?.user) {
       window.location.href = '/login';
@@ -142,10 +183,13 @@ export default function PricingPage() {
     }
 
     let priceId: string | undefined;
-    if (planId === 'extra_slot') {
+    if (planId === 'credit_topup') {
+      // Nome storico della env var (era "Slot Extra"): stesso Price Stripe da
+      // 15€, cambia solo cosa viene accreditato lato webhook (crediti invece
+      // di uno slot app), quindi resta invariata.
       priceId = process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || undefined;
       if (!priceId) {
-        alert(t('pricing_error_no_slots'));
+        alert(t('pricing_error_no_topup'));
         return;
       }
     } else {
@@ -204,22 +248,35 @@ export default function PricingPage() {
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h3 className="text-lg font-semibold mb-2">{t('pricing_current_plan')}</h3>
-                <p className="text-slate-400">
-                  {t('pricing_current_plan_label')} <span className="text-indigo-400 font-bold uppercase">{currentPlan}</span>
-                  {' • '}
-                  {slotsUsed} / {slotsTotal} {t('pricing_slots_used')}
-                </p>
+                {currentPlan === 'free' ? (
+                  <p className="text-slate-400">
+                    <span className="text-indigo-400 font-bold uppercase">{t('pricing_no_plan_title')}</span>
+                  </p>
+                ) : (
+                  <p className="text-slate-400">
+                    {t('pricing_current_plan_label')} <span className="text-indigo-400 font-bold uppercase">{currentPlan}</span>
+                    {' • '}
+                    {slotsUsed} / {slotsTotal} {t('pricing_slots_used')}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-64 h-3 bg-slate-800 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
-                    style={{ width: `${(slotsUsed / slotsTotal) * 100}%` }}
-                  />
+              <div className="flex flex-col items-start gap-3 md:items-end">
+                <div className="flex items-center gap-2">
+                  <div className="w-64 h-3 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
+                      style={{ width: `${(slotsUsed / slotsTotal) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-sm text-slate-400">
+                    {slotsTotal - slotsUsed} {t('pricing_slots_available')}
+                  </span>
                 </div>
-                <span className="text-sm text-slate-400">
-                  {slotsTotal - slotsUsed} {t('pricing_slots_available')}
-                </span>
+                <div className="flex items-center gap-2 rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-4 py-1.5">
+                  <span className="text-amber-400">⚡</span>
+                  <span className="font-bold text-white tabular-nums">{credits === null ? '…' : credits}</span>
+                  <span className="text-sm text-slate-400">{t('pricing_your_credits_balance')}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -262,12 +319,22 @@ export default function PricingPage() {
                   </div>
                 </div>
 
-                <div className="mb-6 p-4 bg-slate-800/50 rounded-xl">
-                  <div className="text-sm font-semibold text-slate-300 mb-1">
-                    {plan.slots} {t('pricing_slots')} {plan.id === 'starter' ? t('pricing_slots_included_singular') : t('pricing_slots_included')}
+                <div className="mb-6 grid grid-cols-2 gap-3">
+                  <div className="p-4 bg-slate-800/50 rounded-xl">
+                    <div className="text-sm font-semibold text-slate-300 mb-1">
+                      {plan.slots} {t('pricing_slots')} {plan.id === 'starter' ? t('pricing_slots_included_singular') : t('pricing_slots_included')}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {t('pricing_create_up_to')} {plan.slots} {plan.id === 'starter' ? t('pricing_app_singular') : t('pricing_apps_plural')}
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {t('pricing_create_up_to')} {plan.slots} {plan.id === 'starter' ? t('pricing_app_singular') : t('pricing_apps_plural')}
+                  <div className="p-4 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl">
+                    <div className="text-sm font-semibold text-fuchsia-300 mb-1">
+                      ⚡ {plan.credits} {t('pricing_credits')}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {t('pricing_credits_desc')}
+                    </div>
                   </div>
                 </div>
 
@@ -283,12 +350,10 @@ export default function PricingPage() {
                 </ul>
 
                 <button
-                  onClick={() => !isCurrentPlan && plan.id !== 'starter' && handleUpgrade(plan.id)}
-                  disabled={isCurrentPlan || plan.id === 'starter'}
+                  onClick={() => !(plan.id === 'starter' && isCurrentPlan) && handleUpgrade(plan.id)}
+                  disabled={plan.id === 'starter' && isCurrentPlan}
                   className={`w-full py-4 rounded-xl font-bold transition-all mt-6 ${
-                    isCurrentPlan
-                      ? 'bg-emerald-600 text-white cursor-default'
-                      : plan.id === 'starter'
+                    plan.id === 'starter' && isCurrentPlan
                       ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                       : plan.id === 'business'
                       ? 'bg-amber-600 hover:bg-amber-500 text-white'
@@ -297,33 +362,33 @@ export default function PricingPage() {
                       : 'bg-slate-800 hover:bg-slate-700 text-white'
                   }`}
                 >
-                  {isCurrentPlan ? t('pricing_current') : plan.id === 'starter' ? t('pricing_included') : t('pricing_buy')}
+                  {plan.id === 'starter' && isCurrentPlan ? t('pricing_included') : isCurrentPlan ? t('pricing_buy_again') : t('pricing_buy')}
                 </button>
               </div>
             );
           })}
         </div>
 
-        {/* Slot Extra */}
+        {/* Ricarica Extra (crediti Vision) */}
         {userId && (
-          <div className="mt-12 p-8 bg-gradient-to-br from-emerald-950/30 to-teal-950/30 rounded-2xl border border-emerald-800/50">
+          <div className="mt-12 p-8 bg-gradient-to-br from-fuchsia-950/30 to-indigo-950/30 rounded-2xl border border-fuchsia-800/50">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
               <div>
-                <h3 className="text-2xl font-bold text-emerald-400 mb-2">{t('pricing_extra_slots')}</h3>
+                <h3 className="text-2xl font-bold text-fuchsia-400 mb-2">⚡ {t('pricing_credit_topup_title')}</h3>
                 <p className="text-slate-400">
-                  {t('pricing_extra_slots_desc')}
+                  {t('pricing_credit_topup_desc')}
                 </p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <div className="text-3xl font-bold text-white">€15</div>
-                  <div className="text-sm text-slate-400">{t('pricing_per_slot')}</div>
+                  <div className="text-sm text-slate-400">{t('pricing_per_credit_topup')}</div>
                 </div>
                 <button
-                  onClick={() => handleUpgrade('extra_slot', 1)}
-                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all"
+                  onClick={() => handleUpgrade('credit_topup', 1)}
+                  className="px-6 py-3 bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold rounded-xl transition-all"
                 >
-                  {t('pricing_add_slot')}
+                  {t('pricing_add_credits')}
                 </button>
               </div>
             </div>
@@ -343,8 +408,8 @@ export default function PricingPage() {
               <p>{t('pricing_billing_monthly_desc')}</p>
             </div>
             <div>
-              <div className="font-semibold text-white mb-2">{t('pricing_billing_extra')}</div>
-              <p>{t('pricing_billing_extra_desc')}</p>
+              <div className="font-semibold text-white mb-2">{t('pricing_billing_credits')}</div>
+              <p>{t('pricing_billing_credits_desc')}</p>
             </div>
           </div>
         </div>

@@ -3,13 +3,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
 import DynamicTable from '@/components/DynamicTable';
 import { useDynamicData } from '@/hooks/useDynamicData';
 import type { TableDef, ThemeColors } from '@/components/DynamicTable';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ interface AppInfo {
   id: string;
   name: string;
   tenant_id: string;
-  slug: string;
+  slug: string | null;
 }
 
 // ─── Theme Helper ─────────────────────────────────────────────────────────────
@@ -128,8 +129,11 @@ export default function DynamicPage() {
             .insert({
               app_id: appData.id,
               tenant_id: appData.tenant_id,
-              schema,
-              ui_config: uiConfig,
+              // schema/ui_config sono colonne jsonb: il valore applicativo è
+              // già JSON-serializzabile a runtime ma TableDef non implementa
+              // una index signature, quindi non soddisfa strutturalmente Json.
+              schema: schema as unknown as Database['public']['Tables']['app_definitions']['Insert']['schema'],
+              ui_config: uiConfig as unknown as Database['public']['Tables']['app_definitions']['Insert']['ui_config'],
               is_published: true,
             })
             .select()
@@ -141,15 +145,15 @@ export default function DynamicPage() {
             return;
           }
 
-          setAppDefinition(newDefinition as AppDefinition);
+          setAppDefinition(newDefinition as unknown as AppDefinition);
         } else {
-          setAppDefinition(definitionData as AppDefinition);
+          setAppDefinition(definitionData as unknown as AppDefinition);
         }
 
         // Auto-select first table if available
         const appConfigForTables = appData.config as Record<string, unknown>;
         const blueprintForTables = appConfigForTables?.blueprint as Record<string, unknown> | undefined;
-        const tablesFromDef = definitionData?.schema?.tables || [];
+        const tablesFromDef = (definitionData?.schema as { tables?: TableDef[] } | undefined)?.tables || [];
         const tablesFromConfig = (appConfigForTables?.schema as { tables?: TableDef[] } | undefined)?.tables || 
                                   (blueprintForTables?.schema as { tables?: TableDef[] } | undefined)?.tables || 
                                   [];

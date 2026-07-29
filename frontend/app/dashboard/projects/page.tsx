@@ -4,18 +4,20 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { Trash2, Plus, Loader2, AlertCircle, ExternalLink, Settings, Clock } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 interface App {
   id: string;
   name: string;
-  slug: string;
+  slug: string | null;
   trial_ends_at: string | null;
   is_active: boolean;
-  created_at: string;
+  created_at: string | null;
   client_active: boolean;
   expires_at: string | null;
+  production_url: string | null;
+  app_type: string | null;
 }
 
 export default function ProjectsPage() {
@@ -53,14 +55,19 @@ export default function ProjectsPage() {
       console.log('[Projects] User:', user.id);
 
       // Get user's tenant
-      const { data: memberships, error: membershipError } = await supabaseBrowser
-        .from('tenant_members')
+      // Cast mirato: frontend/types/database.ts non copre tenant_members,
+      // quindi il client tipizzato risolverebbe qui a `never` come altrove
+      // nel progetto (vedi audit tsc).
+      const { data: membershipsRaw, error: membershipError } = await supabaseBrowser
+        .from('tenant_members' as any)
         .select('tenant_id')
         .eq('user_id', user.id);
+      const memberships = membershipsRaw as { tenant_id: string }[] | null;
 
       if (membershipError) {
         console.error('[Projects] membership error:', membershipError);
-        setError(t('projects_error_membership') + membershipError.message);
+        const errorMessage = membershipError.message || membershipError.details || JSON.stringify(membershipError);
+        setError(t('projects_error_membership') + errorMessage);
         setLoading(false);
         return;
       }
@@ -80,7 +87,7 @@ export default function ProjectsPage() {
       // Get apps for this tenant
       const { data: appsData, error: appsError } = await supabaseBrowser
         .from('apps')
-        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at')
+        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at, production_url, app_type')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 
@@ -136,7 +143,9 @@ export default function ProjectsPage() {
   };
 
   const getStatusBadge = (app: App) => {
-    if (app.expires_at && new Date(app.expires_at) < new Date()) {
+    // Controlla sia expires_at che trial_ends_at per la scadenza
+    const expiryDate = app.expires_at || app.trial_ends_at;
+    if (expiryDate && new Date(expiryDate) < new Date()) {
       return <span style={{ background: '#ef444420', color: '#ef4444', padding: '4px 10px', borderRadius: '9999px', fontSize: '12px', fontWeight: 600 }}>{t('projects_status_expired')}</span>;
     }
     if (app.client_active === false) {
@@ -201,20 +210,6 @@ export default function ProjectsPage() {
           <div style={{ textAlign: 'center', padding: '60px 20px', background: '#1e293b', borderRadius: '16px', border: '1px solid #334155' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>📱</div>
             <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>{t('projects_no_projects')}</h2>
-            <p style={{ color: '#94a3b8', fontSize: '15px', marginBottom: '24px' }}>{t('projects_no_projects_desc')}</p>
-            <Link
-              href="/dashboard/generator"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                padding: '12px 24px', borderRadius: '12px', border: 'none',
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                color: '#fff', fontSize: '15px', fontWeight: 600,
-                cursor: 'pointer', textDecoration: 'none',
-              }}
-            >
-              <Plus size={18} />
-              {t('projects_create_first')}
-            </Link>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
@@ -253,8 +248,21 @@ export default function ProjectsPage() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '12px' }}>
-                  <Link
-                    href={`/a/${app.slug}`}
+                  <a
+                    href={
+                      // Per Comandi AI ignora sempre production_url: è una
+                      // colonna generica condivisa con le app a schema
+                      // generato (dove può legittimamente essere un dominio
+                      // esterno) e per righe Comandi risalenti a
+                      // provisioning precedenti può non essere allineata
+                      // alla landing pubblica reale — "Apri" deve portare
+                      // sempre e solo lì, mai altrove.
+                      app.app_type === 'comandi_ai'
+                        ? (app.slug ? `/a/${app.slug}` : '#')
+                        : app.production_url || (app.slug ? `/a/${app.slug}` : '#')
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
                     style={{
                       flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                       padding: '10px 16px', borderRadius: '10px', border: 'none',
@@ -264,18 +272,7 @@ export default function ProjectsPage() {
                   >
                     <ExternalLink size={16} />
                     {t('projects_open')}
-                  </Link>
-                  <Link
-                    href={`/dashboard/projects/${app.id}`}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '10px 16px', borderRadius: '10px', border: '1px solid #334155',
-                      background: 'transparent', color: '#94a3b8', fontSize: '14px', fontWeight: 600,
-                      cursor: 'pointer', textDecoration: 'none',
-                    }}
-                  >
-                    <Settings size={16} />
-                  </Link>
+                  </a>
                   <button
                     onClick={() => setDeleteModal({ open: true, appId: app.id, appName: app.name })}
                     style={{

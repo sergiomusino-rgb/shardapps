@@ -1,8 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import { useTheme } from '@/src/lib/ThemeContext';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft, Download, FileText, Receipt } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import { getTenantColors } from '../tenantBranding';
+import { PDF_LAYOUTS, downloadInvoicePdf, type PdfLayoutMeta, type PdfInvoiceInput } from '../pdfTemplates';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
@@ -16,42 +22,55 @@ interface Fattura {
   cliente_piva?: string;
   cliente_indirizzo?: string;
   stato: string;
+  tipo_documento?: 'fattura' | 'ricevuta';
   metodo_pagamento?: string;
-  created_at: string;
-  updated_at: string;
 }
 
 interface RigaFattura {
   id: string;
-  fattura_id: string;
   descrizione: string;
   quantita: number;
   prezzo_unitario: number;
   aliquota_iva: number;
 }
 
+interface DatiAzienda {
+  ragioneSociale: string;
+  piva?: string;
+  indirizzo?: string;
+  telefono?: string;
+  logoUrl?: string;
+}
+
+const STATO_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
+  bozza: 'neutral',
+  emessa: 'success',
+  pagata: 'primary',
+  annullata: 'danger',
+};
+
 export default function FatturaViewPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params.slug as string;
   const fatturaId = params.id as string;
-  
-  // Usa il tema dal context globale
-  const { theme } = useTheme();
+
+  const [{ colors: tenantColors, style: tenantStyle }] = useState(() => getTenantColors(slug));
 
   const [fattura, setFattura] = useState<Fattura | null>(null);
   const [righe, setRighe] = useState<RigaFattura[]>([]);
+  const [azienda, setAzienda] = useState<DatiAzienda | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedLayout, setSelectedLayout] = useState<PdfLayoutMeta['key']>('classico');
 
-  // Recupera la password dalla sessione
-  const getPassword = (): string | null => {
+  const getSessionData = (): { appId: string; password: string } | null => {
     if (typeof window === 'undefined') return null;
-    const sessionKey = `app_session_${slug}`;
-    const raw = localStorage.getItem(sessionKey);
+    const raw = localStorage.getItem(`app_session_${slug}`);
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
-      return parsed.password || null;
+      return { appId: parsed.appInfo?.id, password: parsed.password };
     } catch {
       return null;
     }
@@ -62,259 +81,214 @@ export default function FatturaViewPage() {
       setLoading(true);
       setError(null);
 
-      const password = getPassword();
-      if (!password) {
+      const session = getSessionData();
+      if (!session?.password) {
         setError('Password mancante. Effettua nuovamente il login.');
         setLoading(false);
         return;
       }
 
       try {
-        console.log('Chiamando API:', `${BACKEND_URL}/api/invoices/${fatturaId}`);
         const res = await fetch(`${BACKEND_URL}/api/invoices/${fatturaId}`, {
-          headers: {
-            Authorization: `Bearer ${password}`,
-          },
+          headers: { Authorization: `Bearer ${session.password}` },
         });
-
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || `Errore ${res.status}`);
         }
-
         const data = await res.json();
         setFattura(data.fattura);
         setRighe(data.righe || []);
       } catch (err) {
         console.error('Errore caricamento fattura:', err);
         setError(err instanceof Error ? err.message : 'Errore nel caricamento della fattura');
-      } finally {
         setLoading(false);
+        return;
       }
+
+      // Dati aziendali reali del tenant (mai più un nome fisso hardcoded):
+      // stessa tabella dinamica "Dati Azienda" usata nel resto dell'app.
+      if (session.appId) {
+        try {
+          const res = await fetch(`/api/client/apps/${session.appId}/records?table=dati_aziendali`, {
+            headers: { Authorization: `Bearer ${session.password}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const recs: Array<{ data?: Record<string, string> } & Record<string, string>> = Array.isArray(data)
+              ? data
+              : data.records || data.data || [];
+            const record = recs[0]?.data || recs[0];
+            if (record) {
+              setAzienda({
+                ragioneSociale: record.ragione_sociale || 'La tua azienda',
+                piva: record.partita_iva,
+                indirizzo: record.indirizzo,
+                telefono: record.telefono,
+                logoUrl: record.logo,
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Errore caricamento dati azienda:', err);
+        }
+      }
+
+      setLoading(false);
     };
 
-    if (fatturaId) {
-      loadFattura();
-    }
+    if (fatturaId) loadFattura();
   }, [slug, fatturaId]);
 
-  // Calcoli totali
   const calcolaTotali = () => {
     let imponibile = 0;
     let totaleIva = 0;
-
     righe.forEach((riga) => {
       const totaleRiga = riga.quantita * riga.prezzo_unitario;
       imponibile += totaleRiga;
       totaleIva += totaleRiga * (riga.aliquota_iva / 100);
     });
-
-    const totaleGenerale = imponibile + totaleIva;
-
-    return { imponibile, totaleIva, totaleGenerale };
+    return { imponibile, totaleIva, totaleGenerale: imponibile + totaleIva };
   };
 
   const { imponibile, totaleIva, totaleGenerale } = calcolaTotali();
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('it-IT');
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(amount);
 
-  // Colori in base al tema
-  const isDark = theme === 'dark';
-  const bgColor = isDark ? 'bg-slate-950' : 'bg-slate-100';
-  const cardBg = isDark ? 'bg-slate-900' : 'bg-white';
-  const textPrimary = isDark ? 'text-white' : 'text-slate-900';
-  const textSecondary = isDark ? 'text-slate-400' : 'text-slate-600';
-  const border = isDark ? 'border-slate-800' : 'border-slate-200';
+  const handleDownload = () => {
+    if (!fattura) return;
+    const input: PdfInvoiceInput = {
+      tipoDocumento: fattura.tipo_documento === 'ricevuta' ? 'ricevuta' : 'fattura',
+      numero: fattura.numero_fattura,
+      anno: fattura.anno,
+      dataEmissione: fattura.data_emissione,
+      stato: fattura.stato,
+      cliente: { nome: fattura.cliente_nome, piva: fattura.cliente_piva, indirizzo: fattura.cliente_indirizzo },
+      righe: righe.map((r) => ({ descrizione: r.descrizione, quantita: r.quantita, prezzoUnitario: r.prezzo_unitario, aliquotaIva: r.aliquota_iva })),
+      azienda: azienda || { ragioneSociale: 'La tua azienda' },
+      primaryColorHex: tenantColors.primary,
+    };
+    downloadInvoicePdf(selectedLayout, input);
+  };
 
   if (loading) {
     return (
-      <div className={`min-h-screen ${bgColor} flex items-center justify-center`}>
-        <div className={textSecondary}>Caricamento fattura...</div>
+      <div className="flex min-h-screen items-center justify-center bg-tenant-bg" style={tenantStyle}>
+        <div className="text-tenant-text-secondary">Caricamento documento...</div>
       </div>
     );
   }
 
   if (error || !fattura) {
     return (
-      <div className={`min-h-screen ${bgColor} flex items-center justify-center`}>
-        <div className="text-center" style={{ color: '#ef4444' }}>
-          <h2 className="text-xl font-semibold mb-2">Errore</h2>
-          <p className={`text-sm ${textSecondary}`}>{error || 'Fattura non trovata'}</p>
+      <div className="flex min-h-screen items-center justify-center bg-tenant-bg" style={tenantStyle}>
+        <div className="text-center">
+          <h2 className="mb-2 text-xl font-semibold text-tenant-danger">Errore</h2>
+          <p className="text-sm text-tenant-text-secondary">{error || 'Documento non trovato'}</p>
         </div>
       </div>
     );
   }
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('it-IT');
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('it-IT', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  };
+  const isRicevuta = fattura.tipo_documento === 'ricevuta';
 
   return (
-    <div className={`min-h-screen ${bgColor}`}>
-      {/* Bottone Stampa - Nascosto in stampa */}
-      <div className="no-print fixed top-4 right-4 z-50">
+    <div className="min-h-screen bg-tenant-bg py-8" style={tenantStyle}>
+      <div className="mx-auto max-w-3xl px-4">
         <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg shadow-lg hover:bg-blue-700 transition-colors"
-          style={{ fontSize: '14px', fontWeight: 600 }}
+          type="button"
+          onClick={() => router.push(`/a/${slug}/fatture`)}
+          className="mb-4 flex items-center gap-1.5 text-sm text-tenant-text-secondary transition-colors hover:text-tenant-text"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2" />
-            <rect x="6" y="14" width="12" height="8" />
-          </svg>
-          Stampa o Salva PDF
+          <ArrowLeft size={15} /> Torna ai documenti
         </button>
-      </div>
 
-      {/* Contenitore Fattura A4 */}
-      <div className="print:p-0 print:shadow-none mx-auto mt-8 mb-8 shadow-lg" style={{ maxWidth: '210mm', minHeight: '297mm', padding: '20mm', background: isDark ? '#1e293b' : '#ffffff' }}>
-        {/* Intestazione Azienda Emettitrice */}
-        <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-blue-600">
-          <div className="flex items-start gap-4">
-            {/* Logo Azienda */}
-            <div className="w-20 h-20 bg-blue-600 rounded-lg flex items-center justify-center text-white text-2xl font-bold">
-              ZX
-            </div>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {isRicevuta ? <Receipt size={26} className="text-tenant-primary" /> : <FileText size={26} className="text-tenant-primary" />}
             <div>
-              <h2 className={`text-xl font-bold ${textPrimary} mb-1`}>ZeusX Srl</h2>
-              <div className={`text-sm ${textSecondary}`}>
-                <p>P.IVA: 01234567890</p>
-                <p>Via Roma 1, 00100 Roma (RM)</p>
-                <p>Tel: +39 06 1234567</p>
-                <p>Email: info@zeusx.it</p>
+              <h1 className="m-0 text-2xl font-bold text-tenant-text">
+                {isRicevuta ? 'Ricevuta' : 'Fattura'} {fattura.numero_fattura}/{fattura.anno}
+              </h1>
+              <p className="mt-0.5 text-sm text-tenant-text-secondary">{formatDate(fattura.data_emissione)}</p>
+            </div>
+          </div>
+          <Badge variant={STATO_VARIANT[fattura.stato] || 'neutral'}>{fattura.stato.toUpperCase()}</Badge>
+        </div>
+
+        <Card className="mb-6">
+          <CardHeader><CardTitle>Cliente</CardTitle></CardHeader>
+          <CardContent className="pt-0 text-sm text-tenant-text-secondary">
+            <p className="m-0 font-medium text-tenant-text">{fattura.cliente_nome}</p>
+            {fattura.cliente_piva && <p className="m-0 mt-1">P.IVA/CF: {fattura.cliente_piva}</p>}
+            {fattura.cliente_indirizzo && <p className="m-0 mt-1">{fattura.cliente_indirizzo}</p>}
+          </CardContent>
+        </Card>
+
+        <Card className="mb-6 overflow-hidden">
+          <CardHeader><CardTitle>Righe</CardTitle></CardHeader>
+          <CardContent className="pt-0">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-tenant-card-alt">
+                    <th className="border-b border-tenant-border px-3 py-2 text-left text-xs font-semibold uppercase text-tenant-text-secondary">Descrizione</th>
+                    <th className="border-b border-tenant-border px-3 py-2 text-right text-xs font-semibold uppercase text-tenant-text-secondary">Qtà</th>
+                    <th className="border-b border-tenant-border px-3 py-2 text-right text-xs font-semibold uppercase text-tenant-text-secondary">Prezzo</th>
+                    <th className="border-b border-tenant-border px-3 py-2 text-right text-xs font-semibold uppercase text-tenant-text-secondary">IVA</th>
+                    <th className="border-b border-tenant-border px-3 py-2 text-right text-xs font-semibold uppercase text-tenant-text-secondary">Totale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {righe.map((riga) => (
+                    <tr key={riga.id} className="border-b border-tenant-border">
+                      <td className="px-3 py-2 text-tenant-text">{riga.descrizione}</td>
+                      <td className="px-3 py-2 text-right text-tenant-text">{riga.quantita}</td>
+                      <td className="px-3 py-2 text-right text-tenant-text">{formatCurrency(riga.prezzo_unitario)}</td>
+                      <td className="px-3 py-2 text-right text-tenant-text">{riga.aliquota_iva}%</td>
+                      <td className="px-3 py-2 text-right font-medium text-tenant-text">{formatCurrency(riga.quantita * riga.prezzo_unitario)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <div className="w-64 text-sm">
+                <div className="flex justify-between py-1 text-tenant-text-secondary"><span>Imponibile</span><span>{formatCurrency(imponibile)}</span></div>
+                <div className="flex justify-between py-1 text-tenant-text-secondary"><span>IVA</span><span>{formatCurrency(totaleIva)}</span></div>
+                <div className="flex justify-between border-t border-tenant-border pt-2 text-base font-bold text-tenant-text"><span>Totale</span><span>{formatCurrency(totaleGenerale)}</span></div>
               </div>
             </div>
-          </div>
-          <div className="text-right">
-            <h1 className="text-3xl font-bold text-blue-600 mb-2">FATTURA</h1>
-            <div className={`text-sm ${textSecondary}`}>
-              <p><strong>Numero:</strong> {fattura.numero_fattura}/{fattura.anno}</p>
-              <p><strong>Stato:</strong> {fattura.stato.toUpperCase()}</p>
-              {fattura.metodo_pagamento && (
-                <p><strong>Pagamento:</strong> {fattura.metodo_pagamento}</p>
-              )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Scarica PDF</CardTitle></CardHeader>
+          <CardContent className="pt-0">
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {PDF_LAYOUTS.map((layout) => (
+                <button
+                  key={layout.key}
+                  type="button"
+                  onClick={() => setSelectedLayout(layout.key)}
+                  className={cn(
+                    'rounded-xl border-2 p-4 text-left transition-all',
+                    selectedLayout === layout.key ? 'border-tenant-primary bg-tenant-primary/10' : 'border-tenant-border'
+                  )}
+                >
+                  <div className="text-sm font-semibold text-tenant-text">{layout.label}</div>
+                  <div className="mt-1 text-xs text-tenant-text-secondary">{layout.description}</div>
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
-
-        {/* Dati Cliente */}
-        <div className={`mb-8 p-4 ${isDark ? 'bg-slate-800' : 'bg-gray-50'} rounded`}>
-          <h2 className={`text-lg font-semibold ${textPrimary} mb-3`}>Dati Cliente</h2>
-          <div className={`text-sm ${textSecondary}`}>
-            <p className="font-medium">{fattura.cliente_nome}</p>
-            {fattura.cliente_piva && <p>P.IVA: {fattura.cliente_piva}</p>}
-            {fattura.cliente_indirizzo && <p>{fattura.cliente_indirizzo}</p>}
-          </div>
-        </div>
-
-        {/* Tabella Righe */}
-        <div className="mb-8">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className={isDark ? 'bg-slate-800' : 'bg-gray-100'}>
-                <th className={`border ${border} px-4 py-2 text-left text-sm font-semibold ${textSecondary}`} style={{ width: '40%' }}>
-                  Descrizione
-                </th>
-                <th className={`border ${border} px-4 py-2 text-right text-sm font-semibold ${textSecondary}`} style={{ width: '15%' }}>
-                  Quantità
-                </th>
-                <th className={`border ${border} px-4 py-2 text-right text-sm font-semibold ${textSecondary}`} style={{ width: '20%' }}>
-                  Prezzo Unitario
-                </th>
-                <th className={`border ${border} px-4 py-2 text-right text-sm font-semibold ${textSecondary}`} style={{ width: '15%' }}>
-                  IVA %
-                </th>
-                <th className={`border ${border} px-4 py-2 text-right text-sm font-semibold ${textSecondary}`} style={{ width: '20%' }}>
-                  Totale
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {righe.map((riga, index) => {
-                const totaleRiga = riga.quantita * riga.prezzo_unitario;
-                return (
-                  <tr key={riga.id} className={index % 2 === 0 ? (isDark ? 'bg-slate-900' : 'bg-white') : (isDark ? 'bg-slate-800' : 'bg-gray-50')}>
-                    <td className={`border ${border} px-4 py-3 text-sm ${textPrimary}`}>
-                      {riga.descrizione}
-                    </td>
-                    <td className={`border ${border} px-4 py-3 text-sm text-right ${textPrimary}`}>
-                      {riga.quantita}
-                    </td>
-                    <td className={`border ${border} px-4 py-3 text-sm text-right ${textPrimary}`}>
-                      {formatCurrency(riga.prezzo_unitario)}
-                    </td>
-                    <td className={`border ${border} px-4 py-3 text-sm text-right ${textPrimary}`}>
-                      {riga.aliquota_iva}%
-                    </td>
-                    <td className={`border ${border} px-4 py-3 text-sm text-right font-medium ${textPrimary}`}>
-                      {formatCurrency(totaleRiga)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Riepilogo Totali */}
-        <div className="flex justify-end">
-          <div className="w-80">
-            <div className={`flex justify-between py-2 text-sm ${textSecondary}`}>
-              <span>Imponibile:</span>
-              <span className="font-medium">{formatCurrency(imponibile)}</span>
-            </div>
-            <div className={`flex justify-between py-2 text-sm ${textSecondary}`}>
-              <span>IVA:</span>
-              <span className="font-medium">{formatCurrency(totaleIva)}</span>
-            </div>
-            <div className={`flex justify-between py-3 text-lg font-bold ${textPrimary} border-t-2 ${border}`}>
-              <span>TOTALE:</span>
-              <span>{formatCurrency(totaleGenerale)}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Data Emissione - In basso */}
-        <div className="mb-4 text-right">
-          <span className={`text-sm ${textSecondary}`}>Data Emissione: </span>
-          <span className={`text-sm font-medium ${textPrimary}`}>{formatDate(fattura.data_emissione)}</span>
-        </div>
-
-        {/* Footer */}
-        <div className={`mt-12 pt-6 border-t ${border} text-center text-xs ${textSecondary}`}>
-          <p>Documento generato da ZeusX - by MUSINO</p>
-        </div>
+            <Button size="lg" onClick={handleDownload} className="w-full">
+              <Download size={18} /> Scarica PDF — {PDF_LAYOUTS.find((l) => l.key === selectedLayout)?.label}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Stili per la stampa */}
-      <style jsx global>{`
-        @media print {
-          body {
-            margin: 0;
-            padding: 0;
-            background: white;
-          }
-          .no-print {
-            display: none !important;
-          }
-          .print\\:p-0 {
-            padding: 0 !important;
-          }
-          .print\\:shadow-none {
-            box-shadow: none !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
