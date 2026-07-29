@@ -182,6 +182,20 @@ export async function POST(req: NextRequest) {
     // economico dichiarando però un planId più costoso nei metadata.
     const CREDIT_TOPUP_PRICE_ID = process.env.NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID || 'price_extra_slot_15';
     const isCreditTopup = planId === 'credit_topup';
+
+    // Modello cumulativo: Pro e Business restano acquistabili a qualunque
+    // piano tu abbia già (si sommano sempre agli slot esistenti). Solo
+    // Starter va bloccato una volta passati a un piano a pagamento — è
+    // pensato come piano d'ingresso, non da ricomprare. Controllo lato
+    // server perché il disabled del bottone in pricing/page.tsx è solo UX,
+    // non una barriera. Stessa regola in pricing/page.tsx.
+    if (planId === 'starter' && tenant.plan !== 'free') {
+      return NextResponse.json(
+        { error: `Hai già il piano ${tenant.plan}: il piano Starter non è più acquistabile. Usa la Ricarica Extra o passa a Pro/Business.` },
+        { status: 400 }
+      );
+    }
+
     const effectivePriceId = isCreditTopup ? CREDIT_TOPUP_PRICE_ID : getSetupPriceId(planId);
     const effectiveQuantity = isCreditTopup ? (quantity || 1) : 1;
 

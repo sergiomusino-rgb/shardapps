@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react';
 import { supabaseBrowser as supabase } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
+// Modello cumulativo: comprare Pro o Business si somma sempre agli slot
+// esistenti, quindi restano acquistabili a qualunque piano tu sia già (un
+// Business può ricomprare Pro per altri slot più economici). Solo Starter va
+// bloccato una volta passati a un piano a pagamento — è pensato come piano
+// d'ingresso, non da ricomprare — per quello resta solo la Ricarica Extra.
+// Stessa regola lato server in create-checkout-session/route.ts.
+
 export default function PricingPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [currentPlan, setCurrentPlan] = useState<string>('free');
@@ -285,6 +292,8 @@ export default function PricingPage() {
         <div className="grid md:grid-cols-3 gap-8 items-stretch">
           {plans.map((plan) => {
             const isCurrentPlan = currentPlan === plan.id;
+            const isStarterBlocked = plan.id === 'starter' && currentPlan !== 'free';
+            const isDisabled = isStarterBlocked;
             return (
               <div 
                 key={plan.id}
@@ -350,10 +359,10 @@ export default function PricingPage() {
                 </ul>
 
                 <button
-                  onClick={() => !(plan.id === 'starter' && isCurrentPlan) && handleUpgrade(plan.id)}
-                  disabled={plan.id === 'starter' && isCurrentPlan}
+                  onClick={() => !isDisabled && handleUpgrade(plan.id)}
+                  disabled={isDisabled}
                   className={`w-full py-4 rounded-xl font-bold transition-all mt-6 ${
-                    plan.id === 'starter' && isCurrentPlan
+                    isDisabled
                       ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                       : plan.id === 'business'
                       ? 'bg-amber-600 hover:bg-amber-500 text-white'
@@ -362,7 +371,7 @@ export default function PricingPage() {
                       : 'bg-slate-800 hover:bg-slate-700 text-white'
                   }`}
                 >
-                  {plan.id === 'starter' && isCurrentPlan ? t('pricing_included') : isCurrentPlan ? t('pricing_buy_again') : t('pricing_buy')}
+                  {(plan.id === 'starter' && isCurrentPlan) ? t('pricing_included') : isStarterBlocked ? t('pricing_lower_tier') : isCurrentPlan ? t('pricing_buy_again') : t('pricing_buy')}
                 </button>
               </div>
             );
