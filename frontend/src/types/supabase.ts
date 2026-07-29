@@ -1437,6 +1437,24 @@ export type Database = {
         }
         Relationships: []
       }
+      rate_limit_counters: {
+        Row: {
+          count: number
+          key: string
+          window_start: number
+        }
+        Insert: {
+          count?: number
+          key: string
+          window_start: number
+        }
+        Update: {
+          count?: number
+          key?: string
+          window_start?: number
+        }
+        Relationships: []
+      }
       righe_fattura: {
         Row: {
           aliquota_iva: number
@@ -1755,6 +1773,17 @@ export type Database = {
           new_checkout_url: string
           original_reseller_id: string
           success: boolean
+        }[]
+      }
+      check_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_requests: number
+          p_window_seconds: number
+        }
+        Returns: {
+          allowed: boolean
+          remaining: number
         }[]
       }
       count_tenant_apps: { Args: { p_tenant_id: string }; Returns: number }

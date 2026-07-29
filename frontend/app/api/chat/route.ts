@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { callAiRouter, AiRouterError, AiRouterConfigError, type AiRouterMessage } from '@/src/lib/ai-router';
+import { checkRateLimit } from '@/src/lib/rate-limit';
 
 const SYSTEM_PROMPT = `Sei ZeusX AI, un assistente AI specializzato nella piattaforma ZeusX.
 Sei preparato, utile, creativo e conciso. Puoi aiutare gli utenti a:
@@ -34,6 +35,14 @@ export async function POST(request: NextRequest) {
     const userId = await requireAuth(request);
     if (!userId) {
       return NextResponse.json({ error: 'Autenticazione richiesta' }, { status: 401 });
+    }
+
+    // 15 richieste/minuto per utente: l'unica regola disponibile sul piano
+    // Vercel Firewall è già assegnata a /api/creator/generate (vedi audit
+    // pre-lancio), quindi questa route si limita a livello applicativo.
+    const { allowed } = await checkRateLimit(`chat:${userId}`, 60, 15);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Troppe richieste, riprova tra poco.' }, { status: 429 });
     }
 
     const body = await request.json();

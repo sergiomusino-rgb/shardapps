@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 
 // ─── POST /api/apps/[id]/subscribe-push ────────────────────────────────────
 // Rotta PUBBLICA (nessuna autenticazione): chi si iscrive è un visitatore
@@ -35,6 +36,14 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+
+    // 10 richieste/minuto per IP: rotta pubblica senza autenticazione, quindi
+    // per userId non è possibile — l'IP è l'unico identificatore disponibile.
+    const { allowed } = await checkRateLimit(`subscribe-push:${getClientIp(req)}`, 60, 10);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Troppe richieste, riprova tra poco.' }, { status: 429 });
+    }
+
     const body = await req.json().catch(() => null);
     const subscription = body?.subscription;
 
