@@ -26,12 +26,18 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // In production, controlla la whitelist
+    // In production, controlla la whitelist. Passare un Error al callback
+    // (invece di `false`) fa propagare l'errore alla error-handling chain di
+    // Express: senza un handler dedicato per gli errori CORS, QUALUNQUE
+    // richiesta con un Origin non whitelisted (praticamente ogni chiamata
+    // da browser) finiva con un 500 generico invece di un rifiuto CORS
+    // pulito — mascherando il vero problema (whitelist non aggiornata) con
+    // un errore che sembrava un crash lato server.
     if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.log(`[CORS] Origin bloccato: ${origin}`);
-      callback(new Error(`Origin ${origin} non autorizzato`));
+      callback(null, false);
     }
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
