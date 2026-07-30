@@ -1,4 +1,4 @@
-Terms and Conditions
+Termini e Condizioni
 
 Ultimo aggiornamento: 12 Luglio 2026
 
@@ -28,9 +28,12 @@ L'accesso e l'utilizzo del Servizio sono condizionati dall'accettazione e dal ri
 
 Accedendo o utilizzando il Servizio, l'Utente accetta di essere vincolato dai presenti Termini e Condizioni. Se l'Utente non concorda con una qualsiasi parte dei presenti Termini e Condizioni, non potrà accedere al Servizio.
 
-L'Utente dichiara di avere un'età superiore ai 18 anni. La Società non consente l'utilizzo del Servizio ai minori di 18 anni.
+Il Servizio è rivolto esclusivamente a titolari di attività, professionisti e imprese. L'Utente dichiara di avere un'età pari o superiore a 18 anni e di agire nell'ambito della propria attività professionale o imprenditoriale. La Società non consente l'utilizzo del Servizio ai minori di 18 anni.
 
 L'accesso e l'utilizzo del Servizio sono inoltre subordinati all'accettazione della Nostra Informativa sulla Privacy (Privacy Policy). Si prega di leggere attentamente la Nostra Informativa sulla Privacy prima di utilizzare il Nostro Servizio.
+
+Infrastruttura Tecnologica
+Il Servizio si avvale di fornitori tecnologici terzi leader di settore per garantire affidabilità e sicurezza: Stripe, Inc. per l'elaborazione dei pagamenti, Supabase per il database e l'autenticazione, e Vercel e Render per l'hosting e l'infrastruttura cloud.
 
 Account Utente e Contenuti dell'Utente
 
@@ -44,15 +47,20 @@ Il Nostro Servizio consente all'Utente di inserire, archiviare, elaborare e gene
 
 Tuttavia, caricando o elaborando contenuti tramite il Servizio, l'Utente concede a Noi una licenza tecnica, mondiale, non esclusiva e royalty-free per ospitare, archiviare ed elaborare tali contenuti al solo scopo di operare, erogare e mantenere le funzionalità della piattaforma a favore dell'Utente stesso.
 
+Contenuti Generati tramite Intelligenza Artificiale e Manleva
+Il Servizio consente di generare gestionali, testi, codice, dati e altri contenuti mediante sistemi di intelligenza artificiale ("Contenuti Generati da AI"). L'Utente riconosce ed accetta che i Contenuti Generati da AI possono risultare incompleti, imprecisi o non conformi a specifiche normative di settore, e che è responsabilità esclusiva dell'Utente verificarne l'idoneità, l'accuratezza e la conformità legale prima di ogni utilizzo professionale o commerciale.
+
+In quanto Servizio rivolto esclusivamente a titolari di attività, professionisti e imprese (rapporto B2B), l'Utente si impegna a manlevare e tenere indenne la Società, i suoi amministratori, dipendenti e fornitori da qualsiasi pretesa, responsabilità, danno, perdita o costo (comprese le spese legali ragionevoli) derivanti da o connessi a: (i) l'uso, la distribuzione o la commercializzazione dei Contenuti Generati da AI da parte dell'Utente o dei suoi clienti finali; (ii) i dati inseriti, elaborati o generati dall'Utente tramite il Servizio; (iii) la violazione da parte dell'Utente di leggi, regolamenti o diritti di terzi in relazione a tali contenuti o dati.
+
 Abbonamenti, Fatturazione e Termini Commerciali
 
-Merchant of Record
-Tutti i piani di abbonamento, i livelli commerciali e le transazioni finanziarie sono gestiti esclusivamente da Lemon Squeezy, LLC in qualità di nostro Merchant of Record. Lemon Squeezy è responsabile della fatturazione, della conformità dei circuiti di pagamento, della riscossione delle imposte, del ciclo di vita degli abbonamenti e della gestione dei rimborsi.
+Elaborazione dei Pagamenti
+Tutti i piani di abbonamento, i livelli commerciali e le transazioni finanziarie sono gestiti tramite Stripe, Inc., il nostro processore di pagamento. Stripe, Inc. è responsabile della fatturazione, della conformità dei circuiti di pagamento, della riscossione delle imposte, del ciclo di vita degli abbonamenti e della gestione dei rimborsi.
 
-Acquistando un piano di abbonamento a pagamento o un livello di prodotto per accedere a funzionalità specifiche di zeusx, l'Utente accetta di rispettare i termini di servizio e le condizioni di fatturazione di Lemon Squeezy in aggiunta ai presenti Termini. Le controversie finanziarie, gli errori di pagamento e le richieste relative alle fatture devono essere indirizzate al desk di assistenza clienti di Lemon Squeezy.
+Acquistando un piano di abbonamento a pagamento o un livello di prodotto per accedere a funzionalità specifiche di zeusx, l'Utente accetta di rispettare i termini di servizio e le condizioni di fatturazione di Stripe, Inc. in aggiunta ai presenti Termini. Le controversie finanziarie, gli errori di pagamento e le richieste relative alle fatture devono essere indirizzate al servizio di assistenza clienti di Stripe, Inc.
 
 Tariffe e Cancellazioni
-La Società si riserva il diritto di modificare le tariffe o i livelli di abbonamento in qualsiasi momento, con un preavviso minimo di 30 giorni agli utenti attivi. L'Utente può annullare il proprio piano di abbonamento in qualsiasi momento tramite il pannello delle impostazioni dell'account interno, nella sezione di fatturazione gestita da Lemon Squeezy. In caso di annullamento, l'accesso alle funzionalità premium continuerà fino al termine del ciclo di fatturazione corrente.
+La Società si riserva il diritto di modificare le tariffe o i livelli di abbonamento in qualsiasi momento, con un preavviso minimo di 30 giorni agli utenti attivi. L'Utente può annullare il proprio piano di abbonamento in qualsiasi momento tramite il pannello delle impostazioni dell'account interno, nella sezione di fatturazione gestita tramite Stripe, Inc. In caso di annullamento, l'accesso alle funzionalità premium continuerà fino al termine del ciclo di fatturazione corrente.
 
 Collegamenti ad Altri Siti Web
 Il Nostro Servizio può contenere collegamenti a siti web o servizi di terze parti che non sono di proprietà o sotto il controllo della Società.
@@ -93,7 +101,7 @@ Rinuncia
 Fatto salvo quanto qui previsto, il mancato esercizio di un diritto o la mancata richiesta di adempimento di un obbligo ai sensi dei presenti Termini non influirà sulla capacità di una parte di esercitare tale diritto o di richiedere tale adempimento in qualsiasi momento successivo.
 
 Interpretazione della Traduzione
-Questi Termini e Condizioni potrebbero essere stati tradotti se li abbiamo resi disponibili sul nostro Servizio. L'Utente accetta che il testo originale inglese prevarrà in caso di controversia.
+Questi Termini e Condizioni potrebbero essere stati tradotti se li abbiamo resi disponibili sul nostro Servizio. L'Utente accetta che il testo originale in italiano prevarrà in caso di controversia.
 
 Modifiche a Questi Termini e Condizioni
 Ci riserviamo il diritto, a Nostra esclusiva discrezione, di modificare o sostituire i presenti Termini in qualsiasi momento. Se una revisione è sostanziale, faremo ogni ragionevole sforzo per fornire un preavviso di almeno 30 giorni prima dell'entrata in vigore dei nuovi termini. Ciò che costituisce una modifica sostanziale sarà determinato a Nostra esclusiva discrezione.
@@ -102,4 +110,4 @@ Continuando ad accedere o a utilizzare il Nostro Servizio dopo l'entrata in vigo
 
 Contattaci
 Se hai domande su questi Termini e Condizioni, puoi contattarci:
-- Tramite email: support@zeusxapps.com
+- Tramite email: zeusxapps@gmail.com

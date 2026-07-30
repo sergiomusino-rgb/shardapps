@@ -28,6 +28,9 @@ By accessing or using the Service You agree to be bound by these Terms and Condi
 You represent that you are over the age of 18. The Company does not permit those under 18 to use the Service.
 Your access to and use of the Service is also subject to Our Privacy Policy. Please read Our Privacy Policy carefully before using Our Service.
 
+Technology Infrastructure
+The Service relies on leading third-party technology providers to ensure reliability and security: Stripe, Inc. for payment processing, Supabase for database and authentication, and Vercel and Render for hosting and cloud infrastructure.
+
 User Accounts and User Content
 
 Account Creation
@@ -38,14 +41,19 @@ User Content and Intellectual Property
 Our Service allows You to input, store, process, and generate digital content ("User Content"). You retain all of Your ownership rights in any User Content You submit or generate through the Service. The Company claims no intellectual property rights over the material or assets You provide to the Service.
 However, by uploading or processing content through the Service, You grant Us a technical, worldwide, non-exclusive, royalty-free license to host, store, and process that content solely for the purpose of operating, rendering, and maintaining the platform functionalities for You.
 
+AI-Generated Content and Indemnification
+The Service allows You to generate management software, text, code, data, and other content using artificial intelligence systems ("AI-Generated Content"). You acknowledge and agree that AI-Generated Content may be incomplete, inaccurate, or non-compliant with specific industry regulations, and that it is Your sole responsibility to verify its suitability, accuracy, and legal compliance before any professional or commercial use.
+
+As the Service is intended exclusively for business owners, professionals and companies (a B2B relationship), You agree to indemnify and hold harmless the Company, its officers, employees and suppliers from and against any claim, liability, damage, loss or expense (including reasonable legal fees) arising out of or related to: (i) Your, or Your end customers', use, distribution or commercialization of AI-Generated Content; (ii) data You input, process or generate through the Service; (iii) Your violation of any law, regulation or third-party right in connection with such content or data.
+
 Subscriptions, Billing, and Commercial Terms
 
-Merchant of Record
-All subscription plans, commercial tiers, and financial transactions are handled exclusively by Lemon Squeezy, LLC acting as our Merchant of Record. Lemon Squeezy is responsible for billing, payment card compliance, tax collection, subscription lifecycles, and processing refunds.
-By purchasing a paid subscription tier or product tier to access specific features of zeusx, You agree to comply with Lemon Squeezy's terms of service and billing conditions in addition to these Terms. Financial disputes, payment errors, and invoicing queries must be routed through Lemon Squeezy's customer desk.
+Payment Processing
+All subscription plans, commercial tiers, and financial transactions are handled through Stripe, Inc., our payment processor. Stripe, Inc. is responsible for billing, payment card compliance, tax collection, subscription lifecycles, and processing refunds.
+By purchasing a paid subscription tier or product tier to access specific features of zeusx, You agree to comply with Stripe's terms of service and billing conditions in addition to these Terms. Financial disputes, payment errors, and invoicing queries must be routed through Stripe's customer support.
 
 Fees and Cancellations
-The Company reserves the right to modify subscription fees or tiers at any time, with a minimum 30 days' notice to active users. You may cancel Your subscription tier at any time through Your internal account settings dashboard via the billing section powered by Lemon Squeezy. Upon cancellation, Your access to premium features will continue until the end of the current billing cycle.
+The Company reserves the right to modify subscription fees or tiers at any time, with a minimum 30 days' notice to active users. You may cancel Your subscription tier at any time through Your internal account settings dashboard via the billing section powered by Stripe. Upon cancellation, Your access to premium features will continue until the end of the current billing cycle.
 
 Links to Other Websites
 Our Service may contain links to third-party websites or services that are not owned or controlled by the Company.
@@ -91,4 +99,4 @@ By continuing to access or use Our Service after those revisions become effectiv
 
 Contact Us
 If you have any questions about these Terms and Conditions, You can contact us:
-- By email: support@zeusxapps.com
+- By email: zeusxapps@gmail.com

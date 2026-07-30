@@ -33,7 +33,8 @@ Données Personnelles
 Lors de l'utilisation de notre Service, nous pouvons vous demander de nous fournir certaines informations d'identification personnelle pouvant être utilisées pour vous contacter ou vous identifier. Les informations d'identification personnelle peuvent inclure, sans s'y limiter :
 - Adresse e-mail
 - Prénom et nom de famille
-- Données de facturation et adresse (gérées en toute sécurité par notre Merchant of Record, Lemon Squeezy)
+- Données de facturation et adresse (gérées en toute sécurité par notre prestataire de paiement, Stripe, Inc.)
+- Données d'Utilisation
 
 Données d'Utilisation
 Les Données d'Utilisation sont collectées automatiquement lors de l'utilisation du Service.
@@ -53,16 +54,31 @@ La Société peut utiliser les Données Personnelles aux fins suivantes :
 Prestataires de Services Tiers et Partage des Données
 Nous ne vendons ni ne cédons vos Données Personnelles à des tiers. Nous partageons les informations uniquement avec les fournisseurs d'infrastructure nécessaires pour la prestation du service :
 - Supabase : Utilisé pour le stockage sécurisé de la base de données des comptes utilisateurs et pour les services d'authentification protégée.
-- Lemon Squeezy : En tant que notre Merchant of Record, gère indépendamment et en toute sécurité toutes les transactions de paiement, les données de facturation et les conformités fiscales. La Société ne stocke pas les données des cartes de crédit ou de paiement sur ses serveurs.
+- Stripe, Inc. : En tant que notre prestataire de paiement, gère indépendamment et en toute sécurité toutes les transactions de paiement, les données de facturation et les conformités fiscales. La Société ne stocke pas les données des cartes de crédit ou de paiement sur ses serveurs.
+- Vercel et Render : Utilisés comme fournisseurs d'hébergement (hosting) et d'infrastructure cloud pour la fourniture du Service.
 
 Conservation des Données Personnelles
-La Société ne conservera vos Données Personnelles que pendant la durée nécessaire aux finalités énoncées dans la présente Politique de Confidentialité. Nous conserverons et utiliserons vos Données Personnelles dans la mesure nécessaire pour nous conformer à nos obligations légales, résoudre des litiges et faire respecter nos accords juridiques et nos politiques.
+La Société conservera vos Données Personnelles pendant la durée de la relation contractuelle et, par la suite, pendant les délais prévus par la loi applicable à des fins fiscales, comptables et de conformité aux obligations légales. Nous conserverons et utiliserons vos Données Personnelles dans la mesure nécessaire pour nous conformer à nos obligations légales, résoudre des litiges et faire respecter nos accords juridiques et nos politiques.
 
 Transfert des Données Personnelles
-Vos informations, y compris les Données Personnelles, sont traitées dans nos bureaux opérationnels et dans tout autre lieu où se trouvent les parties impliquées dans le traitement (comme les serveurs cloud de Supabase). Cela signifie que ces informations peuvent être transférées et stockées sur des ordinateurs situés en dehors de votre État, province, pays ou autre juridiction gouvernementale où les lois sur la protection des données peuvent différer de celles de votre juridiction. Votre consentement à la présente Politique de Confidentialité suivi de l'envoi de ces informations constitue votre accord quant à ce transfert.
+Vos informations, y compris les Données Personnelles, sont traitées dans nos bureaux opérationnels et dans tout autre lieu où se trouvent les parties impliquées dans le traitement (comme les serveurs cloud de Supabase, Stripe, Inc., Vercel et Render). Cela signifie que ces informations peuvent être transférées et stockées sur des ordinateurs situés en dehors de votre État, province, pays ou autre juridiction gouvernementale où les lois sur la protection des données peuvent différer de celles de votre juridiction. Votre consentement à la présente Politique de Confidentialité suivi de l'envoi de ces informations constitue votre accord quant à ce transfert.
+
+Vos Droits en vertu du RGPD
+La Société s'engage à respecter la confidentialité de vos Données Personnelles et à garantir l'exercice de vos droits. Si vous vous trouvez dans l'Union européenne, vous avez le droit, en vertu du RGPD, de :
+- Demander l'accès à vos Données Personnelles.
+- Demander la rectification des Données Personnelles que nous détenons.
+- Demander l'effacement (droit à l'oubli) de vos Données Personnelles.
+- Vous opposer au traitement de vos Données Personnelles.
+- Demander la portabilité de vos données.
+- Retirer votre consentement à tout moment.
+
+Vous pouvez exercer vos droits en nous contactant directement à l'adresse e-mail d'assistance indiquée ci-dessous.
+
+Confidentialité des Mineurs
+Le Service est destiné exclusivement aux chefs d'entreprise et professionnels majeurs, et réservé aux utilisateurs âgés d'au moins 18 ans. Nous ne collectons pas sciemment de données personnelles auprès de personnes âgées de moins de 18 ans. Si nous apprenons que nous avons collecté des Données Personnelles auprès d'un mineur de moins de 18 ans sans vérification du consentement parental, nous prenons des mesures pour supprimer ces informations de nos serveurs.
 
 Sécurité des Données Personnelles
-La sécurité de vos Données Personnelles est importante pour Nous, mais rappelez que aucun moyen de transmission sur Internet ou méthode de stockage électronique n'est sûr à 100 %. Bien que nous nous efforcions d'utiliser des moyens commercialement raisonnables et des infrastructures de premier plan (comme Supabase) pour protéger vos Données Personnelles, nous ne pouvons pas garantir leur sécurité absolue.
+La sécurité de vos Données Personnelles est importante pour Nous, mais rappelez-vous qu'aucun moyen de transmission sur Internet ou méthode de stockage électronique n'est sûr à 100 %. Bien que nous nous efforcions d'utiliser des moyens commercialement raisonnables et des infrastructures de premier plan (comme Supabase, Stripe, Vercel et Render) pour protéger vos Données Personnelles, nous ne pouvons pas garantir leur sécurité absolue.
 
 Modifications de la présente Politique de Confidentialité
 Nous pouvons mettre à jour notre Politique de Confidentialité de temps à autre. Nous vous informerons de toute modification en publiant la nouvelle Politique de Confidentialité sur cette page et en mettant à jour la date de "Dernière mise à jour".
@@ -71,4 +87,4 @@ Nous vous recommandons de consulter périodiquement la présente Politique de Co
 
 Contactez-nous
 En cas de questions concernant la présente Politique de Confidentialité ou pour exercer vos droits, vous pouvez nous contacter :
-- Par e-mail : support@zeusxapps.com
+- Par e-mail : zeusxapps@gmail.com

@@ -15,7 +15,7 @@ Ai fini della presente Informativa sulla Privacy:
 - Account indica un account unico creato per l'Utente per accedere al nostro Servizio o a parti di esso.
 - Società (indicata come "la Società", "Noi", "Ci" o "Nostro" nel presente Contratto) si riferisce a zeusx.
 - Cookie sono piccoli file inseriti nel computer, dispositivo mobile o qualsiasi altro dispositivo dell'Utente da un sito web, contenenti i dettagli della sua cronologia di navigazione su quel sito web tra i suoi molteplici utilizzi.
-- Paese si riferisce a: Italy
+- Paese si riferisce a: Italia
 - Titolare del Trattamento (ai fini del GDPR) si riferisce alla Società come l'entità legale che da sola o insieme ad altri determina le finalità e i mezzi del trattamento dei Dati Personali.
 - Dati Personali indicano qualsiasi informazione relativa a un individuo identificato o identificabile. Ai fini del GDPR, Dato Personale indica qualsiasi informazione relativa a Te come un nome, un numero di identificazione, dati sulla posizione, un identificativo online o a uno o più fattori specifici dell'identità fisica, fisiologica, genetica, mentale, economica, culturale o sociale.
 - Servizio si riferisce al Sito Web.
@@ -32,7 +32,7 @@ Dati Personali
 Durante l'utilizzo del Nostro Servizio, potremmo chiederti di fornirci alcune informazioni di identificazione personale che possono essere utilizzate per contattarti o identificarti. Le informazioni di identificazione personale possono includere, a titolo esemplificativo:
 - Indirizzo email
 - Nome e cognome
-- Dati di fatturazione e indirizzo (gestiti in modo sicuro tramite il nostro Merchant of Record, Lemon Squeezy)
+- Dati di fatturazione e indirizzo (elaborati in modo sicuro dal nostro processore di pagamento, Stripe, Inc.)
 - Dati di Utilizzo
 
 Dati di Utilizzo
@@ -53,13 +53,14 @@ La Società può utilizzare i Dati Personali per le seguenti finalità:
 Fornitori di Servizi Terzi e Condivisione dei Dati
 Non vendiamo né cediamo i tuoi Dati Personali a terzi. Condividiamo le informazioni esclusivamente con fornitori infrastrutturali necessari all'erogazione del servizio:
 - Supabase: Utilizzato per l'archiviazione sicura del database degli account utenti e per i servizi di autenticazione protetta.
-- Lemon Squeezy: In qualità di nostro Merchant of Record, gestisce in modo indipendente e sicuro tutte le transazioni di pagamento, i dati di fatturazione e le conformità fiscali. La Società non memorizza i dati delle carte di credito o di pagamento sui propri server.
+- Stripe, Inc.: In qualità di nostro processore di pagamento, gestisce in modo indipendente e sicuro tutte le transazioni di pagamento, i dati di fatturazione e le conformità fiscali. La Società non memorizza i dati delle carte di credito o di pagamento sui propri server.
+- Vercel e Render: Utilizzati come fornitori di hosting e infrastruttura cloud per l'erogazione del Servizio e l'esecuzione dei nostri sistemi backend.
 
 Conservazione dei Dati Personali
-La Società conserverà i Dati Personali dell'Utente solo per il tempo necessario agli scopi stabiliti nella presente Informativa sulla Privacy. Conserveremo e utilizzeremo i Dati Personali nella misura necessaria per adempiere ai nostri obblighi legali, risolvere controversie e far rispettare i nostri accordi legali e le nostre politiche.
+La Società conserverà i Dati Personali dell'Utente per la durata del rapporto contrattuale e, successivamente, per i tempi stabiliti dalla legge applicabile per finalità fiscali, contabili e di adempimento agli obblighi legali. Conserveremo e utilizzeremo i Dati Personali nella misura necessaria per adempiere ai nostri obblighi legali, risolvere controversie e far rispettare i nostri accordi legali e le nostre politiche.
 
 Trasferimento dei Dati Personali
-Le tue informazioni, compresi i Dati Personali, sono elaborate presso le sedi operative della Società e in qualsiasi altro luogo in cui si trovino le parti coinvolte nel trattamento (come i server cloud di Supabase). Ciò significa che tali informazioni possono essere trasferite e mantenute su computer situati al di fuori del Tuo stato, provincia, paese o altra giurisdizione governativa in cui le leggi sulla protezione dei dati possono differire da quelle della Tua giurisdizione. Il Tuo consenso alla presente Informativa sulla Privacy seguito dall'invio di tali informazioni rappresenta il Tuo accordo a tale trasferimento.
+Le tue informazioni, compresi i Dati Personali, sono elaborate presso le sedi operative della Società e in qualsiasi altro luogo in cui si trovino le parti coinvolte nel trattamento (come i server cloud di Supabase, Stripe, Inc., Vercel e Render). Ciò significa che tali informazioni possono essere trasferite e mantenute su computer situati al di fuori del Tuo stato, provincia, paese o altra giurisdizione governativa in cui le leggi sulla protezione dei dati possono differire da quelle della Tua giurisdizione. Il Tuo consenso alla presente Informativa sulla Privacy seguito dall'invio di tali informazioni rappresenta il Tuo accordo a tale trasferimento.
 
 Diritti dell'Utente ai sensi del GDPR
 La Società si impegna a rispettare la riservatezza dei Dati Personali dell'Utente e a garantire l'esercizio dei Suoi diritti. Se ti trovi all'interno dell'Unione Europea, hai il diritto, ai sensi del GDPR, di:
@@ -72,8 +73,11 @@ La Società si impegna a rispettare la riservatezza dei Dati Personali dell'Uten
 
 Puoi esercitare i tuoi diritti contattandoci direttamente all'indirizzo email di supporto indicato in calce.
 
+Privacy dei Minori
+Il Servizio è destinato esclusivamente a titolari di attività e professionisti maggiorenni ed è riservato a utenti di almeno 18 anni. Non raccogliamo consapevolmente dati personali da soggetti minori di 18 anni. Se veniamo a conoscenza di aver raccolto Dati Personali da un minore di 18 anni senza verifica del consenso dei genitori, adottiamo misure per rimuovere tali informazioni dai nostri server.
+
 Sicurezza dei Dati Personali
-La sicurezza dei Dati Personali è importante per Noi, ma ricorda che nessun metodo di trasmissione su Internet o metodo di archiviazione elettronica è sicuro al 100%. Sebbene ci sforziamo di utilizzare mezzi commercialmente accettabili e infrastrutture leader del settore (come Supabase) per proteggere i tuoi Dati Personali, non possiamo garantirne la sicurezza assoluta.
+La sicurezza dei Dati Personali è importante per Noi, ma ricorda che nessun metodo di trasmissione su Internet o metodo di archiviazione elettronica è sicuro al 100%. Sebbene ci sforziamo di utilizzare mezzi commercialmente accettabili e infrastrutture leader del settore (come Supabase, Stripe, Vercel e Render) per proteggere i tuoi Dati Personali, non possiamo garantirne la sicurezza assoluta.
 
 Modifiche alla presente Informativa sulla Privacy
 Potremmo aggiornare la nostra Informativa sulla Privacy di tanto in tanto. Ti informeremo di eventuali modifiche pubblicando la nuova Informativa sulla Privacy su questa pagina e aggiornando la data di "Ultimo aggiornamento".
@@ -82,4 +86,4 @@ Si consiglia di rivedere periodicamente la presente Informativa sulla Privacy pe
 
 Contattaci
 In caso di domande sulla presente Informativa sulla Privacy o per esercitare i propri diritti, è possibile contattarci:
-- Tramite email: support@zeusxapps.com
+- Tramite email: zeusxapps@gmail.com

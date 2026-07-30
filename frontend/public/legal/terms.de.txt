@@ -1,23 +1,113 @@
 Allgemeine Geschäftsbedingungen
+
 Letzte Aktualisierung: 12. Juli 2026
 
 Bitte lesen Sie diese Allgemeinen Geschäftsbedingungen sorgfältig durch, bevor Sie Unseren Dienst nutzen.
 
+Auslegung und Begriffsbestimmungen
+
+Auslegung
+Wörter, deren Anfangsbuchstabe großgeschrieben ist, haben unter den folgenden Bedingungen festgelegte Bedeutungen. Die folgenden Definitionen haben dieselbe Bedeutung, unabhängig davon, ob sie im Singular oder Plural erscheinen.
+
 Begriffsbestimmungen
+Im Sinne dieser Allgemeinen Geschäftsbedingungen:
+- Verbundenes Unternehmen bezeichnet eine Einrichtung, die eine Partei kontrolliert, von ihr kontrolliert wird oder mit ihr unter gemeinsamer Kontrolle steht, wobei "Kontrolle" den Besitz von 50 % oder mehr der Anteile, Beteiligungen oder anderer stimmberechtigter Wertpapiere zur Wahl von Direktoren oder einer anderen Leitungsbefugnis bedeutet.
 - Land bezieht sich auf: Italien
 - Unternehmen (in diesem Vertrag als "das Unternehmen", "Wir", "Uns" oder "Unser" bezeichnet) bezieht sich auf zeusx.
+- Gerät bezeichnet jedes Gerät, das auf den Dienst zugreifen kann, wie einen Computer, ein Mobiltelefon oder ein digitales Tablet.
 - Dienst bezieht sich auf die Website.
+- Allgemeine Geschäftsbedingungen (auch als "Bedingungen" bezeichnet) bezeichnet diese Allgemeinen Geschäftsbedingungen, einschließlich aller ausdrücklich durch Bezugnahme aufgenommenen Dokumente, die Ihren Zugang zu und Ihre Nutzung des Dienstes regeln und die gesamte Vereinbarung zwischen Ihnen und dem Unternehmen bezüglich des Dienstes darstellen.
+- Social-Media-Dienst Dritter bezeichnet jeden Dienst oder Inhalt (einschließlich Daten, Informationen, Produkte oder Dienstleistungen), der von einem Dritten bereitgestellt wird und über den Dienst angezeigt, eingebunden, verfügbar gemacht oder verlinkt wird.
 - Website bezieht sich auf zeusx, erreichbar unter https://zeusxapps.com
-- Benutzer bezeichnet die Person oder Organisation, die auf den Dienst zugreift.
+- Benutzer (auch als "Sie" oder "Ihr" bezeichnet) bezeichnet die natürliche oder juristische Person, die auf den Dienst zugreift oder ihn nutzt, oder das Unternehmen oder eine andere juristische Person, in deren Namen eine solche Person auf den Dienst zugreift oder ihn nutzt, je nach Anwendbarkeit.
 
-Benutzerkonten und Inhalte
-Wenn Sie ein Konto bei uns erstellen (unterstützt durch die Supabase-Infrastruktur), müssen Sie korrekte Daten angeben. Der Benutzer behält alle Eigentumsrechte an den Inhalten, die über den Dienst erstellt werden.
+Anerkennung
+Dies sind die Allgemeinen Geschäftsbedingungen, die die Nutzung dieses Dienstes und die Vereinbarung zwischen Ihnen und dem Unternehmen regeln. Diese Allgemeinen Geschäftsbedingungen legen die Rechte und Pflichten aller Nutzer bezüglich der Nutzung des Dienstes fest.
 
-Abonnements und Abrechnung
-Alle Abonnements und Finanztransaktionen werden ausschließlich von Lemon Squeezy, LLC als unserem Merchant of Record abgewickelt. Lemon Squeezy ist für die Rechnungsstellung und Zahlungsabwicklung verantwortlich.
+Ihr Zugang zu und Ihre Nutzung des Dienstes stehen unter dem Vorbehalt Ihrer Zustimmung zu und Einhaltung dieser Allgemeinen Geschäftsbedingungen. Diese Allgemeinen Geschäftsbedingungen gelten für alle Besucher, Nutzer und andere Personen, die auf den Dienst zugreifen oder ihn nutzen.
+
+Durch den Zugriff auf oder die Nutzung des Dienstes erklären Sie sich mit diesen Allgemeinen Geschäftsbedingungen einverstanden. Wenn Sie mit einem Teil dieser Allgemeinen Geschäftsbedingungen nicht einverstanden sind, dürfen Sie nicht auf den Dienst zugreifen.
+
+Der Dienst richtet sich ausschließlich an Geschäftsinhaber, Fachleute und Unternehmen. Sie versichern, mindestens 18 Jahre alt zu sein und im Rahmen Ihrer beruflichen oder unternehmerischen Tätigkeit zu handeln. Das Unternehmen gestattet Personen unter 18 Jahren nicht die Nutzung des Dienstes.
+
+Ihr Zugang zu und Ihre Nutzung des Dienstes unterliegen zudem der Zustimmung zu Unserer Datenschutzerklärung. Bitte lesen Sie Unsere Datenschutzerklärung sorgfältig durch, bevor Sie Unseren Dienst nutzen.
+
+Technologische Infrastruktur
+Der Dienst stützt sich auf führende Drittanbieter-Technologien, um Zuverlässigkeit und Sicherheit zu gewährleisten: Stripe, Inc. für die Zahlungsabwicklung, Supabase für die Datenbank und Authentifizierung sowie Vercel und Render für Hosting und Cloud-Infrastruktur.
+
+Benutzerkonten und Benutzerinhalte
+
+Kontoerstellung
+Wenn Sie ein Konto bei Uns erstellen, unterstützt durch unsere Authentifizierungsinfrastruktur (Supabase), müssen Sie Uns jederzeit genaue, vollständige und aktuelle Informationen zur Verfügung stellen. Die Nichteinhaltung dieser Verpflichtung stellt einen Verstoß gegen die Bedingungen dar, der zur sofortigen Kündigung Ihres Kontos bei Unserem Dienst führen kann.
+
+Sie sind verantwortlich für den Schutz der Zugangsdaten, die Sie für den Zugriff auf den Dienst verwenden, sowie für alle Aktivitäten oder Handlungen unter Ihrem Passwort. Sie verpflichten sich, Ihr Passwort nicht an Dritte weiterzugeben. Sie müssen Uns unverzüglich benachrichtigen, sobald Ihnen ein Sicherheitsverstoß oder eine unbefugte Nutzung Ihres Kontos bekannt wird.
+
+Benutzerinhalte und geistiges Eigentum
+Unser Dienst ermöglicht es Ihnen, digitale Inhalte einzugeben, zu speichern, zu verarbeiten und zu erstellen ("Benutzerinhalte"). Sie behalten alle Eigentumsrechte an den Benutzerinhalten, die Sie über den Dienst einreichen oder erstellen. Das Unternehmen erhebt keinen Anspruch auf geistiges Eigentum an dem Material oder den Vermögenswerten, die Sie dem Dienst zur Verfügung stellen.
+
+Durch das Hochladen oder Verarbeiten von Inhalten über den Dienst gewähren Sie Uns jedoch eine technische, weltweite, nicht exklusive und gebührenfreie Lizenz zum Hosten, Speichern und Verarbeiten dieser Inhalte, ausschließlich zum Zweck des Betriebs, der Bereitstellung und der Wartung der Plattformfunktionen zu Ihren Gunsten.
+
+Durch Künstliche Intelligenz Generierte Inhalte und Freistellung
+Der Dienst ermöglicht es Ihnen, mithilfe von Systemen der künstlichen Intelligenz Verwaltungssoftware, Texte, Code, Daten und andere Inhalte zu erstellen ("KI-generierte Inhalte"). Sie erkennen an und stimmen zu, dass KI-generierte Inhalte unvollständig, ungenau oder nicht konform mit branchenspezifischen Vorschriften sein können, und dass es ausschließlich in Ihrer Verantwortung liegt, deren Eignung, Genauigkeit und rechtliche Konformität vor jeder beruflichen oder kommerziellen Nutzung zu überprüfen.
+
+Da der Dienst ausschließlich für Geschäftsinhaber, Fachleute und Unternehmen bestimmt ist (B2B-Verhältnis), verpflichten Sie sich, das Unternehmen, seine leitenden Angestellten, Mitarbeiter und Lieferanten von jeglichen Ansprüchen, Haftungen, Schäden, Verlusten oder Kosten (einschließlich angemessener Anwaltskosten) freizustellen und schadlos zu halten, die entstehen aus oder im Zusammenhang stehen mit: (i) Ihrer Nutzung, Verbreitung oder Vermarktung von KI-generierten Inhalten oder derjenigen Ihrer Endkunden; (ii) Daten, die Sie über den Dienst eingeben, verarbeiten oder erstellen; (iii) Ihrem Verstoß gegen Gesetze, Vorschriften oder Rechte Dritter im Zusammenhang mit solchen Inhalten oder Daten.
+
+Abonnements, Abrechnung und Geschäftsbedingungen
+
+Zahlungsabwicklung
+Alle Abonnementpläne, Geschäftsstufen und Finanztransaktionen werden über Stripe, Inc., unseren Zahlungsdienstleister, abgewickelt. Stripe, Inc. ist verantwortlich für die Rechnungsstellung, die Einhaltung der Zahlungskartenvorschriften, die Steuererhebung, den Lebenszyklus der Abonnements und die Bearbeitung von Rückerstattungen.
+
+Mit dem Kauf eines kostenpflichtigen Abonnements oder einer Produktstufe zum Zugriff auf bestimmte Funktionen von zeusx stimmen Sie zu, zusätzlich zu diesen Bedingungen die Nutzungsbedingungen und Abrechnungsbedingungen von Stripe, Inc. einzuhalten. Finanzielle Streitigkeiten, Zahlungsfehler und Rechnungsanfragen müssen über den Kundendienst von Stripe, Inc. abgewickelt werden.
+
+Gebühren und Kündigungen
+Das Unternehmen behält sich das Recht vor, Abonnementgebühren oder -stufen jederzeit mit einer Mindestfrist von 30 Tagen für aktive Nutzer zu ändern. Sie können Ihr Abonnement jederzeit über das interne Kontoeinstellungs-Dashboard im über Stripe, Inc. verwalteten Abrechnungsbereich kündigen. Nach der Kündigung bleibt der Zugang zu Premium-Funktionen bis zum Ende des aktuellen Abrechnungszyklus bestehen.
+
+Links zu anderen Websites
+Unser Dienst kann Links zu Websites oder Diensten Dritter enthalten, die nicht im Besitz oder unter der Kontrolle des Unternehmens stehen.
+
+Das Unternehmen hat keine Kontrolle über und übernimmt keine Verantwortung für den Inhalt, die Datenschutzrichtlinien oder die Praktiken von Websites oder Diensten Dritter. Sie erkennen ferner an und stimmen zu, dass das Unternehmen weder direkt noch indirekt für Schäden oder Verluste verantwortlich oder haftbar ist, die durch oder in Verbindung mit der Nutzung von oder dem Vertrauen auf solche Inhalte, Waren oder Dienstleistungen, die auf oder über solche Websites oder Dienste verfügbar sind, verursacht werden oder angeblich verursacht wurden.
+
+Kündigung
+Wir können Ihren Zugang sofort, ohne vorherige Ankündigung oder Haftung, aus jeglichem Grund kündigen oder aussetzen, einschließlich, aber nicht beschränkt auf einen Verstoß gegen diese Allgemeinen Geschäftsbedingungen.
+
+Nach der Kündigung erlischt Ihr Recht zur Nutzung des Dienstes unverzüglich.
 
 Haftungsbeschränkung
-Soweit gesetzlich zulässig, ist die Haftung des Unternehmens auf den Betrag beschränkt, den der Benutzer über den Dienst bezahlt hat, oder auf 100 USD, falls nichts erworben wurde.
+Ungeachtet etwaiger Schäden, die Ihnen entstehen können, ist die gesamte Haftung des Unternehmens und seiner Lieferanten gemäß jeder Bestimmung dieser Bedingungen sowie Ihr ausschließlicher Rechtsbehelf für alle vorgenannten Punkte auf den tatsächlich von Ihnen über den Dienst gezahlten Betrag oder auf 100 USD beschränkt, falls Sie nichts über den Dienst erworben haben.
+
+Soweit gesetzlich zulässig, haften das Unternehmen oder seine Lieferanten unter keinen Umständen für besondere, zufällige, indirekte oder Folgeschäden jeglicher Art (einschließlich, aber nicht beschränkt auf Schäden für entgangenen Gewinn, Datenverlust oder andere Informationen, Betriebsunterbrechung, Personenschäden oder Verlust der Privatsphäre, die sich aus oder im Zusammenhang mit der Nutzung oder der Unfähigkeit zur Nutzung des Dienstes ergeben).
+
+Haftungsausschluss "WIE BESEHEN" und "WIE VERFÜGBAR"
+Der Dienst wird Ihnen "WIE BESEHEN" und "WIE VERFÜGBAR" mit allen Fehlern und Mängeln ohne jegliche Gewährleistung zur Verfügung gestellt. Soweit gesetzlich zulässig, lehnt das Unternehmen ausdrücklich alle ausdrücklichen, stillschweigenden, gesetzlichen oder sonstigen Gewährleistungen in Bezug auf den Dienst ab, einschließlich aller stillschweigenden Gewährleistungen der Marktgängigkeit, Eignung für einen bestimmten Zweck, des Rechtsanspruchs und der Nichtverletzung von Rechten Dritter.
+
+Anwendbares Recht
+Die Gesetze des Landes, mit Ausnahme der Kollisionsnormen, regeln diese Bedingungen und Ihre Nutzung des Dienstes. Ihre Nutzung der Anwendung kann auch anderen lokalen, staatlichen, nationalen oder internationalen Gesetzen unterliegen.
+
+Streitbeilegung
+Sollten Sie Bedenken oder Streitigkeiten bezüglich des Dienstes haben, verpflichten Sie sich, zunächst zu versuchen, die Streitigkeit informell durch Kontaktaufnahme mit dem Unternehmen beizulegen.
+
+Für Nutzer aus der Europäischen Union (EU)
+Wenn Sie ein Verbraucher aus der Europäischen Union sind, profitieren Sie von allen zwingenden Bestimmungen des Rechts des Landes, in dem Sie ansässig sind.
+
+Rechtliche Konformität mit den USA
+Sie erklären und garantieren, dass (i) Sie sich nicht in einem Land befinden, das einem Embargo der US-Regierung unterliegt oder von der US-Regierung als "terrorismusunterstützendes" Land eingestuft wurde, und (ii) Sie auf keiner Liste der US-Regierung für verbotene oder eingeschränkte Parteien geführt werden.
+
+Salvatorische Klausel und Verzicht
+
+Salvatorische Klausel
+Sollte eine Bestimmung dieser Bedingungen als nicht durchsetzbar oder ungültig erachtet werden, wird diese Bestimmung so geändert und ausgelegt, dass die Ziele dieser Bestimmung im größtmöglichen, nach geltendem Recht zulässigen Umfang erreicht werden, und die übrigen Bestimmungen bleiben in vollem Umfang gültig und wirksam.
+
+Verzicht
+Sofern hierin nicht anders vorgesehen, hat die Nichtausübung eines Rechts oder die Nichteinforderung der Erfüllung einer Verpflichtung gemäß diesen Bedingungen keinen Einfluss auf die Fähigkeit einer Partei, dieses Recht oder diese Erfüllung zu einem späteren Zeitpunkt auszuüben oder einzufordern.
+
+Auslegung der Übersetzung
+Diese Allgemeinen Geschäftsbedingungen wurden möglicherweise übersetzt, wenn Wir sie Ihnen auf unserem Dienst zur Verfügung gestellt haben. Sie stimmen zu, dass im Streitfall der ursprüngliche italienische Text maßgeblich ist.
+
+Änderungen dieser Allgemeinen Geschäftsbedingungen
+Wir behalten uns das Recht vor, nach Unserem alleinigen Ermessen diese Bedingungen jederzeit zu ändern oder zu ersetzen. Wenn eine Änderung wesentlich ist, werden Wir uns nach besten Kräften bemühen, mindestens 30 Tage im Voraus zu benachrichtigen, bevor die neuen Bedingungen in Kraft treten. Was eine wesentliche Änderung darstellt, wird nach Unserem alleinigen Ermessen festgelegt.
+
+Indem Sie Unseren Dienst nach Inkrafttreten solcher Änderungen weiterhin nutzen, erklären Sie sich mit den geänderten Bedingungen einverstanden. Wenn Sie den neuen Bedingungen ganz oder teilweise nicht zustimmen, beenden Sie bitte die Nutzung der Website und des Dienstes.
 
 Kontakt
-Wenn Sie Fragen haben, kontaktieren Sie uns per E-Mail: support@zeusxapps.com
+Wenn Sie Fragen zu diesen Allgemeinen Geschäftsbedingungen haben, können Sie uns kontaktieren:
+- Per E-Mail: zeusxapps@gmail.com

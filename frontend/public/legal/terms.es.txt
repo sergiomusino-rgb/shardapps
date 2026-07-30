@@ -1,23 +1,113 @@
 Términos y Condiciones
+
 Última actualización: 12 de Julio de 2026
 
-Por favor, lea estos términos y condiciones detenidamente antes de utilizar Nuestro Servicio.
+Por favor, lea atentamente estos términos y condiciones antes de utilizar Nuestro Servicio.
+
+Interpretación y Definiciones
+
+Interpretación
+Las palabras cuya letra inicial está en mayúscula tienen significados definidos en las siguientes condiciones. Las siguientes definiciones tendrán el mismo significado independientemente de que aparezcan en singular o en plural.
 
 Definiciones
+A los efectos de estos Términos y Condiciones:
+- Afiliada significa una entidad que controla, es controlada por, o está bajo control común con una parte, donde "control" significa la propiedad del 50% o más de las acciones, participaciones u otros valores con derecho a voto para la elección de directores u otra autoridad de gestión.
 - País se refiere a: Italia
-- Compañía (denominada "la Compañía", "Nosotros", "Nos" o "Nuestro" en este Contrato) se refiere a zeusx.
+- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en este Contrato) se refiere a zeusx.
+- Dispositivo significa cualquier dispositivo que pueda acceder al Servicio, como un ordenador, un teléfono móvil o una tableta digital.
 - Servicio se refiere al Sitio Web.
+- Términos y Condiciones (también denominados "Términos") significa estos Términos y Condiciones, incluidos los documentos expresamente incorporados por referencia, que rigen el acceso y uso del Servicio por Su parte y constituyen el acuerdo íntegro entre Usted y la Compañía en relación con el Servicio.
+- Servicio de Redes Sociales de Terceros significa cualquier servicio o contenido (incluidos datos, información, productos o servicios) proporcionado por un tercero que se muestre, incluya, ponga a disposición o enlace a través del Servicio.
 - Sitio Web se refiere a zeusx, accesible desde https://zeusxapps.com
-- Usuario significa la persona física o jurídica que accede o utiliza el Servicio.
+- Usuario (también referido como "Usted" o "Su") significa la persona física o jurídica que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
 
-Cuentas de Usuario y Contenido
-Al crear una cuenta con Nosotros (gestionada por Supabase), debe proporcionar información precisa. El Usuario conserva todos los derechos de propiedad sobre el contenido generado o enviado a través del Servicio.
+Reconocimiento
+Estos son los Términos y Condiciones que rigen el uso de este Servicio y el acuerdo entre Usted y la Compañía. Estos Términos y Condiciones establecen los derechos y obligaciones de todos los usuarios respecto al uso del Servicio.
 
-Suscripciones y Facturación
-Todos los planes de suscripción y transacciones financieras son gestionados exclusivamente por Lemon Squeezy, LLC como nuestro Merchant of Record. Lemon Squeezy es responsable de la facturación y los reembolsos.
+El acceso y uso del Servicio está condicionado a la aceptación y cumplimiento de estos Términos y Condiciones. Estos Términos y Condiciones se aplican a todos los visitantes, usuarios y demás personas que accedan o utilicen el Servicio.
+
+Al acceder o utilizar el Servicio, Usted acepta quedar vinculado por estos Términos y Condiciones. Si no está de acuerdo con alguna parte de estos Términos y Condiciones, no podrá acceder al Servicio.
+
+El Servicio está dirigido exclusivamente a titulares de negocios, profesionales y empresas. Usted declara tener 18 años de edad o más y actuar en el ámbito de su actividad profesional o empresarial. La Compañía no permite el uso del Servicio a menores de 18 años.
+
+El acceso y uso del Servicio también está sujeto a la aceptación de Nuestra Política de Privacidad. Por favor, lea atentamente Nuestra Política de Privacidad antes de utilizar Nuestro Servicio.
+
+Infraestructura Tecnológica
+El Servicio se apoya en proveedores tecnológicos externos líderes del sector para garantizar fiabilidad y seguridad: Stripe, Inc. para el procesamiento de pagos, Supabase para la base de datos y la autenticación, y Vercel y Render para el alojamiento (hosting) y la infraestructura en la nube.
+
+Cuentas de Usuario y Contenido del Usuario
+
+Creación de la Cuenta
+Cuando Usted crea una cuenta con Nosotros, gestionada mediante nuestra infraestructura de autenticación (Supabase), debe proporcionarnos información precisa, completa y actualizada en todo momento. El incumplimiento de esto constituye una violación de los Términos, que puede dar lugar a la terminación inmediata de Su cuenta en Nuestro Servicio.
+
+Usted es responsable de proteger las credenciales que utiliza para acceder al Servicio y de cualquier actividad o acción realizada con Su contraseña. Usted se compromete a no divulgar Su contraseña a terceros. Debe notificarnos inmediatamente en cuanto tenga conocimiento de cualquier vulneración de seguridad o uso no autorizado de Su cuenta.
+
+Contenido del Usuario y Propiedad Intelectual
+Nuestro Servicio le permite introducir, almacenar, procesar y generar contenido digital ("Contenido del Usuario"). Usted conserva todos los derechos de propiedad sobre el Contenido del Usuario que envíe o genere a través del Servicio. La Compañía no reclama ningún derecho de propiedad intelectual sobre el material o los activos que Usted proporcione al Servicio.
+
+No obstante, al cargar o procesar contenido a través del Servicio, Usted otorga a Nosotros una licencia técnica, mundial, no exclusiva y libre de regalías para alojar, almacenar y procesar dicho contenido con el único fin de operar, prestar y mantener las funcionalidades de la plataforma en Su beneficio.
+
+Contenido Generado mediante Inteligencia Artificial e Indemnización
+El Servicio le permite generar software de gestión, textos, código, datos y otros contenidos mediante sistemas de inteligencia artificial ("Contenido Generado por IA"). Usted reconoce y acepta que el Contenido Generado por IA puede resultar incompleto, inexacto o no conforme con normativas específicas del sector, y que es Su responsabilidad exclusiva verificar su idoneidad, exactitud y cumplimiento legal antes de cualquier uso profesional o comercial.
+
+Al tratarse de un Servicio dirigido exclusivamente a titulares de negocios, profesionales y empresas (relación B2B), Usted se compromete a indemnizar y mantener indemne a la Compañía, sus administradores, empleados y proveedores frente a cualquier reclamación, responsabilidad, daño, pérdida o gasto (incluidos los honorarios legales razonables) derivados de o relacionados con: (i) el uso, distribución o comercialización por Su parte, o por sus clientes finales, del Contenido Generado por IA; (ii) los datos que Usted introduzca, procese o genere a través del Servicio; (iii) el incumplimiento por Su parte de cualquier ley, normativa o derecho de terceros en relación con dicho contenido o datos.
+
+Suscripciones, Facturación y Términos Comerciales
+
+Procesamiento de Pagos
+Todos los planes de suscripción, niveles comerciales y transacciones financieras se gestionan a través de Stripe, Inc., nuestro procesador de pagos. Stripe, Inc. es responsable de la facturación, el cumplimiento normativo de los medios de pago, la recaudación de impuestos, el ciclo de vida de las suscripciones y la gestión de reembolsos.
+
+Al adquirir un plan de suscripción de pago o un nivel de producto para acceder a funcionalidades específicas de zeusx, Usted acepta cumplir con los términos de servicio y las condiciones de facturación de Stripe, Inc., además de estos Términos. Las disputas financieras, errores de pago y consultas de facturación deben dirigirse al servicio de atención al cliente de Stripe, Inc.
+
+Tarifas y Cancelaciones
+La Compañía se reserva el derecho de modificar las tarifas o niveles de suscripción en cualquier momento, con un preaviso mínimo de 30 días a los usuarios activos. Usted puede cancelar su plan de suscripción en cualquier momento a través del panel de configuración de su cuenta, en la sección de facturación gestionada mediante Stripe, Inc. En caso de cancelación, el acceso a las funciones premium continuará hasta el final del ciclo de facturación actual.
+
+Enlaces a Otros Sitios Web
+Nuestro Servicio puede contener enlaces a sitios web o servicios de terceros que no son propiedad ni están controlados por la Compañía.
+
+La Compañía no tiene control alguno ni asume responsabilidad por el contenido, las políticas de privacidad o las prácticas de sitios web o servicios de terceros. Usted reconoce y acepta además que la Compañía no será responsable, directa o indirectamente, de ningún daño o pérdida causado o presuntamente causado por o en relación con el uso de, o la confianza depositada en, dicho contenido, bienes o servicios disponibles en o a través de dichos sitios o servicios.
+
+Resolución
+Podemos terminar o suspender Su acceso de inmediato, sin previo aviso ni responsabilidad, por cualquier motivo, incluido, entre otros, el incumplimiento de estos Términos y Condiciones.
+
+Tras la terminación, Su derecho a utilizar el Servicio cesará de inmediato.
 
 Limitación de Responsabilidad
-En la máxima medida permitida por la ley aplicable, la responsabilidad de la Compañía se limitará al monto real pagado por el Usuario a través del Servicio o a 100 USD si no ha comprado nada.
+Sin perjuicio de los daños que Usted pueda sufrir, la responsabilidad total de la Compañía y de sus proveedores conforme a cualquier disposición de estos Términos, y Su único remedio para todo lo anterior, se limitará al importe efectivamente pagado por Usted a través del Servicio o a 100 USD si no ha adquirido nada a través del Servicio.
+
+En la medida máxima permitida por la ley aplicable, en ningún caso la Compañía o sus proveedores serán responsables de daños especiales, incidentales, indirectos o consecuentes de cualquier tipo (incluidos, entre otros, daños por pérdida de beneficios, pérdida de datos u otra información, interrupción del negocio, lesiones personales o pérdida de privacidad derivados de o relacionados de cualquier forma con el uso o la imposibilidad de uso del Servicio).
+
+Exclusión de Garantías "TAL CUAL" y "SEGÚN DISPONIBILIDAD"
+El Servicio se le proporciona "TAL CUAL" y "SEGÚN DISPONIBILIDAD", con todos los defectos e imperfecciones, sin garantía de ningún tipo. En la medida máxima permitida por la ley aplicable, la Compañía renuncia expresamente a todas las garantías, ya sean expresas, implícitas, legales o de otro tipo, respecto al Servicio, incluidas todas las garantías implícitas de comerciabilidad, idoneidad para un propósito particular, título y no infracción.
+
+Ley Aplicable
+Las leyes del País, excluyendo sus normas de conflicto de leyes, regirán estos Términos y Su uso del Servicio. Su uso de la Aplicación también puede estar sujeto a otras leyes locales, estatales, nacionales o internacionales.
+
+Resolución de Disputas
+Si tiene alguna preocupación o disputa sobre el Servicio, Usted acepta intentar primero resolver la disputa de manera informal contactando a la Compañía.
+
+Para Usuarios de la Unión Europea (UE)
+Si Usted es un consumidor de la Unión Europea, se beneficiará de cualquier disposición imperativa de la ley del país en el que resida.
+
+Cumplimiento Legal de los Estados Unidos
+Usted declara y garantiza que (i) no se encuentra en un país sujeto a embargo por parte del gobierno de los Estados Unidos, o que haya sido designado por el gobierno de los Estados Unidos como un país que apoya el terrorismo, y (ii) no figura en ninguna lista del gobierno de los Estados Unidos de partes prohibidas o restringidas.
+
+Divisibilidad y Renuncia
+
+Divisibilidad
+Si alguna disposición de estos Términos se considera inaplicable o inválida, dicha disposición se modificará e interpretará para lograr los objetivos de dicha disposición en la máxima medida posible conforme a la ley aplicable, y las disposiciones restantes continuarán en pleno vigor y efecto.
+
+Renuncia
+Salvo que se disponga lo contrario, el hecho de no ejercer un derecho o de no exigir el cumplimiento de una obligación conforme a estos Términos no afectará a la capacidad de una parte de ejercer dicho derecho o exigir dicho cumplimiento en cualquier momento posterior.
+
+Interpretación de la Traducción
+Estos Términos y Condiciones pueden haber sido traducidos si los hemos puesto a Su disposición en nuestro Servicio. Usted acepta que el texto original en italiano prevalecerá en caso de disputa.
+
+Cambios a Estos Términos y Condiciones
+Nos reservamos el derecho, a Nuestra entera discreción, de modificar o sustituir estos Términos en cualquier momento. Si una revisión es sustancial, haremos todo lo razonablemente posible por proporcionar un aviso de al menos 30 días antes de que los nuevos términos entren en vigor. Lo que constituye un cambio sustancial se determinará a Nuestra entera discreción.
+
+Al continuar accediendo o utilizando Nuestro Servicio después de que dichas revisiones entren en vigor, Usted acepta quedar vinculado por los términos revisados. Si no está de acuerdo con los nuevos términos, en todo o en parte, por favor deje de utilizar el Sitio Web y el Servicio.
 
 Contáctenos
-Si tiene alguna pregunta, puede contactarnos por correo electrónico: support@zeusxapps.com
+Si tiene alguna pregunta sobre estos Términos y Condiciones, puede contactarnos:
+- Por correo electrónico: zeusxapps@gmail.com

@@ -1,4 +1,5 @@
 Conditions Générales d'Utilisation
+
 Dernière mise à jour : 12 Juillet 2026
 
 Veuillez lire attentivement ces conditions générales avant d'utiliser Notre Service.
@@ -10,23 +11,103 @@ Les mots dont la lettre initiale est en majuscule ont des significations défini
 
 Définitions
 Aux fins des présentes Conditions Générales :
+- Affiliée désigne une entité qui contrôle, est contrôlée par, ou est sous contrôle commun avec une partie, où "contrôle" signifie la propriété de 50 % ou plus des actions, participations ou autres titres habilités à voter pour l'élection des administrateurs ou d'une autre autorité de gestion.
 - Pays fait référence à : Italie
 - Société (désignée par "la Société", "Nous", "Notre" ou "Nos" dans le présent Contrat) fait référence à zeusx.
+- Appareil désigne tout appareil pouvant accéder au Service, tel qu'un ordinateur, un téléphone portable ou une tablette numérique.
 - Service se rapporte au Site Web.
+- Conditions Générales (également désignées sous le terme "Conditions") désignent les présentes Conditions Générales, y compris tout document expressément incorporé par référence, qui régissent votre accès et votre utilisation du Service et constituent l'intégralité de l'accord entre vous et la Société concernant le Service.
+- Service de Médias Sociaux Tiers désigne tout service ou contenu (y compris des données, informations, produits ou services) fourni par un tiers qui est affiché, inclus, mis à disposition ou lié via le Service.
 - Site Web fait référence à zeusx, accessible depuis https://zeusxapps.com
-- Utilisateur désigne la personne physique ou morale qui accède ou utilise le Service.
+- Utilisateur (également désigné par "Vous" ou "Votre") désigne la personne physique ou morale qui accède ou utilise le Service, ou la société ou autre entité juridique pour le compte de laquelle une telle personne accède ou utilise le Service, selon le cas.
 
 Reconnaissance
-Ce sont les Conditions Générales qui régissent l'utilisation de ce Service et l'accord qui lie l'Utilisateur à la Société. Elles définissent les droits et obligations de tous les utilisateurs. Votre accès au Service est conditionné par votre acceptation et votre respect de ces Conditions.
+Ce sont les Conditions Générales qui régissent l'utilisation de ce Service et l'accord entre Vous et la Société. Les présentes Conditions Générales définissent les droits et obligations de tous les utilisateurs concernant l'utilisation du Service.
 
-Comptes Utilisateurs et Contenu
-Lorsque vous créez un compte chez Nous (propulsé par Supabase), vous devez fournir des informations exactes. L'Utilisateur conserve tous les droits de propriété sur le contenu généré ou soumis via le Service.
+Votre accès et votre utilisation du Service sont conditionnés par votre acceptation et votre respect des présentes Conditions Générales. Les présentes Conditions Générales s'appliquent à tous les visiteurs, utilisateurs et autres personnes qui accèdent au Service ou l'utilisent.
 
-Abonnements et Facturation
-Tous les abonnements et transactions financières sont gérés exclusivement par Lemon Squeezy, LLC en tant que Merchant of Record. Lemon Squeezy est responsable de la facturation et des remboursements.
+En accédant au Service ou en l'utilisant, Vous acceptez d'être lié par les présentes Conditions Générales. Si Vous n'êtes pas d'accord avec une partie quelconque des présentes Conditions Générales, Vous ne pouvez pas accéder au Service.
+
+Le Service est destiné exclusivement aux chefs d'entreprise, professionnels et sociétés. Vous déclarez être âgé d'au moins 18 ans et agir dans le cadre de votre activité professionnelle ou entrepreneuriale. La Société n'autorise pas l'utilisation du Service par les personnes de moins de 18 ans.
+
+Votre accès et votre utilisation du Service sont également soumis à l'acceptation de Notre Politique de Confidentialité. Veuillez lire attentivement Notre Politique de Confidentialité avant d'utiliser Notre Service.
+
+Infrastructure Technologique
+Le Service s'appuie sur des fournisseurs technologiques tiers leaders du secteur pour garantir fiabilité et sécurité : Stripe, Inc. pour le traitement des paiements, Supabase pour la base de données et l'authentification, ainsi que Vercel et Render pour l'hébergement et l'infrastructure cloud.
+
+Comptes Utilisateurs et Contenu de l'Utilisateur
+
+Création du Compte
+Lorsque Vous créez un compte chez Nous, propulsé par notre infrastructure d'authentification (Supabase), Vous devez nous fournir des informations exactes, complètes et à jour à tout moment. Le non-respect de cette obligation constitue une violation des Conditions, pouvant entraîner la résiliation immédiate de Votre compte sur Notre Service.
+
+Vous êtes responsable de la protection des identifiants que Vous utilisez pour accéder au Service et de toute activité ou action effectuée sous Votre mot de passe. Vous vous engagez à ne pas divulguer Votre mot de passe à un tiers. Vous devez Nous notifier immédiatement dès que Vous avez connaissance d'une violation de sécurité ou d'une utilisation non autorisée de Votre compte.
+
+Contenu de l'Utilisateur et Propriété Intellectuelle
+Notre Service Vous permet de saisir, stocker, traiter et générer du contenu numérique ("Contenu de l'Utilisateur"). Vous conservez tous Vos droits de propriété sur le Contenu de l'Utilisateur que Vous soumettez ou générez via le Service. La Société ne revendique aucun droit de propriété intellectuelle sur le matériel ou les actifs que Vous fournissez au Service.
+
+Cependant, en téléchargeant ou en traitant du contenu via le Service, Vous accordez à Nous une licence technique, mondiale, non exclusive et libre de redevances pour héberger, stocker et traiter ce contenu dans le seul but d'exploiter, de fournir et de maintenir les fonctionnalités de la plateforme à Votre bénéfice.
+
+Contenu Généré par Intelligence Artificielle et Garantie
+Le Service Vous permet de générer des logiciels de gestion, des textes, du code, des données et d'autres contenus au moyen de systèmes d'intelligence artificielle ("Contenu Généré par IA"). Vous reconnaissez et acceptez que le Contenu Généré par IA puisse être incomplet, inexact ou non conforme à des réglementations sectorielles spécifiques, et qu'il Vous incombe exclusivement de vérifier son adéquation, son exactitude et sa conformité légale avant toute utilisation professionnelle ou commerciale.
+
+Le Service étant destiné exclusivement aux chefs d'entreprise, professionnels et sociétés (relation B2B), Vous vous engagez à garantir et à indemniser la Société, ses dirigeants, employés et fournisseurs contre toute réclamation, responsabilité, dommage, perte ou dépense (y compris les honoraires d'avocat raisonnables) découlant de ou liés à : (i) Votre utilisation, distribution ou commercialisation, ou celle de Vos clients finaux, du Contenu Généré par IA ; (ii) les données que Vous saisissez, traitez ou générez via le Service ; (iii) Votre violation de toute loi, réglementation ou droit de tiers en lien avec ce contenu ou ces données.
+
+Abonnements, Facturation et Conditions Commerciales
+
+Traitement des Paiements
+Tous les plans d'abonnement, niveaux commerciaux et transactions financières sont gérés via Stripe, Inc., notre prestataire de paiement. Stripe, Inc. est responsable de la facturation, de la conformité des moyens de paiement, de la collecte des taxes, du cycle de vie des abonnements et du traitement des remboursements.
+
+En achetant un abonnement payant ou un niveau de produit pour accéder à des fonctionnalités spécifiques de zeusx, Vous acceptez de respecter les conditions générales et de facturation de Stripe, Inc. en plus des présentes Conditions. Les litiges financiers, erreurs de paiement et demandes de facturation doivent être adressés au service client de Stripe, Inc.
+
+Tarifs et Résiliations
+La Société se réserve le droit de modifier les tarifs ou niveaux d'abonnement à tout moment, avec un préavis minimum de 30 jours aux utilisateurs actifs. Vous pouvez résilier Votre abonnement à tout moment via le tableau de bord des paramètres de votre compte, dans la section de facturation gérée par Stripe, Inc. En cas de résiliation, l'accès aux fonctionnalités premium se poursuivra jusqu'à la fin du cycle de facturation en cours.
+
+Liens vers d'Autres Sites Web
+Notre Service peut contenir des liens vers des sites web ou services tiers qui ne sont ni détenus ni contrôlés par la Société.
+
+La Société n'exerce aucun contrôle et n'assume aucune responsabilité quant au contenu, aux politiques de confidentialité ou aux pratiques des sites web ou services tiers. Vous reconnaissez et acceptez en outre que la Société ne sera pas responsable, directement ou indirectement, de tout dommage ou perte causé ou prétendument causé par ou en lien avec l'utilisation de, ou la confiance accordée à, un tel contenu, bien ou service disponible sur ou via ces sites ou services.
+
+Résiliation
+Nous pouvons résilier ou suspendre Votre accès immédiatement, sans préavis ni responsabilité, pour quelque raison que ce soit, y compris, sans s'y limiter, en cas de violation des présentes Conditions Générales.
+
+En cas de résiliation, Votre droit d'utiliser le Service cessera immédiatement.
 
 Limitation de Responsabilité
-Dans la mesure maximale permise par la loi applicable, la responsabilité de la Société est limitée au montant effectivement payé par l'Utilisateur via le Service ou à 100 USD si rien n'a été acheté.
+Nonobstant les dommages que Vous pourriez subir, l'entière responsabilité de la Société et de ses fournisseurs au titre de toute disposition des présentes Conditions, ainsi que Votre unique recours pour tout ce qui précède, seront limités au montant effectivement payé par Vous via le Service, ou à 100 USD si Vous n'avez rien acheté via le Service.
+
+Dans la mesure maximale permise par la loi applicable, en aucun cas la Société ou ses fournisseurs ne seront responsables de dommages spéciaux, accessoires, indirects ou consécutifs de quelque nature que ce soit (y compris, sans s'y limiter, les dommages pour perte de profits, perte de données ou d'autres informations, interruption d'activité, préjudice corporel ou perte de confidentialité découlant de ou liés de quelque manière que ce soit à l'utilisation ou à l'impossibilité d'utiliser le Service).
+
+Exclusion de Garantie "EN L'ÉTAT" et "SELON DISPONIBILITÉ"
+Le Service Vous est fourni "EN L'ÉTAT" et "SELON DISPONIBILITÉ", avec tous ses défauts et imperfections, sans garantie d'aucune sorte. Dans la mesure maximale permise par la loi applicable, la Société décline expressément toutes garanties, expresses, implicites, légales ou autres, concernant le Service, y compris toutes les garanties implicites de qualité marchande, d'adéquation à un usage particulier, de titre de propriété et de non-contrefaçon.
+
+Loi Applicable
+Les lois du Pays, à l'exclusion de leurs règles de conflit de lois, régissent les présentes Conditions et Votre utilisation du Service. Votre utilisation de l'Application peut également être soumise à d'autres lois locales, nationales ou internationales.
+
+Règlement des Différends
+En cas de préoccupation ou de litige concernant le Service, Vous acceptez d'essayer d'abord de résoudre le différend à l'amiable en contactant la Société.
+
+Pour les Utilisateurs de l'Union Européenne (UE)
+Si Vous êtes un consommateur de l'Union européenne, Vous bénéficierez de toutes les dispositions impératives de la loi du pays dans lequel Vous résidez.
+
+Conformité Légale des États-Unis
+Vous déclarez et garantissez que (i) Vous ne vous trouvez pas dans un pays soumis à un embargo par le gouvernement des États-Unis, ou désigné par celui-ci comme un pays soutenant le terrorisme, et (ii) Vous ne figurez sur aucune liste du gouvernement des États-Unis de parties interdites ou restreintes.
+
+Divisibilité et Renonciation
+
+Divisibilité
+Si une disposition des présentes Conditions est jugée inapplicable ou invalide, cette disposition sera modifiée et interprétée pour atteindre les objectifs de cette disposition dans la plus large mesure possible en vertu de la loi applicable, et les autres dispositions resteront pleinement en vigueur.
+
+Renonciation
+Sauf disposition contraire des présentes, le fait de ne pas exercer un droit ou de ne pas exiger l'exécution d'une obligation en vertu des présentes Conditions n'affectera pas la capacité d'une partie à exercer ce droit ou à exiger cette exécution à tout moment ultérieur.
+
+Interprétation de la Traduction
+Les présentes Conditions Générales peuvent avoir été traduites si Nous les avons mises à Votre disposition sur notre Service. Vous acceptez que le texte original en italien prévaudra en cas de litige.
+
+Modifications des Présentes Conditions Générales
+Nous nous réservons le droit, à Notre seule discrétion, de modifier ou de remplacer les présentes Conditions à tout moment. Si une révision est substantielle, Nous ferons tout effort raisonnable pour fournir un préavis d'au moins 30 jours avant l'entrée en vigueur des nouvelles conditions. Ce qui constitue un changement substantiel sera déterminé à Notre seule discrétion.
+
+En continuant à accéder à Notre Service ou à l'utiliser après l'entrée en vigueur de ces révisions, Vous acceptez d'être lié par les conditions révisées. Si Vous n'acceptez pas les nouvelles conditions, en tout ou en partie, veuillez cesser d'utiliser le Site Web et le Service.
 
 Contactez-nous
-Si vous avez des questions, contactez-nous par e-mail : support@zeusxapps.com
+Si vous avez des questions concernant les présentes Conditions Générales, vous pouvez nous contacter :
+- Par e-mail : zeusxapps@gmail.com

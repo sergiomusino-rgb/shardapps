@@ -1,18 +1,88 @@
 Política de Privacidad
 Última actualización: 12 de Julio de 2026
 
-Esta Política de Privacidad describe Nuestras políticas sobre la recopilación, uso y divulgación de su información al utilizar el Servicio.
+Esta Política de Privacidad describe Nuestras políticas y procedimientos sobre la recopilación, el uso y la divulgación de su información cuando utiliza el Servicio, y le informa sobre sus derechos de privacidad y cómo la ley le protege.
 
-Datos Recopilados
-Durante el uso de Nuestro Servicio, es posible que le solicitemos cierta información de identificación personal: dirección de correo electrónico, nombre, apellidos y datos de uso.
+Utilizamos sus Datos Personales para prestar y mejorar el Servicio. Al utilizar el Servicio, Usted acepta la recopilación y el uso de información de acuerdo con esta Política de Privacidad.
 
-Uso compartido de datos
-No vendemos sus datos personales. Compartimos información exclusivamente con los proveedores de infraestructura necesarios:
-- Supabase: Utilizado para la autenticación segura y el almacenamiento de bases de datos.
-- Lemon Squeezy: Como nuestro Merchant of Record para el procesamiento seguro de pagos.
+Interpretación y Definiciones
 
-Derechos RGPD
-De acuerdo con el RGPD, los usuarios de la Unión Europea tienen derecho a acceder, rectificar, eliminar y solicitar la portabilidad de sus datos personales.
+Interpretación
+Las palabras cuya letra inicial está en mayúscula tienen significados definidos en las siguientes condiciones. Las siguientes definiciones tendrán el mismo significado independientemente de que aparezcan en singular o en plural.
+
+Definiciones
+A los efectos de esta Política de Privacidad:
+- Cuenta significa una cuenta única creada para que Usted acceda a nuestro Servicio o a partes del mismo.
+- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en esta Política) se refiere a zeusx.
+- Cookies son pequeños archivos que un sitio web coloca en su ordenador, dispositivo móvil o cualquier otro dispositivo, y que contienen los datos de su historial de navegación en ese sitio web.
+- País se refiere a: Italia
+- Responsable del Tratamiento (a los efectos del RGPD) se refiere a la Compañía como la entidad legal que, por sí sola o conjuntamente con otras, determina los fines y los medios del tratamiento de los Datos Personales.
+- Datos Personales significa cualquier información relativa a una persona física identificada o identificable.
+- Servicio se refiere al Sitio Web.
+- Proveedor de Servicios significa cualquier persona física o jurídica que trate los datos en nombre de la Compañía. A los efectos del RGPD, los Proveedores de Servicios se consideran Encargados del Tratamiento (Data Processors).
+- Datos de Uso se refiere a los datos recopilados automáticamente, generados por el uso del Servicio o por la propia infraestructura del Servicio.
+- Sitio Web se refiere a zeusx, accesible desde https://zeusxapps.com
+- Usuario (también referido como "Usted" o "Su") significa la persona que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
+
+Recopilación y Uso de sus Datos Personales
+
+Tipos de Datos Recopilados
+
+Datos Personales
+Mientras utiliza Nuestro Servicio, podemos pedirle que nos proporcione cierta información de identificación personal que pueda utilizarse para contactarle o identificarle. La información de identificación personal puede incluir, entre otros:
+- Dirección de correo electrónico
+- Nombre y apellidos
+- Datos de facturación y dirección (procesados de forma segura por nuestro procesador de pagos, Stripe, Inc.)
+- Datos de Uso
+
+Datos de Uso
+Los Datos de Uso se recopilan automáticamente al utilizar el Servicio. Pueden incluir información como la dirección IP de su dispositivo, el tipo y la versión del navegador, las páginas de nuestro Servicio que visita, la fecha y hora de su visita, el tiempo dedicado a esas páginas, identificadores únicos del dispositivo y otros datos de diagnóstico.
+
+Tecnologías de Seguimiento y Cookies
+Utilizamos Cookies y tecnologías de seguimiento similares para rastrear la actividad en Nuestro Servicio y almacenar cierta información. Usted puede configurar su navegador para que rechace todas las cookies o para que le indique cuándo se envía una cookie. Sin embargo, si no acepta las cookies, es posible que no pueda utilizar algunas partes de nuestro Servicio.
+
+Uso de sus Datos Personales
+La Compañía puede utilizar los Datos Personales para las siguientes finalidades:
+- Para prestar y mantener nuestro Servicio, incluyendo la supervisión del uso de nuestro Servicio.
+- Para gestionar Su Cuenta: para gestionar Su registro como usuario del Servicio. La autenticación se gestiona de forma segura a través de la infraestructura de Supabase.
+- Para la ejecución de un contrato: el desarrollo, cumplimiento y ejecución del contrato de compra de los productos, artículos o servicios que haya adquirido, o de cualquier otro contrato con Nosotros a través del Servicio.
+- Para contactarle: para contactarle por correo electrónico u otras formas equivalentes de comunicación electrónica sobre actualizaciones o comunicaciones informativas relacionadas con las funcionalidades, productos o servicios contratados, incluidas las actualizaciones de seguridad.
+- Para gestionar sus solicitudes: para atender y gestionar las solicitudes que Usted nos dirija.
+
+Proveedores de Servicios de Terceros y Uso Compartido de Datos
+No vendemos ni cedemos sus Datos Personales a terceros. Compartimos información exclusivamente con los proveedores de infraestructura necesarios para la prestación del Servicio:
+- Supabase: Utilizado para el almacenamiento seguro de la base de datos de cuentas de usuario y para los servicios de autenticación protegida.
+- Stripe, Inc.: Como nuestro procesador de pagos, gestiona de forma independiente y segura todas las transacciones de pago, los datos de facturación y el cumplimiento fiscal. La Compañía no almacena los datos de tarjetas de crédito o de pago en sus propios servidores.
+- Vercel y Render: Utilizados como proveedores de alojamiento (hosting) e infraestructura en la nube para la prestación del Servicio.
+
+Conservación de sus Datos Personales
+La Compañía conservará Sus Datos Personales durante la duración de la relación contractual y, posteriormente, durante los plazos establecidos por la ley aplicable para fines fiscales, contables y de cumplimiento de obligaciones legales. Conservaremos y utilizaremos Sus Datos Personales en la medida necesaria para cumplir con nuestras obligaciones legales, resolver disputas y hacer cumplir nuestros acuerdos legales y políticas.
+
+Transferencia de sus Datos Personales
+Su información, incluidos los Datos Personales, se procesa en las oficinas operativas de la Compañía y en cualquier otro lugar donde se encuentren las partes involucradas en el tratamiento (como los servidores en la nube de Supabase, Stripe, Inc., Vercel y Render). Esto significa que dicha información puede transferirse y mantenerse en ordenadores ubicados fuera de su estado, provincia, país u otra jurisdicción gubernamental donde las leyes de protección de datos puedan diferir de las de su jurisdicción. Su consentimiento a esta Política de Privacidad, seguido del envío de dicha información, representa su acuerdo con dicha transferencia.
+
+Sus Derechos conforme al RGPD
+La Compañía se compromete a respetar la confidencialidad de sus Datos Personales y a garantizar el ejercicio de sus derechos. Si se encuentra dentro de la Unión Europea, tiene derecho, conforme al RGPD, a:
+- Solicitar el acceso a sus Datos Personales.
+- Solicitar la rectificación de los Datos Personales que obren en nuestro poder.
+- Solicitar la supresión (derecho al olvido) de sus Datos Personales.
+- Oponerse al tratamiento de sus Datos Personales.
+- Solicitar la portabilidad de sus datos.
+- Retirar su consentimiento en cualquier momento.
+
+Puede ejercer sus derechos contactándonos directamente en la dirección de correo electrónico de soporte indicada a continuación.
+
+Privacidad de los Menores
+El Servicio está destinado exclusivamente a titulares de negocios y profesionales mayores de edad, y está reservado a usuarios de al menos 18 años. No recopilamos conscientemente datos personales de personas menores de 18 años. Si tenemos conocimiento de haber recopilado Datos Personales de un menor de 18 años sin verificación del consentimiento parental, adoptamos medidas para eliminar dicha información de nuestros servidores.
+
+Seguridad de sus Datos Personales
+La seguridad de sus Datos Personales es importante para Nosotros, pero recuerde que ningún método de transmisión por Internet ni de almacenamiento electrónico es 100% seguro. Aunque nos esforzamos por utilizar medios comercialmente aceptables e infraestructuras líderes del sector (como Supabase, Stripe, Vercel y Render) para proteger sus Datos Personales, no podemos garantizar su seguridad absoluta.
+
+Cambios a esta Política de Privacidad
+Podemos actualizar Nuestra Política de Privacidad de vez en cuando. Le notificaremos cualquier cambio publicando la nueva Política de Privacidad en esta página y actualizando la fecha de "Última actualización".
+
+Se recomienda revisar periódicamente esta Política de Privacidad para comprobar si se han producido cambios. Los cambios a esta Política de Privacidad entran en vigor en el momento en que se publican en esta página.
 
 Contáctenos
-Si tiene alguna pregunta sobre esta Política de Privacidad: support@zeusxapps.com
+Si tiene alguna pregunta sobre esta Política de Privacidad o desea ejercer sus derechos, puede contactarnos:
+- Por correo electrónico: zeusxapps@gmail.com

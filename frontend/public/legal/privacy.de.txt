@@ -1,18 +1,88 @@
 Datenschutzerklärung
 Letzte Aktualisierung: 12. Juli 2026
 
-Diese Datenschutzerklärung beschreibt unsere Richtlinien und Verfahren für die Erhebung, Verwendung und Offenlegung Ihrer Daten bei der Nutzung des Dienstes.
+Diese Datenschutzerklärung beschreibt Unsere Richtlinien und Verfahren zur Erhebung, Nutzung und Offenlegung Ihrer Daten bei der Nutzung des Dienstes und informiert Sie über Ihre Datenschutzrechte und darüber, wie das Gesetz Sie schützt.
 
-Erhobene Daten
-Wir erfassen personenbezogene Daten wie E-Mail-Adresse, Vor- und Nachname sowie Nutzungsdaten, um den Dienst bereitzustellen und zu verbessern.
+Wir verwenden Ihre personenbezogenen Daten, um den Dienst bereitzustellen und zu verbessern. Durch die Nutzung des Dienstes stimmen Sie der Erhebung und Verwendung von Informationen gemäß dieser Datenschutzerklärung zu.
 
-Datenweitergabe
-Wir verkaufen Ihre Daten nicht. Wir teilen Daten nur mit den notwendigen Infrastrukturanbietern:
-- Supabase: Für die sichere Authentifizierung und Datenbankverwaltung.
-- Lemon Squeezy: Als Merchant of Record für die sichere Zahlungsabwicklung.
+Auslegung und Begriffsbestimmungen
 
-DSGVO-Rechte
-Nutzer in der Europäischen Union haben nach der DSGVO das Recht auf Auskunft, Berichtigung, Löschung und Datenübertragbarkeit ihrer personenbezogenen Daten.
+Auslegung
+Wörter, deren Anfangsbuchstabe großgeschrieben ist, haben unter den folgenden Bedingungen festgelegte Bedeutungen. Die folgenden Definitionen haben dieselbe Bedeutung, unabhängig davon, ob sie im Singular oder Plural erscheinen.
+
+Begriffsbestimmungen
+Im Sinne dieser Datenschutzerklärung:
+- Konto bezeichnet ein einzelnes Konto, das für Sie erstellt wurde, um auf unseren Dienst oder Teile davon zuzugreifen.
+- Unternehmen (in dieser Datenschutzerklärung als "das Unternehmen", "Wir", "Uns" oder "Unser" bezeichnet) bezieht sich auf zeusx.
+- Cookies sind kleine Dateien, die von einer Website auf Ihrem Computer, Mobilgerät oder einem anderen Gerät abgelegt werden und Details Ihres Browserverlaufs auf dieser Website enthalten.
+- Land bezieht sich auf: Italien
+- Verantwortlicher (im Sinne der DSGVO) bezeichnet das Unternehmen als die juristische Person, die allein oder gemeinsam mit anderen über die Zwecke und Mittel der Verarbeitung personenbezogener Daten entscheidet.
+- Personenbezogene Daten bezeichnen alle Informationen, die sich auf eine identifizierte oder identifizierbare natürliche Person beziehen.
+- Dienst bezieht sich auf die Website.
+- Dienstleister bezeichnet jede natürliche oder juristische Person, die Daten im Auftrag des Unternehmens verarbeitet. Im Sinne der DSGVO gelten Dienstleister als Auftragsverarbeiter.
+- Nutzungsdaten bezeichnet automatisch erhobene Daten, die entweder durch die Nutzung des Dienstes oder durch die Infrastruktur des Dienstes selbst generiert werden.
+- Website bezieht sich auf zeusx, erreichbar unter https://zeusxapps.com
+- Benutzer (auch als "Sie" oder "Ihr" bezeichnet) bezeichnet die Person, die auf den Dienst zugreift oder ihn nutzt, oder das Unternehmen oder eine andere juristische Person, in deren Namen eine solche Person auf den Dienst zugreift oder ihn nutzt, je nach Anwendbarkeit.
+
+Erhebung und Verwendung Ihrer personenbezogenen Daten
+
+Arten der erhobenen Daten
+
+Personenbezogene Daten
+Während der Nutzung Unseres Dienstes können Wir Sie bitten, uns bestimmte personenbezogene Daten zur Verfügung zu stellen, die zur Kontaktaufnahme oder Identifizierung verwendet werden können. Dazu gehören unter anderem:
+- E-Mail-Adresse
+- Vor- und Nachname
+- Rechnungs- und Adressdaten (sicher verarbeitet durch unseren Zahlungsdienstleister Stripe, Inc.)
+- Nutzungsdaten
+
+Nutzungsdaten
+Nutzungsdaten werden automatisch erhoben, wenn der Dienst genutzt wird. Sie können Informationen wie die IP-Adresse Ihres Geräts, den Browsertyp, die Browserversion, die von Ihnen besuchten Seiten unseres Dienstes, das Datum und die Uhrzeit Ihres Besuchs, die auf diesen Seiten verbrachte Zeit, eindeutige Gerätekennungen und andere Diagnosedaten umfassen.
+
+Tracking-Technologien und Cookies
+Wir verwenden Cookies und ähnliche Tracking-Technologien, um die Aktivität auf Unserem Dienst zu verfolgen und bestimmte Informationen zu speichern. Sie können Ihren Browser so einstellen, dass er alle Cookies ablehnt oder Sie informiert, wenn ein Cookie gesendet wird. Wenn Sie jedoch keine Cookies akzeptieren, können Sie möglicherweise einige Teile unseres Dienstes nicht nutzen.
+
+Verwendung Ihrer personenbezogenen Daten
+Das Unternehmen kann personenbezogene Daten für folgende Zwecke verwenden:
+- Um Unseren Dienst bereitzustellen und zu pflegen, einschließlich der Überwachung der Nutzung Unseres Dienstes.
+- Um Ihr Konto zu verwalten: um Ihre Registrierung als Nutzer des Dienstes zu verwalten. Die Authentifizierung erfolgt sicher über die Infrastruktur von Supabase.
+- Zur Erfüllung eines Vertrags: die Entwicklung, Einhaltung und Durchführung des Kaufvertrags für die von Ihnen erworbenen Produkte, Artikel oder Dienstleistungen oder eines anderen Vertrags mit Uns über den Dienst.
+- Um Sie zu kontaktieren: um Sie per E-Mail oder anderen gleichwertigen Formen elektronischer Kommunikation über Aktualisierungen oder informative Mitteilungen bezüglich der Funktionen, Produkte oder Dienstleistungen zu kontaktieren, einschließlich Sicherheitsupdates.
+- Um Ihre Anfragen zu bearbeiten: um Ihre Anfragen an Uns zu bearbeiten und zu verwalten.
+
+Drittanbieter und Datenweitergabe
+Wir verkaufen oder übertragen Ihre personenbezogenen Daten nicht an Dritte. Wir teilen Informationen ausschließlich mit den für die Erbringung des Dienstes notwendigen Infrastrukturanbietern:
+- Supabase: Verwendet für die sichere Speicherung der Benutzerkonten-Datenbank und für geschützte Authentifizierungsdienste.
+- Stripe, Inc.: Als unser Zahlungsdienstleister wickelt Stripe, Inc. unabhängig und sicher alle Zahlungstransaktionen, Rechnungsdaten und steuerlichen Verpflichtungen ab. Das Unternehmen speichert keine Kredit- oder Zahlungskartendaten auf eigenen Servern.
+- Vercel und Render: Verwendet als Hosting- und Cloud-Infrastrukturanbieter für die Bereitstellung des Dienstes.
+
+Aufbewahrung Ihrer personenbezogenen Daten
+Das Unternehmen bewahrt Ihre personenbezogenen Daten für die Dauer des Vertragsverhältnisses und anschließend für die gesetzlich vorgeschriebenen Fristen zu steuerlichen, buchhalterischen und rechtlichen Zwecken auf. Wir bewahren und verwenden Ihre personenbezogenen Daten in dem Umfang, der erforderlich ist, um unseren gesetzlichen Verpflichtungen nachzukommen, Streitigkeiten beizulegen und unsere rechtlichen Vereinbarungen und Richtlinien durchzusetzen.
+
+Übermittlung Ihrer personenbezogenen Daten
+Ihre Informationen, einschließlich personenbezogener Daten, werden in den Geschäftsräumen des Unternehmens und an allen anderen Orten verarbeitet, an denen sich die an der Verarbeitung beteiligten Parteien befinden (wie die Cloud-Server von Supabase, Stripe, Inc., Vercel und Render). Dies bedeutet, dass diese Informationen auf Computer außerhalb Ihres Bundeslandes, Ihrer Provinz, Ihres Landes oder einer anderen staatlichen Rechtsprechung übertragen und dort gespeichert werden können, in denen die Datenschutzgesetze von denen Ihrer Rechtsprechung abweichen können. Ihre Zustimmung zu dieser Datenschutzerklärung und die anschließende Übermittlung solcher Informationen stellt Ihre Zustimmung zu dieser Übermittlung dar.
+
+Ihre Rechte gemäß der DSGVO
+Das Unternehmen verpflichtet sich, die Vertraulichkeit Ihrer personenbezogenen Daten zu respektieren und die Ausübung Ihrer Rechte zu gewährleisten. Wenn Sie sich innerhalb der Europäischen Union befinden, haben Sie gemäß der DSGVO das Recht:
+- Auskunft über Ihre personenbezogenen Daten zu verlangen.
+- Die Berichtigung der von uns gespeicherten personenbezogenen Daten zu verlangen.
+- Die Löschung (Recht auf Vergessenwerden) Ihrer personenbezogenen Daten zu verlangen.
+- Der Verarbeitung Ihrer personenbezogenen Daten zu widersprechen.
+- Die Übertragbarkeit Ihrer Daten zu verlangen.
+- Ihre Einwilligung jederzeit zu widerrufen.
+
+Sie können Ihre Rechte ausüben, indem Sie uns direkt unter der unten angegebenen Support-E-Mail-Adresse kontaktieren.
+
+Datenschutz für Kinder
+Der Dienst richtet sich ausschließlich an volljährige Geschäftsinhaber und Fachleute und ist Nutzern ab 18 Jahren vorbehalten. Wir erheben wissentlich keine personenbezogenen Daten von Personen unter 18 Jahren. Sollten Wir feststellen, dass Wir personenbezogene Daten von einer Person unter 18 Jahren ohne Nachweis der elterlichen Zustimmung erhoben haben, ergreifen Wir Maßnahmen, um diese Informationen von unseren Servern zu entfernen.
+
+Sicherheit Ihrer personenbezogenen Daten
+Die Sicherheit Ihrer personenbezogenen Daten ist Uns wichtig, aber denken Sie daran, dass keine Methode der Übertragung über das Internet oder der elektronischen Speicherung 100 % sicher ist. Obwohl Wir uns bemühen, wirtschaftlich vertretbare Mittel und branchenführende Infrastrukturen (wie Supabase, Stripe, Vercel und Render) zum Schutz Ihrer personenbezogenen Daten einzusetzen, können Wir deren absolute Sicherheit nicht garantieren.
+
+Änderungen dieser Datenschutzerklärung
+Wir können Unsere Datenschutzerklärung von Zeit zu Zeit aktualisieren. Wir werden Sie über etwaige Änderungen informieren, indem Wir die neue Datenschutzerklärung auf dieser Seite veröffentlichen und das Datum "Letzte Aktualisierung" aktualisieren.
+
+Es wird empfohlen, diese Datenschutzerklärung regelmäßig auf Änderungen zu überprüfen. Änderungen dieser Datenschutzerklärung treten in Kraft, sobald sie auf dieser Seite veröffentlicht werden.
 
 Kontakt
-Bei Fragen zum Datenschutz kontaktieren Sie uns bitte unter: support@zeusxapps.com
+Bei Fragen zu dieser Datenschutzerklärung oder zur Ausübung Ihrer Rechte können Sie uns kontaktieren:
+- Per E-Mail: zeusxapps@gmail.com
