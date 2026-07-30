@@ -12,11 +12,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Smartphone, Monitor, Send, Loader2, Sparkles, AlertCircle,
+  Send, Loader2, Sparkles, AlertCircle,
   Rocket, CheckCircle2, Copy, X, ExternalLink,
 } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import SitePreview, { type PreviewViewport } from './SitePreview';
+import SitePreview from './SitePreview';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 interface ChatMessage {
@@ -159,7 +159,6 @@ export default function AppEditorView({
   const router = useRouter();
 
   const [schema, setSchema] = useState<SiteBlueprintJSON>(initialSchema);
-  const [viewport, setViewport] = useState<PreviewViewport>('mobile');
   const [activePageSlug, setActivePageSlug] = useState(initialSchema.pages[0]?.slug);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -289,48 +288,32 @@ export default function AppEditorView({
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
-        {/* ── Colonna sinistra: anteprima live ── */}
-        <div className="flex flex-col rounded-2xl border border-gray-800 bg-gray-950 p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex gap-1 overflow-x-auto">
-              {schema.pages.map((p) => (
-                <button
-                  key={p.slug}
-                  onClick={() => setActivePageSlug(p.slug)}
-                  className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                    activePageSlug === p.slug ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-1 rounded-lg border border-gray-800 p-1">
+        {/* ── Colonna sinistra: anteprima live ──
+            Nessun frame/mock (niente bordo telefono, ombra, padding attorno
+            al sito): SitePreview qui sotto renderizza il sito pubblico reale
+            a piena larghezza/altezza del pannello, esattamente come apparirà
+            in produzione — solo la toolbar di navigazione pagine resta UI
+            dell'editor, non fa parte del sito. */}
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-800 bg-gray-950">
+          <div className="flex items-center gap-1 overflow-x-auto p-4 pb-3">
+            {schema.pages.map((p) => (
               <button
-                onClick={() => setViewport('mobile')}
-                aria-pressed={viewport === 'mobile'}
-                className={`rounded p-1.5 ${viewport === 'mobile' ? 'bg-gray-800 text-white' : 'text-gray-500'}`}
-                title="Mobile"
+                key={p.slug}
+                onClick={() => setActivePageSlug(p.slug)}
+                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activePageSlug === p.slug ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+                }`}
               >
-                <Smartphone size={16} />
+                {p.label}
               </button>
-              <button
-                onClick={() => setViewport('desktop')}
-                aria-pressed={viewport === 'desktop'}
-                className={`rounded p-1.5 ${viewport === 'desktop' ? 'bg-gray-800 text-white' : 'text-gray-500'}`}
-                title="Desktop"
-              >
-                <Monitor size={16} />
-              </button>
-            </div>
+            ))}
           </div>
 
-          <div className="flex flex-1 items-start justify-center overflow-y-auto py-2">
+          <div className="flex-1 overflow-y-auto">
             <SitePreview
               schema={schema}
               activePageSlug={activePageSlug}
               onNavigate={setActivePageSlug}
-              viewport={viewport}
             />
           </div>
         </div>

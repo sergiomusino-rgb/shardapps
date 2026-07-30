@@ -15,7 +15,7 @@ import InstallAppBanner from '@/components/InstallAppBanner';
 import PushNotificationBanner from '@/components/PushNotificationBanner';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import ComandiInstanceLanding from '@/components/comandi/ComandiInstanceLanding';
-import SitePreview, { type PreviewViewport } from '@/src/components/creator/SitePreview';
+import SitePreview from '@/src/components/creator/SitePreview';
 import { sanitizeSiteBlueprint, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -59,19 +59,11 @@ function GeneratedAppRootPage() {
 function PublicSiteRenderer({ schema, onRequestLogin }: { schema: SiteBlueprintJSON; onRequestLogin: () => void }) {
   const { slug } = useAppInfo();
   const [activePageSlug, setActivePageSlug] = useState(schema.pages[0]?.slug);
-  const [viewport, setViewport] = useState<PreviewViewport>('desktop');
-
-  useEffect(() => {
-    const check = () => setViewport(window.innerWidth < 640 ? 'mobile' : 'desktop');
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, []);
 
   usePwaSetup(slug, schema.ui.primaryColor, schema.businessConfig.logoUrl || '/icons/icon-192x192.png', schema.businessConfig.name);
 
   return (
-    <div className="min-h-screen" style={{ background: '#f8fafc' }}>
+    <div className="min-h-screen w-full" style={{ background: '#f8fafc' }}>
       <div className="flex justify-end gap-2 p-3">
         <FullscreenToggle color="#64748b" />
         <button
@@ -82,9 +74,7 @@ function PublicSiteRenderer({ schema, onRequestLogin }: { schema: SiteBlueprintJ
           <LogIn size={15} /> Area Riservata
         </button>
       </div>
-      <div className={viewport === 'desktop' ? 'mx-auto max-w-4xl pb-8' : 'pb-8'}>
-        <SitePreview schema={schema} activePageSlug={activePageSlug} onNavigate={setActivePageSlug} viewport={viewport} />
-      </div>
+      <SitePreview schema={schema} activePageSlug={activePageSlug} onNavigate={setActivePageSlug} />
     </div>
   );
 }

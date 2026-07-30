@@ -359,30 +359,27 @@ function StickyActionBar({ schema }: { schema: SiteBlueprintJSON }) {
 }
 
 // ─── Componente principale ───────────────────────────────────────────────────
-
-export type PreviewViewport = 'mobile' | 'desktop';
+// Nessun frame/mock (niente bordo telefono, ombra esterna, max-width): questo
+// è il motore di rendering reale del sito pubblico, usato sia in anteprima
+// nell'editor (AppEditorView.tsx) sia sulla route pubblica /a/[slug]
+// (page.tsx) — deve occupare il 100% di altezza/larghezza del contenitore in
+// entrambi i contesti, altrimenti l'anteprima mente su come apparirà il sito.
 
 export default function SitePreview({
   schema,
   activePageSlug,
   onNavigate,
-  viewport = 'mobile',
 }: {
   schema: SiteBlueprintJSON;
   activePageSlug?: string;
   onNavigate?: (slug: string) => void;
-  viewport?: PreviewViewport;
 }) {
   const activePage: SitePage = useMemo(() => {
     return schema.pages.find((p) => p.slug === activePageSlug) || schema.pages[0];
   }, [schema.pages, activePageSlug]);
 
-  const frameClass = viewport === 'mobile'
-    ? 'mx-auto w-full max-w-[390px] rounded-[2rem] border-8 border-gray-900'
-    : 'mx-auto w-full max-w-full rounded-xl border border-gray-200';
-
   return (
-    <div className={`${frameClass} flex h-full flex-col overflow-hidden bg-white shadow-2xl`}>
+    <div className="flex h-full w-full flex-col overflow-hidden bg-white">
       <SiteNav schema={schema} activeSlug={activePage.slug} onNavigate={(slug) => onNavigate?.(slug)} />
       <div className="flex-1 overflow-y-auto">
         {activePage.sections.length === 0 ? (
