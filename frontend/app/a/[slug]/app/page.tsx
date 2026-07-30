@@ -1169,16 +1169,24 @@ function ViewerProFinal() {
   // /a/[slug]/dashboard (nuove app, vedi dashboard/page.tsx). Chi arriva su
   // /app con un'app auth_mode='supabase' viene rimandato a /dashboard.
   const appInfoCtx = useAppInfo();
-  const { authMode, status: subscriptionStatus, trialEndsAt, clientPrice } = appInfoCtx;
+  const { authMode, config: appInfoCtxConfig, status: subscriptionStatus, trialEndsAt, clientPrice } = appInfoCtx;
   const router = useRouter();
   const pathname = usePathname() || '';
+  // App del nuovo motore Sito/PWA (Creator v2, config.projectType presente,
+  // vedi site-schema.ts): non hanno mai un config.schema.tables valido per
+  // questa dashboard legacy, quindi chi ci arriva (link vecchio, redirect
+  // residuo, sessione salvata prima del passaggio a /gestionale) va rimandato
+  // al pannello dedicato invece di vedere metriche a vuoto/hardcoded.
+  const isNewEngineApp = !!(appInfoCtxConfig as Record<string, unknown> | null)?.projectType;
   useEffect(() => {
-    if (authMode === 'supabase' && pathname === `/a/${slug}/app`) {
+    if (isNewEngineApp) {
+      router.replace(`/a/${slug}/gestionale`);
+    } else if (authMode === 'supabase' && pathname === `/a/${slug}/app`) {
       router.replace(`/a/${slug}/dashboard`);
     } else if (authMode === 'legacy' && pathname === `/a/${slug}/dashboard`) {
       router.replace(`/a/${slug}/app`);
     }
-  }, [authMode, slug, router, pathname]);
+  }, [authMode, isNewEngineApp, slug, router, pathname]);
 
   const sessionKey = `app_session_${slug}`;
   const prefsKey = `${sessionKey}_prefs`;
