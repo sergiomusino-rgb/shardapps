@@ -437,6 +437,12 @@ function LayoutSidebar({
           onClick={() => { window.location.href = `/a/${slug}/fatture`; }}
         />
         <NavItem icon={<Settings size={18} />} label="Impostazioni" active={false} onClick={onOpenSettings} />
+        <NavItem
+          icon={<ExternalLink size={18} />}
+          label="Vedi il sito pubblico"
+          active={false}
+          onClick={() => { window.location.href = `/a/${slug}`; }}
+        />
         {datiAziendaliTable && (
           <NavItem
             icon={resolveIcon(datiAziendaliTable.icon || '', datiAziendaliTable.name)}

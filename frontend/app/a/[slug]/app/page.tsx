@@ -47,9 +47,49 @@ import type { FieldDef as TableFieldDef, TableDef as TableDefType } from './tabl
 type FieldDef = TableFieldDef;
 type TableDef = TableDefType;
 
+// Motore Sito/PWA (Creator v2): adminPanel.entities usa lo stesso Field di
+// blueprint-schema.ts (site-schema.ts lo riusa direttamente), businessConfig
+// è il suo equivalente di branding/dati azienda.
+import type { AdminEntity, BusinessConfig } from '@/src/lib/site-schema';
+import BusinessConfigForm from './BusinessConfigSettings';
+
 // Helper per ottenere il nome del campo (supporta sia name che id)
 function fieldName(f: FieldDef): string {
   return f.name || f.id || '';
+}
+
+// blueprint-schema.ts normalizza il type dei campi in modo libero (stringa),
+// mentre FieldDef di questo motore (table-definitions.ts) usa un'unione
+// chiusa: rimappa qui i valori non coincidenti invece di un cast non sicuro.
+const V2_TO_V1_FIELD_TYPE: Record<string, FieldDef['type']> = {
+  text: 'text', number: 'number', email: 'email', tel: 'tel', phone: 'tel',
+  date: 'date', datetime: 'datetime', select: 'select', multiselect: 'multiselect',
+  textarea: 'textarea', checkbox: 'checkbox', boolean: 'checkbox', currency: 'currency',
+  image: 'image', file: 'file', relation: 'relation',
+};
+
+// Adatta le entità generate dal motore Sito/PWA (config.adminPanel.entities)
+// allo stesso TableDef che questo pannello (v1) già sa renderizzare: stessa
+// identica API di lettura/scrittura record (/api/client/apps/:id/records,
+// keyed su table_name), quindi nessuna modifica al resto del motore serve
+// oltre a fornirgli tabelle nel formato che si aspetta.
+function adaptAdminEntitiesToTables(entities: AdminEntity[]): TableDef[] {
+  return entities.map((e) => ({
+    name: e.name,
+    label: e.label,
+    labelPlural: e.labelPlural,
+    icon: e.icon || '',
+    fields: e.fields
+      .filter((f) => f.type !== 'id')
+      .map((f): FieldDef => ({
+        name: f.id,
+        id: f.id,
+        label: f.label,
+        type: V2_TO_V1_FIELD_TYPE[f.type] || 'text',
+        options: f.options?.length ? f.options : undefined,
+        required: f.required,
+      })),
+  }));
 }
 
 interface AppConfig {
@@ -70,8 +110,20 @@ interface AppConfig {
       };
       tables?: TableDef[];
       sector?: string;
+      // Sessione legacy (password in chiaro, vedi backend/routes/client-app.js
+      // POST /a/:slug): il backend spalma l'intero apps.config qui dentro
+      // (...appConfig), quindi per le app Creator v2 autenticate così è
+      // QUESTO il percorso reale di adminPanel.entities/businessConfig, non
+      // il livello superiore.
+      adminPanel?: { entities: AdminEntity[] };
+      businessConfig?: BusinessConfig;
     };
     tables?: TableDef[];
+    // Motore Sito/PWA (Creator v2, site-schema.ts): niente config.schema.tables,
+    // le tabelle "di lavoro" vivono qui e i dati aziendali in businessConfig
+    // invece che in branding.
+    adminPanel?: { entities: AdminEntity[] };
+    businessConfig?: BusinessConfig;
     branding?: {
       company_name?: string;
       logo_url?: string;
@@ -90,8 +142,16 @@ interface AppConfig {
     primary_color?: string;
     theme?: 'dark' | 'light';
   };
-  blueprint?: { schema?: { tables: TableDef[] }; tables?: TableDef[]; sector?: string };
+  blueprint?: {
+    schema?: { tables: TableDef[] };
+    tables?: TableDef[];
+    sector?: string;
+    adminPanel?: { entities: AdminEntity[] };
+    businessConfig?: BusinessConfig;
+  };
   tables?: TableDef[];
+  adminPanel?: { entities: AdminEntity[] };
+  businessConfig?: BusinessConfig;
   [key: string]: unknown;
 }
 
@@ -747,9 +807,21 @@ interface SettingsModalProps {
   onResetSchema: () => void;
   resettingSchema: boolean;
   customTableCount: number;
+  // Motore Sito/PWA (Creator v2): presente solo per le app che hanno un
+  // config.businessConfig — le app del vecchio motore tabellare non mostrano
+  // questa sezione.
+  businessConfig?: BusinessConfig | null;
+  onSaveBusinessConfig?: (next: BusinessConfig) => void;
+  savingBusinessConfig?: boolean;
+  businessConfigError?: string | null;
+  businessConfigSaved?: boolean;
 }
 
-function SettingsModal({ prefs, onPrefsChange, onClose, onLogout, onChangePassword, colors, slug, authMode, subscriptionStatus, trialEndsAt, subscriptionPrice, onResetSchema, resettingSchema, customTableCount }: SettingsModalProps) {
+function SettingsModal({
+  prefs, onPrefsChange, onClose, onLogout, onChangePassword, colors, slug, authMode,
+  subscriptionStatus, trialEndsAt, subscriptionPrice, onResetSchema, resettingSchema, customTableCount,
+  businessConfig, onSaveBusinessConfig, savingBusinessConfig, businessConfigError, businessConfigSaved,
+}: SettingsModalProps) {
   const isSupabaseAuth = authMode === 'supabase';
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -963,6 +1035,23 @@ function SettingsModal({ prefs, onPrefsChange, onClose, onLogout, onChangePasswo
         </div>
       </div>
 
+      {/* Dati Attività (motore Sito/PWA Creator v2): visualizza/modifica
+          config.businessConfig, sincronizzato col sito pubblico. Assente
+          per le app del vecchio motore tabellare. */}
+      {businessConfig && onSaveBusinessConfig && (
+        <div className={sectionCard}>
+          <div className={sectionTitle}>Dati Attività (Sito Pubblico)</div>
+          <BusinessConfigForm
+            value={businessConfig}
+            colors={colors}
+            saving={!!savingBusinessConfig}
+            error={businessConfigError ?? null}
+            saved={!!businessConfigSaved}
+            onSave={onSaveBusinessConfig}
+          />
+        </div>
+      )}
+
       {/* Password Section */}
       <div className={sectionCard}>
         <div className={sectionTitle}>Cambia Password</div>
@@ -1155,7 +1244,10 @@ function LoginScreen({ slug, appName, logoUrl, primaryColor, onLogin }: LoginScr
 
 // ─── Main App Component ───────────────────────────────────────────────────────
 
-function ViewerProFinal() {
+// Esportato anche come named export: riusato tale e quale da
+// /a/[slug]/gestionale/page.tsx, che serve la stessa Area Riservata su
+// un'altra URL invece di duplicarne il motore.
+export function ViewerProFinal() {
   const slug = useMemo(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
@@ -1169,24 +1261,21 @@ function ViewerProFinal() {
   // /a/[slug]/dashboard (nuove app, vedi dashboard/page.tsx). Chi arriva su
   // /app con un'app auth_mode='supabase' viene rimandato a /dashboard.
   const appInfoCtx = useAppInfo();
-  const { authMode, config: appInfoCtxConfig, status: subscriptionStatus, trialEndsAt, clientPrice } = appInfoCtx;
+  const { authMode, status: subscriptionStatus, trialEndsAt, clientPrice } = appInfoCtx;
   const router = useRouter();
   const pathname = usePathname() || '';
-  // App del nuovo motore Sito/PWA (Creator v2, config.projectType presente,
-  // vedi site-schema.ts): non hanno mai un config.schema.tables valido per
-  // questa dashboard legacy, quindi chi ci arriva (link vecchio, redirect
-  // residuo, sessione salvata prima del passaggio a /gestionale) va rimandato
-  // al pannello dedicato invece di vedere metriche a vuoto/hardcoded.
-  const isNewEngineApp = !!(appInfoCtxConfig as Record<string, unknown> | null)?.projectType;
+  // Piattaforma unificata: sia le app del vecchio motore tabellare (blueprint-
+  // schema.ts) sia quelle del motore Sito/PWA (Creator v2, site-schema.ts)
+  // usano questo stesso pannello come Area Riservata — le seconde vedono le
+  // proprie config.adminPanel.entities adattate a TableDef più sotto (vedi
+  // adaptAdminEntitiesToTables), niente più redirect a un pannello separato.
   useEffect(() => {
-    if (isNewEngineApp) {
-      router.replace(`/a/${slug}/gestionale`);
-    } else if (authMode === 'supabase' && pathname === `/a/${slug}/app`) {
+    if (authMode === 'supabase' && pathname === `/a/${slug}/app`) {
       router.replace(`/a/${slug}/dashboard`);
     } else if (authMode === 'legacy' && pathname === `/a/${slug}/dashboard`) {
       router.replace(`/a/${slug}/app`);
     }
-  }, [authMode, isNewEngineApp, slug, router, pathname]);
+  }, [authMode, slug, router, pathname]);
 
   const sessionKey = `app_session_${slug}`;
   const prefsKey = `${sessionKey}_prefs`;
@@ -1202,6 +1291,13 @@ function ViewerProFinal() {
   const [modalRecord, setModalRecord] = useState<AppRecord | null | 'new'>(null);
   const [saving, setSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Motore Sito/PWA (Creator v2): rispecchia l'ultimo salvataggio riuscito di
+  // businessConfig senza un refetch completo della sessione (sito pubblico e
+  // Area Riservata leggono lo stesso apps.config).
+  const [businessConfigOverride, setBusinessConfigOverride] = useState<BusinessConfig | null>(null);
+  const [savingBusinessConfig, setSavingBusinessConfig] = useState(false);
+  const [businessConfigError, setBusinessConfigError] = useState<string | null>(null);
+  const [businessConfigSaved, setBusinessConfigSaved] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   // Record per relazioni tra tabelle
@@ -1276,29 +1372,77 @@ function ViewerProFinal() {
   const innerConfig = config?.config;
   
   // Estrai tabelle da blueprint — cerca in config.config.schema.tables (la struttura reale)
-  // e mantieni tutti i fallback per compatibilità
-  const tables = innerConfig?.schema?.tables 
-    || config?.schema?.tables 
-    || innerConfig?.blueprint?.schema?.tables 
-    || config?.blueprint?.schema?.tables 
-    || innerConfig?.blueprint?.tables 
-    || config?.blueprint?.tables 
-    || innerConfig?.tables 
-    || config?.tables 
+  // e mantieni tutti i fallback per compatibilità. Ultimo fallback: motore
+  // Sito/PWA (Creator v2), le cui tabelle "di lavoro" vivono in
+  // adminPanel.entities invece che in schema.tables.
+  const tables = innerConfig?.schema?.tables
+    || config?.schema?.tables
+    || innerConfig?.blueprint?.schema?.tables
+    || config?.blueprint?.schema?.tables
+    || innerConfig?.blueprint?.tables
+    || config?.blueprint?.tables
+    || innerConfig?.tables
+    || config?.tables
+    || (innerConfig?.adminPanel?.entities && adaptAdminEntitiesToTables(innerConfig.adminPanel.entities))
+    || (config?.adminPanel?.entities && adaptAdminEntitiesToTables(config.adminPanel.entities))
+    || (innerConfig?.blueprint?.adminPanel?.entities && adaptAdminEntitiesToTables(innerConfig.blueprint.adminPanel.entities))
+    || (config?.blueprint?.adminPanel?.entities && adaptAdminEntitiesToTables(config.blueprint.adminPanel.entities))
     || [];
-  
+
   const activeTable = tables.find((t) => t.name === activeView) || null;
   const datiAziendaliTable = getDatiAziendaliTable(tables);
 
   const companyName = prefs.companyName
     || config?.branding?.company_name
+    || innerConfig?.businessConfig?.name
+    || config?.businessConfig?.name
+    || innerConfig?.blueprint?.businessConfig?.name
+    || config?.blueprint?.businessConfig?.name
     || config?.appName
     || 'App';
 
   const logoUrl = prefs.logoUrl
     || config?.branding?.logo_url
+    || innerConfig?.businessConfig?.logoUrl
+    || config?.businessConfig?.logoUrl
+    || innerConfig?.blueprint?.businessConfig?.logoUrl
+    || config?.blueprint?.businessConfig?.logoUrl
     || config?.logo
     || '';
+
+  // Motore Sito/PWA (Creator v2): assente per le app del vecchio motore
+  // tabellare, quindi la sezione "Dati Attività" in Impostazioni non compare.
+  const rawBusinessConfig = innerConfig?.businessConfig
+    || config?.businessConfig
+    || innerConfig?.blueprint?.businessConfig
+    || config?.blueprint?.businessConfig
+    || null;
+  const effectiveBusinessConfig = businessConfigOverride || rawBusinessConfig;
+
+  const handleSaveBusinessConfig = async (next: BusinessConfig) => {
+    if (!session) return;
+    setSavingBusinessConfig(true);
+    setBusinessConfigError(null);
+    setBusinessConfigSaved(false);
+    try {
+      const res = await fetch(`/api/client/apps/${session.appInfo.id}/business-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken(session)}` },
+        body: JSON.stringify(next),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Errore durante il salvataggio');
+      }
+      setBusinessConfigOverride(data.businessConfig as BusinessConfig);
+      setBusinessConfigSaved(true);
+      setTimeout(() => setBusinessConfigSaved(false), 2500);
+    } catch (err) {
+      setBusinessConfigError(err instanceof Error ? err.message : 'Errore di connessione');
+    } finally {
+      setSavingBusinessConfig(false);
+    }
+  };
 
   // Settore salvato nello schema (blueprint.sector per la pipeline Totalum,
   // sector diretto per la pipeline Creator) — guida sia i colori (getDesignTokens)
@@ -2026,6 +2170,11 @@ function ViewerProFinal() {
             onResetSchema={handleResetCustomTables}
             resettingSchema={resettingSchema}
             customTableCount={customTables.length}
+            businessConfig={effectiveBusinessConfig}
+            onSaveBusinessConfig={handleSaveBusinessConfig}
+            savingBusinessConfig={savingBusinessConfig}
+            businessConfigError={businessConfigError}
+            businessConfigSaved={businessConfigSaved}
           />
         )}
 
@@ -2188,6 +2337,11 @@ function ViewerProFinal() {
           onResetSchema={handleResetCustomTables}
           resettingSchema={resettingSchema}
           customTableCount={customTables.length}
+          businessConfig={effectiveBusinessConfig}
+          onSaveBusinessConfig={handleSaveBusinessConfig}
+          savingBusinessConfig={savingBusinessConfig}
+          businessConfigError={businessConfigError}
+          businessConfigSaved={businessConfigSaved}
         />
       )}
 
