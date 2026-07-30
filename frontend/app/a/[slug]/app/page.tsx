@@ -37,7 +37,6 @@ import {
   import { Input } from '@/components/ui/input';
   import { cn } from '@/lib/utils';
   import { Dialog, DialogHeader } from '@/components/ui/dialog';
-  import { Label } from '@/components/ui/label';
   import AgendaCalendar from './AgendaCalendar';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -67,6 +66,21 @@ const V2_TO_V1_FIELD_TYPE: Record<string, FieldDef['type']> = {
   textarea: 'textarea', checkbox: 'checkbox', boolean: 'checkbox', currency: 'currency',
   image: 'image', file: 'file', relation: 'relation',
 };
+
+// Un array vuoto è truthy in JS: usato con `||` per scegliere il primo
+// fallback "buono" tra le varie forme storiche di config, un `[]` intercetta
+// la catena prima di arrivare a quello giusto (successo per le app v1, ma per
+// le app Creator v2 il backend valorizza SEMPRE blueprint.schema.tables come
+// `[]`, vedi backend/routes/client-app.js POST /a/:slug — quello stesso `[]`
+// altrimenti blocca la catena prima di raggiungere adminPanel.entities).
+function nonEmpty<T>(arr: T[] | undefined | null): T[] | undefined {
+  return arr && arr.length > 0 ? arr : undefined;
+}
+
+function adaptedEntitiesOrUndefined(entities: AdminEntity[] | undefined | null): TableDef[] | undefined {
+  const list = nonEmpty(entities);
+  return list ? adaptAdminEntitiesToTables(list) : undefined;
+}
 
 // Adatta le entità generate dal motore Sito/PWA (config.adminPanel.entities)
 // allo stesso TableDef che questo pannello (v1) già sa renderizzare: stessa
@@ -178,8 +192,6 @@ interface UserPrefs {
   layout: 'corporate' | 'modern' | 'compact';
   theme: 'dark' | 'light';
   primaryColor: string;
-  companyName: string;
-  logoUrl: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -983,58 +995,6 @@ function SettingsModal({
         />
       </div>
 
-      {/* Brand Section */}
-      <div className={sectionCard}>
-        <div className={sectionTitle}>Brand</div>
-        <div className="flex flex-col gap-3">
-          <div>
-            <Label>Nome Azienda</Label>
-            <Input
-              type="text"
-              value={prefs.companyName}
-              onChange={(e) => updatePref('companyName', e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>Logo Azienda</Label>
-            {prefs.logoUrl && (
-              <div className="mb-2">
-                <img
-                  src={prefs.logoUrl}
-                  alt="Logo preview"
-                  className="h-12 max-w-[160px] rounded-lg border border-tenant-border object-contain"
-                />
-              </div>
-            )}
-            <div className="flex items-center gap-2">
-              <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-tenant-border bg-tenant-card px-4 py-2 text-[13px] font-medium text-tenant-text">
-                📁 Sfoglia...
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        updatePref('logoUrl', ev.target?.result as string);
-                      };
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                  className="hidden"
-                />
-              </label>
-              {prefs.logoUrl && (
-                <Button type="button" variant="destructive" size="sm" onClick={() => updatePref('logoUrl', '')}>
-                  Rimuovi
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Dati Attività (motore Sito/PWA Creator v2): visualizza/modifica
           config.businessConfig, sincronizzato col sito pubblico. Assente
           per le app del vecchio motore tabellare. */}
@@ -1361,8 +1321,6 @@ export function ViewerProFinal() {
     layout: 'modern',
     theme: 'dark',
     primaryColor: '#6366f1',
-    companyName: '',
-    logoUrl: '',
   });
 
   // Derived values
@@ -1375,25 +1333,24 @@ export function ViewerProFinal() {
   // e mantieni tutti i fallback per compatibilità. Ultimo fallback: motore
   // Sito/PWA (Creator v2), le cui tabelle "di lavoro" vivono in
   // adminPanel.entities invece che in schema.tables.
-  const tables = innerConfig?.schema?.tables
-    || config?.schema?.tables
-    || innerConfig?.blueprint?.schema?.tables
-    || config?.blueprint?.schema?.tables
-    || innerConfig?.blueprint?.tables
-    || config?.blueprint?.tables
-    || innerConfig?.tables
-    || config?.tables
-    || (innerConfig?.adminPanel?.entities && adaptAdminEntitiesToTables(innerConfig.adminPanel.entities))
-    || (config?.adminPanel?.entities && adaptAdminEntitiesToTables(config.adminPanel.entities))
-    || (innerConfig?.blueprint?.adminPanel?.entities && adaptAdminEntitiesToTables(innerConfig.blueprint.adminPanel.entities))
-    || (config?.blueprint?.adminPanel?.entities && adaptAdminEntitiesToTables(config.blueprint.adminPanel.entities))
+  const tables = nonEmpty(innerConfig?.schema?.tables)
+    || nonEmpty(config?.schema?.tables)
+    || nonEmpty(innerConfig?.blueprint?.schema?.tables)
+    || nonEmpty(config?.blueprint?.schema?.tables)
+    || nonEmpty(innerConfig?.blueprint?.tables)
+    || nonEmpty(config?.blueprint?.tables)
+    || nonEmpty(innerConfig?.tables)
+    || nonEmpty(config?.tables)
+    || adaptedEntitiesOrUndefined(innerConfig?.adminPanel?.entities)
+    || adaptedEntitiesOrUndefined(config?.adminPanel?.entities)
+    || adaptedEntitiesOrUndefined(innerConfig?.blueprint?.adminPanel?.entities)
+    || adaptedEntitiesOrUndefined(config?.blueprint?.adminPanel?.entities)
     || [];
 
   const activeTable = tables.find((t) => t.name === activeView) || null;
   const datiAziendaliTable = getDatiAziendaliTable(tables);
 
-  const companyName = prefs.companyName
-    || config?.branding?.company_name
+  const companyName = config?.branding?.company_name
     || innerConfig?.businessConfig?.name
     || config?.businessConfig?.name
     || innerConfig?.blueprint?.businessConfig?.name
@@ -1401,8 +1358,7 @@ export function ViewerProFinal() {
     || config?.appName
     || 'App';
 
-  const logoUrl = prefs.logoUrl
-    || config?.branding?.logo_url
+  const logoUrl = config?.branding?.logo_url
     || innerConfig?.businessConfig?.logoUrl
     || config?.businessConfig?.logoUrl
     || innerConfig?.blueprint?.businessConfig?.logoUrl
