@@ -458,7 +458,7 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
 
 // Helper: Find app by slug or totalum_app_id
 async function findAppBySlugOrTotalum(supabase, identifier) {
-  const SELECT_FIELDS = 'id, slug, totalum_app_id, config, client_password, auth_mode, tenant_id';
+  const SELECT_FIELDS = 'id, slug, totalum_app_id, config, client_password, auth_mode, tenant_id, app_type';
   // Prima cerca per slug, poi per totalum_app_id come fallback
   let { data: app, error } = await supabase
     .from('apps')
@@ -483,12 +483,28 @@ async function findAppBySlugOrTotalum(supabase, identifier) {
 // Verifica che il Bearer token autentichi davvero il titolare di `app` prima
 // di lasciare scrivere sui suoi dati (branding, credenziali...): stesso
 // schema dual-mode di clientAuthMiddleware (password in chiaro per le app
-// legacy, JWT Supabase + membership app_users per le nuove), ma per slug
-// invece che per appId (queste route non passano da clientAuthMiddleware).
+// legacy, JWT Supabase + membership per le nuove), ma per slug invece che
+// per appId (queste route non passano da clientAuthMiddleware).
 async function verifyClientAuth(supabase, app, req) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
   if (!token) return false;
+
+  // Comandi AI: gli operatori sono membri del tenant proprietario
+  // (tenant_members), non di app_users — stesso schema del gate in
+  // frontend/app/a/[slug]/layout.tsx.
+  if (app.app_type === 'comandi_ai') {
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) return false;
+
+    const { data: membership } = await supabase
+      .from('tenant_members')
+      .select('tenant_id')
+      .eq('user_id', user.id)
+      .eq('tenant_id', app.tenant_id)
+      .maybeSingle();
+    return !!membership;
+  }
 
   if (app.auth_mode === 'supabase') {
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
