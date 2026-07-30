@@ -297,8 +297,13 @@ export default function AppLayout({ children }: PropsWithChildren) {
       >
         <div className="text-center">
           <div
-            className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4"
-            style={{ borderColor: designTokens.colors.primary, borderTopColor: 'transparent' }}
+            className="w-16 h-16 border-4 rounded-full animate-spin mx-auto mb-4"
+            style={{
+              borderTopColor: 'transparent',
+              borderRightColor: designTokens.colors.primary,
+              borderBottomColor: designTokens.colors.primary,
+              borderLeftColor: designTokens.colors.primary,
+            }}
           ></div>
           <p style={{ color: designTokens.colors['text-secondary'] }}>Caricamento...</p>
         </div>
