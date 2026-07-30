@@ -14,7 +14,7 @@ export async function POST(
       return NextResponse.json({ error: 'Password vecchia e nuova richieste' }, { status: 400 });
     }
 
-    const response = await fetch(`${BACKEND_URL}/a/${slug}/change-password`, {
+    const response = await fetch(`${BACKEND_URL}/api/a/${slug}/change-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ oldPassword, newPassword }),

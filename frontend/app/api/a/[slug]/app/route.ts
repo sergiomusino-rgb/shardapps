@@ -17,7 +17,7 @@ export async function GET(
     
     const password = authHeader.substring(7);
 
-    const response = await fetch(`${BACKEND_URL}/a/${slug}`, {
+    const response = await fetch(`${BACKEND_URL}/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),

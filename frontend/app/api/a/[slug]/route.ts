@@ -94,7 +94,7 @@ export async function POST(
     }
 
     const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-    const response = await fetch(`${BACKEND_URL}/a/${slug}`, {
+    const response = await fetch(`${BACKEND_URL}/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),

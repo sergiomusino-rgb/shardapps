@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   try {
-    const res = await fetch(`${BACKEND_URL}/a/${slug}`, {
+    const res = await fetch(`${BACKEND_URL}/api/a/${slug}`, {
       method: 'GET',
     });
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // modo di verificare che il chiamante sia davvero il titolare dell'app
     // (vedi audit pre-lancio — la scrittura del branding era completamente
     // priva di autenticazione).
-    const res = await fetch(`${BACKEND_URL}/a/${slug}/settings`, {
+    const res = await fetch(`${BACKEND_URL}/api/a/${slug}/settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
