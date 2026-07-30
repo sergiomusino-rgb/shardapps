@@ -453,6 +453,73 @@ router.put('/client/apps/:appId/tables/:tableName', clientAuthMiddleware, async 
   }
 });
 
+// Whitelist dei campi scalari di businessConfig (site-schema.ts, motore Sito/
+// PWA Creator v2): stessa difesa già usata in PUT tables/:tableName qui sopra,
+// non fidarsi del body per evitare che il client scriva chiavi arbitrarie in
+// apps.config.
+const BUSINESS_CONFIG_STRING_FIELDS = [
+  'name', 'logoUrl', 'heroImageUrl', 'tagline', 'description', 'address', 'whatsapp', 'phone', 'email',
+];
+
+function sanitizeBusinessConfigPatch(body) {
+  const patch = {};
+  for (const key of BUSINESS_CONFIG_STRING_FIELDS) {
+    if (body[key] !== undefined) {
+      patch[key] = body[key] == null ? '' : String(body[key]);
+    }
+  }
+  if (Array.isArray(body.openingHours)) {
+    patch.openingHours = body.openingHours
+      .filter((h) => h && typeof h === 'object')
+      .map((h) => ({ day: String(h.day ?? ''), hours: String(h.hours ?? '') }));
+  }
+  return patch;
+}
+
+// PUT /client/apps/:appId/business-config - Aggiorna config.businessConfig
+// (motore Sito/PWA Creator v2, vedi frontend/src/lib/site-schema.ts) dal
+// pannello /gestionale: stesso pattern read-merge-write già usato sopra per
+// le tabelle, mantiene sincronizzati sito pubblico e gestionale perché
+// entrambi leggono lo stesso apps.config.
+router.put('/client/apps/:appId/business-config', clientAuthMiddleware, async (req, res) => {
+  try {
+    const patch = sanitizeBusinessConfigPatch(req.body || {});
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'Nessun campo valido da aggiornare' });
+    }
+
+    const supabase = getSupabase();
+    const { data: app, error: appError } = await supabase
+      .from('apps')
+      .select('config')
+      .eq('id', req.appId)
+      .single();
+
+    if (appError || !app) {
+      return res.status(404).json({ error: 'App non trovata' });
+    }
+
+    const config = app.config || {};
+    const businessConfig = { ...(config.businessConfig || {}), ...patch };
+    const updatedConfig = { ...config, businessConfig };
+
+    const { error: updateError } = await supabase
+      .from('apps')
+      .update({ config: updatedConfig, updated_at: new Date().toISOString() })
+      .eq('id', req.appId);
+
+    if (updateError) {
+      console.error('PUT business-config error:', updateError);
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json({ success: true, businessConfig });
+  } catch (err) {
+    console.error('PUT business-config exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
 // GET /api/client/apps/:appId/export?table=clients
 router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) => {
   try {

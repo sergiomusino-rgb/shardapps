@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { getDesignSystemForSector } from '@/lib/designSystemLoader';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
-import { sanitizeSiteBlueprint, ProjectTypeSchema, type ProjectType } from '@/src/lib/site-schema';
+import { sanitizeSiteBlueprint, ProjectTypeSchema, type ProjectType, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
 import {
   getUserFromToken,
@@ -187,6 +187,7 @@ Regole tassative:
 - I campi di actionButtons.value per "call"/"whatsapp" possono restare vuoti: verranno risolti a runtime da businessConfig.phone/whatsapp. Valorizzali solo se il prompt indica un numero specifico diverso.
 - Le entità in adminPanel.entities devono coprire TUTTE le "entity" referenziate dalle sezioni "list"/"form" di ogni pagina: nessun riferimento a un'entità inesistente.
 - Ogni campo di un'entità con un valore economico (prezzo, tariffa, costo) deve avere "type":"number".
+- TUTTI i campi di businessConfig sono OBBLIGATORI e NON possono restare stringhe vuote (eccetto logoUrl, che può restare "" in assenza di un logo reale): name, tagline, description, address, phone, whatsapp, email, openingHours (almeno 2 righe). Estraili dal prompt dell'utente quando presenti; per ogni campo non specificato esplicitamente, inventa un valore plausibile e coerente con settore/città/nome menzionati nel prompt (es. un indirizzo credibile per quella città, orari tipici del settore, un'email nella forma info@<dominio-plausibile-da-appName>.it) — mai lasciare un placeholder letterale tipo "N/A" o il campo vuoto.
 - Non aggiungere testo prima o dopo il JSON.`;
 
   const { content } = await callAiRouter({
@@ -200,6 +201,50 @@ Regole tassative:
   console.log('[creator/generate] SITE RAW RESPONSE:', content);
 
   return extractJsonFromAiContent(content);
+}
+
+// Rimuove i diacritici (es. "città" -> "citta") normalizzando in NFD e
+// scartando i code point dei combining marks (U+0300-U+036F): niente regex
+// con escape unicode per evitare ambiguità di codifica nel sorgente.
+function stripDiacritics(input: string): string {
+  return Array.from(input.normalize('NFD'))
+    .filter((ch) => {
+      const code = ch.codePointAt(0) || 0;
+      return code < 0x0300 || code > 0x036f;
+    })
+    .join('');
+}
+
+function slugifyForEmail(name: string): string {
+  const slug = stripDiacritics(name.toLowerCase()).replace(/[^a-z0-9]+/g, '').slice(0, 24);
+  return slug || 'attivita';
+}
+
+// Rete di sicurezza server-side: il prompt istruisce già il modello a
+// valorizzare ogni campo di businessConfig, ma un modello può comunque
+// restituire stringhe vuote — qui riempiamo con placeholder plausibili così
+// il form "Impostazioni Attività" e le pagine pubbliche non mostrano mai
+// campi vuoti (l'utente li corregge se non gli vanno bene, non deve prima
+// notare che mancano).
+function fillBusinessConfigDefaults(blueprint: SiteBlueprintJSON): SiteBlueprintJSON {
+  const bc = { ...blueprint.businessConfig };
+  const name = bc.name?.trim() || blueprint.appName;
+  bc.name = name;
+  if (!bc.tagline?.trim()) bc.tagline = `${name}: qualità e professionalità al tuo servizio.`;
+  if (!bc.description?.trim()) {
+    bc.description = `${name} è un punto di riferimento nel settore ${blueprint.sector.replace(/-/g, ' ')}, con un'attenzione costante alla qualità e alla soddisfazione del cliente.`;
+  }
+  if (!bc.address?.trim()) bc.address = 'Via Roma 1, 00100 Roma (RM)';
+  if (!bc.phone?.trim()) bc.phone = '+39 06 1234567';
+  if (!bc.whatsapp?.trim()) bc.whatsapp = bc.phone?.trim() || '+39 333 1234567';
+  if (!bc.email?.trim()) bc.email = `info@${slugifyForEmail(name)}.it`;
+  if (!bc.openingHours || bc.openingHours.length === 0) {
+    bc.openingHours = [
+      { day: 'Lun-Ven', hours: '09:00-19:00' },
+      { day: 'Sab', hours: '09:00-13:00' },
+    ];
+  }
+  return { ...blueprint, businessConfig: bc };
 }
 
 // ─── POST /api/creator/generate ───────────────────────────────────────────────────
@@ -254,14 +299,15 @@ export async function POST(request: NextRequest) {
 
       try {
         const rawSchema = await callSiteSchemaGenerator(userPrompt, projectType, lang, { userId: user.id, tenantId });
-        const blueprint = sanitizeSiteBlueprint(rawSchema);
-        if (!blueprint) {
+        const sanitized = sanitizeSiteBlueprint(rawSchema);
+        if (!sanitized) {
           return NextResponse.json({
             success: false,
             error: 'Lo schema generato non è valido, riprova con un prompt più specifico',
             code: 'INVALID_SCHEMA',
           }, { status: 500 });
         }
+        const blueprint = fillBusinessConfigDefaults(sanitized);
         return NextResponse.json({ success: true, data: { schema: blueprint } });
       } catch (err) {
         console.error('[creator/generate] site engine error:', err);
