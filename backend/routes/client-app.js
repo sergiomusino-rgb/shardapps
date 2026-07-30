@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
+const Groq = require('groq-sdk');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -517,6 +518,163 @@ router.put('/client/apps/:appId/business-config', clientAuthMiddleware, async (r
   } catch (err) {
     console.error('PUT business-config exception:', err);
     res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
+// Ricava l'elenco tabelle/entità dell'app, a prescindere dal motore che le ha
+// generate (vecchio motore tabellare blueprint-schema.ts o Creator v2
+// site-schema.ts): stessa normalizzazione già usata lato frontend in
+// app/a/[slug]/app/page.tsx (adaptAdminEntitiesToTables), qui ridotta ai soli
+// campi utili per il contesto della chat (niente id/opzioni superflue).
+function extractTablesForChatContext(config) {
+  const tables = (config.schema?.tables?.length ? config.schema.tables : null)
+    || (config.blueprint?.schema?.tables?.length ? config.blueprint.schema.tables : null)
+    || (config.tables?.length ? config.tables : null)
+    || (config.adminPanel?.entities?.length
+      ? config.adminPanel.entities.map((e) => ({
+          name: e.name,
+          label: e.label,
+          labelPlural: e.labelPlural,
+          fields: (e.fields || [])
+            .filter((f) => f.type !== 'id')
+            .map((f) => ({ label: f.label, type: f.type })),
+        }))
+      : null)
+    || [];
+  return tables;
+}
+
+// Dati azienda per il system prompt: businessConfig (Creator v2) se presente,
+// altrimenti branding legacy — stessa priorità già usata in getSaveSettings
+// e nel pannello frontend per company_name/logo.
+function extractBusinessInfo(config, appName) {
+  const bc = config.businessConfig || config.blueprint?.businessConfig || null;
+  if (bc) {
+    return {
+      name: bc.name || appName,
+      address: bc.address || '',
+      phone: bc.phone || '',
+      whatsapp: bc.whatsapp || '',
+      email: bc.email || '',
+      openingHours: Array.isArray(bc.openingHours) ? bc.openingHours : [],
+    };
+  }
+  return {
+    name: config.branding?.company_name || config.appName || appName,
+    address: '', phone: '', whatsapp: '', email: '', openingHours: [],
+  };
+}
+
+function buildChatSystemPrompt(businessInfo, tables) {
+  const tablesDesc = tables.length
+    ? tables.map((t) => `- ${t.labelPlural || t.label} (${t.name}): campi ${
+        (t.fields || []).map((f) => f.label).filter(Boolean).join(', ') || 'nessuno'
+      }`).join('\n')
+    : 'Nessuna tabella configurata.';
+
+  const orari = businessInfo.openingHours.length
+    ? businessInfo.openingHours.map((h) => `${h.day}: ${h.hours}`).join(', ')
+    : 'non specificati';
+
+  return `Sei l'assistente operativo del gestionale di "${businessInfo.name}".
+Aiuti l'utente che gestisce l'app a: consultare i dati disponibili, preparare bozze di comunicazioni per i clienti (email, messaggi WhatsApp), rispondere a domande su contatti, orari e listini.
+
+Dati attività:
+- Nome: ${businessInfo.name}
+- Indirizzo: ${businessInfo.address || 'non specificato'}
+- Telefono: ${businessInfo.phone || 'non specificato'}
+- WhatsApp: ${businessInfo.whatsapp || 'non specificato'}
+- Email: ${businessInfo.email || 'non specificata'}
+- Orari: ${orari}
+
+Sezioni/tabelle disponibili nel gestionale:
+${tablesDesc}
+
+Regole:
+- Rispondi sempre in italiano, in modo chiaro, utile e conciso.
+- Non puoi modificare lo schema dell'app, le tabelle o i dati da qui: se richiesto, spiega che serve l'editor Creator o la relativa sezione del gestionale.
+- Se ti mancano dati specifici che non hai nel contesto (es. un record preciso non elencato), dillo esplicitamente invece di inventare numeri o dettagli.`;
+}
+
+// POST /client/apps/:appId/chat - Assistente operativo del gestionale (Groq)
+// Contesto: businessConfig/branding + struttura tabelle sempre, più un
+// campione recente (max 30) della tabella attualmente aperta lato client
+// (activeTable) — non l'intero dataset, per restare "ultra-veloce e low-cost"
+// come richiesto: Groq (llama-3.1-8b-instant di default) invece di
+// OpenRouter/Claude usato per la generazione schema, coerente con l'uso già
+// esistente di Groq per i task rapidi (vedi comandi-voice-extraction.ts).
+router.post('/client/apps/:appId/chat', clientAuthMiddleware, async (req, res) => {
+  try {
+    const { messages, activeTable } = req.body || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages (array) obbligatorio' });
+    }
+
+    // Non fidarsi del body: whitelist di ruolo/tipo e limite di cronologia/
+    // lunghezza, sia per sicurezza (niente iniezione di un secondo "system")
+    // sia per contenere token e costo per messaggio.
+    const safeMessages = messages
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-20)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+
+    if (safeMessages.length === 0) {
+      return res.status(400).json({ error: 'Nessun messaggio valido' });
+    }
+
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GROQ_API_KEY non configurata' });
+    }
+
+    const supabase = getSupabase();
+    const { data: app, error: appError } = await supabase
+      .from('apps')
+      .select('name, config')
+      .eq('id', req.appId)
+      .single();
+
+    if (appError || !app) {
+      return res.status(404).json({ error: 'App non trovata' });
+    }
+
+    const config = app.config || {};
+    const tables = extractTablesForChatContext(config);
+    const businessInfo = extractBusinessInfo(config, app.name);
+    const systemPrompt = buildChatSystemPrompt(businessInfo, tables);
+
+    const contextMessages = [{ role: 'system', content: systemPrompt }];
+
+    if (typeof activeTable === 'string' && tables.some((t) => t.name === activeTable)) {
+      const { data: records } = await supabase
+        .from('app_records')
+        .select('data')
+        .eq('app_id', req.appId)
+        .eq('table_name', activeTable)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (records && records.length > 0) {
+        contextMessages.push({
+          role: 'system',
+          content: `Alcuni record recenti della sezione "${activeTable}" (max 30, dati reali, usali per rispondere a domande su listini/contatti/quantità):\n${JSON.stringify(records.map((r) => r.data))}`,
+        });
+      }
+    }
+
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      model: process.env.GROQ_CHAT_MODEL || 'llama-3.1-8b-instant',
+      messages: [...contextMessages, ...safeMessages],
+      temperature: 0.4,
+      max_tokens: 800,
+    });
+
+    const reply = completion.choices?.[0]?.message?.content || '';
+    res.json({ reply });
+  } catch (err) {
+    console.error('POST chat exception:', err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Errore interno' });
   }
 });
 

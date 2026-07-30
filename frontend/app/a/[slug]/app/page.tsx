@@ -51,6 +51,7 @@ type TableDef = TableDefType;
 // è il suo equivalente di branding/dati azienda.
 import type { AdminEntity, BusinessConfig } from '@/src/lib/site-schema';
 import BusinessConfigForm from './BusinessConfigSettings';
+import GestionaleChatAssistant from './GestionaleChatAssistant';
 
 // Helper per ottenere il nome del campo (supporta sia name che id)
 function fieldName(f: FieldDef): string {
@@ -2123,6 +2124,13 @@ export function ViewerProFinal() {
             colors={colors}
           />
         )}
+
+        <GestionaleChatAssistant
+          appId={session?.appInfo.id}
+          authToken={session ? getAuthToken(session) : undefined}
+          activeTable={activeTable?.name}
+          colors={colors}
+        />
       </>
     );
   }
@@ -2312,6 +2320,12 @@ export function ViewerProFinal() {
       textColor={colors.text}
       surfaceColor={colors.cardBg}
       borderColor={colors.border}
+    />
+    <GestionaleChatAssistant
+      appId={session?.appInfo.id}
+      authToken={session ? getAuthToken(session) : undefined}
+      activeTable={activeTable?.name}
+      colors={colors}
     />
     </>
   );
