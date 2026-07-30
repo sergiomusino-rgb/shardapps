@@ -522,34 +522,31 @@ function LegacyLoginGate() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+      <div className="min-h-screen bg-white text-slate-900 flex items-center justify-center">
         <div className="text-xl">{t('login_loading')}</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4">
-      <div className="w-full max-w-md space-y-8 rounded-2xl border border-slate-800 bg-slate-900/40 p-8 backdrop-blur-md">
+    <div className="min-h-screen bg-white text-slate-900 flex items-center justify-center px-4">
+      <div className="w-full max-w-md space-y-8 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="text-center">
-          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-purple-500 bg-clip-text text-transparent">
-            ZEUSX
-          </h1>
-          <p className="mt-2 text-lg font-semibold text-white">{app?.name}</p>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="text-lg font-semibold text-slate-900">{app?.name}</p>
+          <p className="mt-1 text-sm text-slate-500">
             {app?.client_email ? t('login_enter_password') : t('login_configure_access')}
           </p>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 text-center">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600 text-center">
             {error}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="text-xs font-semibold text-slate-400">{t('login_email')}</label>
+            <label className="text-xs font-semibold text-slate-500">{t('login_email')}</label>
             <input
               type="email"
               required
@@ -557,12 +554,12 @@ function LegacyLoginGate() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="nome@esempio.com"
               autoComplete="username"
-              className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition"
             />
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-400">{t('login_password')}</label>
+            <label className="text-xs font-semibold text-slate-500">{t('login_password')}</label>
             <div className="relative mt-1">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -571,12 +568,12 @@ function LegacyLoginGate() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('login_password_placeholder')}
                 autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 pr-11 text-sm text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition"
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 pr-11 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 hover:text-slate-300 transition"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition"
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -590,7 +587,7 @@ function LegacyLoginGate() {
                 setShowReset(true);
                 setResetEmail(app.client_email || '');
               }}
-              className="text-xs text-slate-400 hover:text-indigo-400 transition underline"
+              className="text-xs text-slate-500 hover:text-indigo-600 transition underline"
             >
               {t('login_forgot_password')}
             </button>
@@ -607,27 +604,27 @@ function LegacyLoginGate() {
 
         {showReset && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full mx-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 max-w-md w-full mx-4 text-slate-900">
               <h3 className="text-2xl font-bold mb-4">{t('login_recover_password')}</h3>
-              <p className="text-sm text-slate-400 mb-6">
+              <p className="text-sm text-slate-500 mb-6">
                 {t('login_recover_password_desc')}
               </p>
-              
+
               <form onSubmit={handleReset} className="space-y-4">
                 <div>
-                  <label className="text-xs font-semibold text-slate-400">{t('login_email')}</label>
+                  <label className="text-xs font-semibold text-slate-500">{t('login_email')}</label>
                   <input
                     type="email"
                     required
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     placeholder="nome@esempio.com"
-                    className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm text-white placeholder-slate-600 focus:border-indigo-500 focus:outline-none transition"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none transition"
                   />
                 </div>
 
                 {resetMessage && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
                     {resetMessage}
                   </div>
                 )}
@@ -639,7 +636,7 @@ function LegacyLoginGate() {
                       setShowReset(false);
                       setResetMessage('');
                     }}
-                    className="flex-1 rounded-xl border border-slate-800 py-3 text-sm font-medium text-slate-400 hover:bg-slate-800 transition"
+                    className="flex-1 rounded-xl border border-slate-300 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 transition"
                   >
                     {t('login_cancel')}
                   </button>
