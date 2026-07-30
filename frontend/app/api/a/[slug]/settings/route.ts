@@ -36,12 +36,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const body = await request.json();
-    
-    // Forward to backend
+    const authHeader = request.headers.get('authorization');
+
+    // Forward to backend, incluso l'Authorization: senza, il backend non ha
+    // modo di verificare che il chiamante sia davvero il titolare dell'app
+    // (vedi audit pre-lancio — la scrittura del branding era completamente
+    // priva di autenticazione).
     const res = await fetch(`${BACKEND_URL}/a/${slug}/settings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(authHeader ? { Authorization: authHeader } : {}),
       },
       body: JSON.stringify(body),
     });

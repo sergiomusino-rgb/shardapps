@@ -38,12 +38,27 @@ export async function GET(
     const supabase = getSupabaseAdmin();
     const { data: app, error: appError } = await supabase
       .from('apps')
-      .select('id, name, slug, client_email, client_password, status, trial_ends_at, expires_at')
+      .select('id, name, slug, tenant_id, client_email, client_password, status, trial_ends_at, expires_at')
       .eq('slug', slug)
       .single();
 
     if (appError || !app) {
       return NextResponse.json({ error: 'App non trovata' }, { status: 404 });
+    }
+
+    // Questa route usa la service_role key (bypassa RLS): senza questo
+    // controllo qualunque utente ZeusX autenticato — non solo il proprietario
+    // del tenant — poteva leggere client_email/client_password in chiaro di
+    // QUALSIASI app conoscendone lo slug (vedi audit pre-lancio).
+    const { data: membership } = await supabase
+      .from('tenant_members')
+      .select('tenant_id')
+      .eq('tenant_id', app.tenant_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!membership) {
+      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
     return NextResponse.json({

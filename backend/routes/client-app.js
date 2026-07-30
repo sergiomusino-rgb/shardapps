@@ -458,25 +458,53 @@ router.get('/client/apps/:appId/export', clientAuthMiddleware, async (req, res) 
 
 // Helper: Find app by slug or totalum_app_id
 async function findAppBySlugOrTotalum(supabase, identifier) {
+  const SELECT_FIELDS = 'id, slug, totalum_app_id, config, client_password, auth_mode, tenant_id';
   // Prima cerca per slug, poi per totalum_app_id come fallback
   let { data: app, error } = await supabase
     .from('apps')
-    .select('id, slug, totalum_app_id, config')
+    .select(SELECT_FIELDS)
     .eq('slug', identifier)
     .single();
 
   if (error || !app) {
     const { data: appByTotalum, error: totalumError } = await supabase
       .from('apps')
-      .select('id, slug, totalum_app_id, config')
+      .select(SELECT_FIELDS)
       .eq('totalum_app_id', identifier)
       .single();
-    
+
     app = appByTotalum;
     error = totalumError;
   }
 
   return { app, error };
+}
+
+// Verifica che il Bearer token autentichi davvero il titolare di `app` prima
+// di lasciare scrivere sui suoi dati (branding, credenziali...): stesso
+// schema dual-mode di clientAuthMiddleware (password in chiaro per le app
+// legacy, JWT Supabase + membership app_users per le nuove), ma per slug
+// invece che per appId (queste route non passano da clientAuthMiddleware).
+async function verifyClientAuth(supabase, app, req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  if (!token) return false;
+
+  if (app.auth_mode === 'supabase') {
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !user) return false;
+
+    const { data: appUser } = await supabase
+      .from('app_users')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('app_id', app.id)
+      .eq('is_active', true)
+      .maybeSingle();
+    return !!appUser;
+  }
+
+  return app.client_password === token;
 }
 
 // POST /a/:slug/settings - Save admin settings (branding)
@@ -497,6 +525,10 @@ router.post('/a/:slug/settings', async (req, res) => {
 
     if (appError || !app) {
       return res.status(404).json({ error: 'App non trovata' });
+    }
+
+    if (!(await verifyClientAuth(supabase, app, req))) {
+      return res.status(401).json({ error: 'Autenticazione richiesta' });
     }
 
     // Get current config and update branding
