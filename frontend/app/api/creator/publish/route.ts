@@ -23,6 +23,7 @@ import {
   getOrCreateTenant,
   canCreateApp,
   generateCreatorSlug,
+  getAppBaseUrl,
 } from '@/src/lib/creator-server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
         data: {
           appId: existingApp.id,
           slug: existingApp.slug,
-          url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${existingApp.slug}`,
+          url: `${getAppBaseUrl()}/a/${existingApp.slug}`,
           updated: true,
         },
       });
@@ -168,7 +169,7 @@ export async function POST(request: NextRequest) {
       data: {
         appId: app.id,
         slug: app.slug,
-        url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${app.slug}`,
+        url: `${getAppBaseUrl()}/a/${app.slug}`,
         clientEmail: blueprint.businessConfig.email || tenantEmail,
         clientPassword,
         updated: false,

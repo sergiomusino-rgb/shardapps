@@ -108,6 +108,17 @@ export async function canCreateApp(
   return { allowed: true, tenant };
 }
 
+// process.env.NEXT_PUBLIC_APP_URL a volte viene valorizzata per errore con
+// l'intera riga "NEXT_PUBLIC_APP_URL=https://..." (es. incollata così nel
+// pannello env vars della piattaforma di deploy invece del solo valore):
+// la spoglia dell'eventuale prefisso "CHIAVE=" prima di usarla per non
+// propagare il testo letterale nei link mostrati/aperti dall'utente.
+export function getAppBaseUrl(): string {
+  const raw = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
+  const cleaned = raw.replace(/^[A-Z0-9_]+\s*=\s*/, '');
+  return (cleaned || 'https://zeusxapps.com').replace(/\/+$/, '');
+}
+
 export function generateCreatorSlug(name: string, sector: string): string {
   const base = `${sector || 'app'}-${name}`
     .toLowerCase()
