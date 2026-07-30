@@ -915,53 +915,12 @@ function SettingsModal({
     }
   };
 
-  const layouts: Array<{ key: UserPrefs['layout']; label: string; desc: string }> = [
-    { key: 'corporate', label: 'Corporate', desc: 'Ampio e spazioso' },
-    { key: 'modern', label: 'Modern', desc: 'Bilanciato' },
-    { key: 'compact', label: 'Compact', desc: 'Compatto e denso' },
-  ];
-
   const sectionCard = 'mb-5 rounded-xl border border-tenant-border bg-tenant-card-alt p-5';
   const sectionTitle = 'mb-3 text-[15px] font-bold uppercase tracking-wide text-tenant-text';
 
   return (
     <Dialog open onClose={onClose} maxWidthClassName="max-w-[640px]">
       <DialogHeader title="Impostazioni" onClose={onClose} />
-
-      {/* Layout Section */}
-      <div className={sectionCard}>
-        <div className={sectionTitle}>Layout</div>
-        <div className="grid grid-cols-3 gap-3">
-          {layouts.map(({ key, label, desc }) => {
-            const isActive = prefs.layout === key;
-            return (
-              <button
-                key={key}
-                onClick={() => updatePref('layout', key)}
-                className={cn(
-                  'rounded-xl border-2 p-4 text-center transition-all',
-                  isActive ? 'border-tenant-primary bg-tenant-primary/15' : 'border-tenant-border bg-transparent'
-                )}
-              >
-                {/* Thumbnail */}
-                <div className="mb-2.5 flex h-12 w-full overflow-hidden rounded-lg border border-tenant-border bg-tenant-card">
-                  <div
-                    className={cn('m-1 rounded', isActive ? 'bg-tenant-primary' : 'bg-tenant-text-secondary/40')}
-                    style={{ width: key === 'corporate' ? '35%' : key === 'modern' ? '28%' : '22%' }}
-                  />
-                  <div className="flex flex-1 flex-col gap-[3px] p-1.5">
-                    <div className="h-1.5 rounded-sm bg-tenant-border" />
-                    <div className="h-1 w-[70%] rounded-sm bg-tenant-border" />
-                    <div className="h-1 w-1/2 rounded-sm bg-tenant-border" />
-                  </div>
-                </div>
-                <div className="text-[13px] font-semibold text-tenant-text">{label}</div>
-                <div className="mt-0.5 text-[11px] text-tenant-text-secondary">{desc}</div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Theme Section */}
       <div className={sectionCard}>
