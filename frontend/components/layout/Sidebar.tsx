@@ -101,6 +101,24 @@ export default function Sidebar({
         isActive: isPathActive(pathname, '/dashboard/creator'),
         isPrimary: true,
       },
+      // Le due voci sotto sono riservate all'admin di sistema: il motore
+      // gestionali a tabelle (v1) e il generatore per settore sono stati
+      // sostituiti su /dashboard/creator dal nuovo motore Sito/PWA, ma
+      // restano accessibili per test/debug interni.
+      {
+        label: 'Creator AI v1',
+        href: '/dashboard/creator-v1',
+        icon: <Sparkles size={18} />,
+        isActive: isPathActive(pathname, '/dashboard/creator-v1'),
+        isAdmin: true,
+      },
+      {
+        label: t('nav_generator'),
+        href: '/dashboard/generator',
+        icon: <Sparkles size={18} />,
+        isActive: isPathActive(pathname, '/dashboard/generator'),
+        isAdmin: true,
+      },
       {
         label: t('nav_vision'),
         href: '/vision',
