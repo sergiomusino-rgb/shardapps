@@ -18,9 +18,19 @@ async function verifyTenantPassword(supabase, tenantId, token) {
   if (!token) return false;
   const { data: apps } = await supabase
     .from('apps')
-    .select('client_password')
+    .select('id, client_password')
     .eq('tenant_id', tenantId);
-  return !!apps?.some((a) => a.client_password === token);
+  if (!apps?.length) return false;
+
+  // Vedi backend/routes/client-app.js::getClientCredentials — le password
+  // vive ora in app_credentials, con apps.client_password come fallback.
+  const { data: creds } = await supabase
+    .from('app_credentials')
+    .select('app_id, client_password')
+    .in('app_id', apps.map((a) => a.id));
+  const credsByAppId = new Map((creds || []).map((c) => [c.app_id, c.client_password]));
+
+  return apps.some((a) => (credsByAppId.get(a.id) ?? a.client_password) === token);
 }
 
 function getBearerToken(req) {

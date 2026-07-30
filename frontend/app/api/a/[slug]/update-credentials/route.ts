@@ -104,6 +104,15 @@ export async function POST(
       );
     }
 
+    // Credenziali anche in app_credentials (mai esposta alla Data API
+    // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
+    // su apps.client_password sopra mantenuto per compatibilità.
+    if (client_password) {
+      await adminClient
+        .from('app_credentials')
+        .upsert({ app_id: app.id, client_password }, { onConflict: 'app_id' });
+    }
+
     console.log('[update-credentials] Credentials updated for app:', app.id);
 
     return NextResponse.json({

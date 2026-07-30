@@ -17,6 +17,39 @@ function getSupabase() {
   );
 }
 
+// Le credenziali client vivono ormai in app_credentials (mai esposta alla
+// Data API pubblica, vedi 20260808000004_app_credentials_table.sql):
+// apps.client_password/initial_password restano popolate solo come
+// fallback finché la migration di pulizia finale non le azzera.
+async function getClientCredentials(supabase, appId, fallback) {
+  const { data } = await supabase
+    .from('app_credentials')
+    .select('client_password, initial_password')
+    .eq('app_id', appId)
+    .maybeSingle();
+
+  return {
+    client_password: data?.client_password ?? fallback?.client_password ?? null,
+    initial_password: data?.initial_password ?? fallback?.initial_password ?? null,
+  };
+}
+
+async function setClientPassword(supabase, appId, clientPassword, initialPassword) {
+  const payload = { app_id: appId, updated_at: new Date().toISOString() };
+  if (clientPassword !== undefined) payload.client_password = clientPassword;
+  if (initialPassword !== undefined) payload.initial_password = initialPassword;
+
+  const { error } = await supabase.from('app_credentials').upsert(payload, { onConflict: 'app_id' });
+  if (error) throw error;
+
+  // Dual-write sulla colonna legacy per compatibilità con eventuale codice
+  // non ancora aggiornato, finché la pulizia finale non la azzera.
+  const legacyUpdate = { updated_at: new Date().toISOString() };
+  if (clientPassword !== undefined) legacyUpdate.client_password = clientPassword;
+  if (initialPassword !== undefined) legacyUpdate.initial_password = initialPassword;
+  await supabase.from('apps').update(legacyUpdate).eq('id', appId);
+}
+
 // POST /a/:slug - Client login with password
 // Supporta sia slug che totalum_app_id come identificatore
 router.post('/a/:slug', async (req, res) => {
@@ -65,7 +98,8 @@ router.post('/a/:slug', async (req, res) => {
     }
 
     // Check password
-    if (app.client_password !== password) {
+    const creds = await getClientCredentials(supabase, app.id, app);
+    if (creds.client_password !== password) {
       return res.status(401).json({ error: 'Password errata' });
     }
 
@@ -165,7 +199,8 @@ async function clientAuthMiddleware(req, res, next) {
   }
 
   // Legacy: confronto password in chiaro, comportamento invariato
-  if (app.client_password !== token) {
+  const creds = await getClientCredentials(supabase, app.id, app);
+  if (creds.client_password !== token) {
     return res.status(401).json({ error: 'Password errata' });
   }
 
@@ -520,7 +555,8 @@ async function verifyClientAuth(supabase, app, req) {
     return !!appUser;
   }
 
-  return app.client_password === token;
+  const creds = await getClientCredentials(supabase, app.id, app);
+  return creds.client_password === token;
 }
 
 // POST /a/:slug/settings - Save admin settings (branding)
@@ -603,17 +639,15 @@ router.post('/a/:slug/change-password', async (req, res) => {
     }
 
     // Verify old password
-    if (app.client_password !== oldPassword) {
+    const creds = await getClientCredentials(supabase, app.id, app);
+    if (creds.client_password !== oldPassword) {
       return res.status(401).json({ error: 'Password attuale errata' });
     }
 
     // Update password
-    const { error: updateError } = await supabase
-      .from('apps')
-      .update({ client_password: newPassword })
-      .eq('id', app.id);
-
-    if (updateError) {
+    try {
+      await setClientPassword(supabase, app.id, newPassword, undefined);
+    } catch (updateError) {
       console.error('Change password error:', updateError);
       return res.status(500).json({ error: updateError.message });
     }

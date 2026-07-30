@@ -29,6 +29,13 @@ const ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+// Il webhook Stripe autoritativo è backend/server.js (vedi commento in
+// frontend/app/api/webhooks/stripe/route.ts: l'endpoint Dashboard che
+// puntava al frontend è disabilitato in produzione). Puntare qui invece che
+// a FRONTEND_URL testa il path realmente attivo ed evita il mismatch tra
+// STRIPE_WEBHOOK_SECRET di backend/.env e frontend/.env.local (due valori
+// diversi, entrambi validi per i rispettivi endpoint).
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5005';
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !ANON_KEY) {
   throw new Error('SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY devono essere impostate in backend/.env');
@@ -147,7 +154,7 @@ async function step2_purchaseProPlan() {
     secret: STRIPE_WEBHOOK_SECRET,
   });
 
-  const res = await fetch(`${FRONTEND_URL}/api/webhooks/stripe`, {
+  const res = await fetch(`${BACKEND_URL}/api/webhooks/stripe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'stripe-signature': signature },
     body: payloadString,

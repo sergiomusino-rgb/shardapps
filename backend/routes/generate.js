@@ -115,8 +115,7 @@ router.post('/generate', async (req, res) => {
 
     // Verifica autenticazione
     const authHeader = req.headers['authorization'];
-    console.log('[AUTH] Token ricevuto nel backend:', authHeader);
-    
+
     if (!authHeader?.startsWith('Bearer ')) {
       console.error('[AUTH] Header Authorization mancante o non in formato Bearer');
       return res.status(401).json({
@@ -261,7 +260,6 @@ router.post('/generate', async (req, res) => {
 
     // Step 2: Avvia l'agente su Totalum (con retry per BRIDGE_ERROR)
     console.log('[Totalum] Avvio agente per progetto:', projectId);
-    console.log('[Totalum] API Key (primi 20 caratteri):', TOTALUM_API_KEY?.substring(0, 20) + '...');
     console.log('[Totalum] URL completo:', `${TOTALUM_API_URL}/api/v1/vcaas/projects/${projectId}/agent/start`);
 
     // ─── AVVIO AGENTE TOTALUM CON PROMPT MIGLIORATO ───────────────────────────────

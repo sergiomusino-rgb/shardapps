@@ -9,6 +9,21 @@ function getSupabase() {
   );
 }
 
+// Vedi backend/routes/client-app.js::getClientCredentials — stessa logica,
+// duplicata qui perché questo router ha il proprio clientAuthMiddleware.
+async function getClientCredentials(supabase, appId, fallback) {
+  const { data } = await supabase
+    .from('app_credentials')
+    .select('client_password, initial_password')
+    .eq('app_id', appId)
+    .maybeSingle();
+
+  return {
+    client_password: data?.client_password ?? fallback?.client_password ?? null,
+    initial_password: data?.initial_password ?? fallback?.initial_password ?? null,
+  };
+}
+
 // Client auth middleware (copiato da routes/client-app.js) - dual-mode:
 // - auth_mode='legacy' (app esistenti): Bearer è la password in chiaro, invariato.
 // - auth_mode='supabase' (nuove app): Bearer è un vero JWT Supabase Auth,
@@ -67,7 +82,8 @@ async function clientAuthMiddleware(req, res, next) {
   }
 
   // Legacy: confronto password in chiaro, comportamento invariato
-  if (app.client_password !== token) {
+  const creds = await getClientCredentials(supabase, app.id, app);
+  if (creds.client_password !== token) {
     return res.status(401).json({ error: 'Password errata' });
   }
 

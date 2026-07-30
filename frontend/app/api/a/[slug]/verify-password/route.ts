@@ -30,7 +30,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: 'App bloccata', blocked: true }, { status: 403 });
     }
 
-    if (app.client_password !== password) {
+    // Le credenziali vivono ora in app_credentials (mai esposta alla Data
+    // API pubblica, vedi 20260808000004_app_credentials_table.sql), con
+    // apps.client_password come fallback finché non viene azzerata.
+    const { data: creds } = await supabase
+      .from('app_credentials')
+      .select('client_password')
+      .eq('app_id', app.id)
+      .maybeSingle();
+    if ((creds?.client_password ?? app.client_password) !== password) {
       return NextResponse.json({ error: 'Password errata' }, { status: 401 });
     }
 

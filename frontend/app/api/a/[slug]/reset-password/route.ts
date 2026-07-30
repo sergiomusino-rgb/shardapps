@@ -52,7 +52,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     // Aggiorna password nel DB (sia client_password che initial_password)
     const { error: updateError } = await supabase
       .from('apps')
-      .update({ 
+      .update({
         client_password: newPassword,
         initial_password: newPassword,
       })
@@ -61,6 +61,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     if (updateError) {
       return NextResponse.json({ error: 'Errore aggiornamento password' }, { status: 500 });
     }
+
+    // Credenziali anche in app_credentials (mai esposta alla Data API
+    // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
+    // su apps.client_password/initial_password sopra mantenuto per
+    // compatibilità.
+    await supabase
+      .from('app_credentials')
+      .upsert(
+        { app_id: app.id, client_password: newPassword, initial_password: newPassword },
+        { onConflict: 'app_id' }
+      );
 
     // Ritorna la nuova password
     return NextResponse.json({ success: true, new_password: newPassword });

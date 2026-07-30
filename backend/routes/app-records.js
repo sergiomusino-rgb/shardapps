@@ -23,16 +23,14 @@ function getSupabase() {
 // Middleware autenticazione
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
-  console.log('[AUTH-APP-RECORDS] Token ricevuto:', authHeader);
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.error('[AUTH-APP-RECORDS] Header Authorization mancante o non in formato Bearer');
     return res.status(401).json({ error: 'Token mancante' });
   }
 
   const token = authHeader.substring(7);
-  console.log('[AUTH-APP-RECORDS] Token estratto (primi 20 caratteri):', token.substring(0, 20) + '...');
-  
+
   const supabase = createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_ANON_KEY || '',
@@ -221,7 +219,14 @@ router.post('/apps', authMiddleware, async (req, res) => {
     }
 
     console.log(`[CreateApp] App creata: ${app.id} per tenant ${tenantId}`);
-    
+
+    // Credenziali anche in app_credentials (mai esposta alla Data API
+    // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
+    // su apps.client_password sopra mantenuto per compatibilità.
+    await supabaseAdmin
+      .from('app_credentials')
+      .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
+
     // Incrementa contatore totale app create
     const { error: updateError } = await supabaseAdmin
       .from('tenants')

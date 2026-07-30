@@ -155,6 +155,35 @@ export type Database = {
           },
         ]
       }
+      app_credentials: {
+        Row: {
+          app_id: string
+          client_password: string | null
+          initial_password: string | null
+          updated_at: string
+        }
+        Insert: {
+          app_id: string
+          client_password?: string | null
+          initial_password?: string | null
+          updated_at?: string
+        }
+        Update: {
+          app_id?: string
+          client_password?: string | null
+          initial_password?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_credentials_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: true
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_definitions: {
         Row: {
           app_id: string

@@ -30,12 +30,11 @@ export async function POST(request: NextRequest) {
     console.log('[save-generated-app] === RICHIESTA RICEVUTA ===');
     
     const body = await request.json();
-    const { schema, appName, sector, userId } = body;
-    
+    const { schema, appName, sector } = body;
+
     console.log('[save-generated-app] Input ricevuti:', {
       appName,
       sector,
-      userId,
       hasSchema: !!schema,
       schemaKeys: schema ? Object.keys(schema) : [],
       hasTables: schema?.tables ? schema.tables.length : 0
@@ -49,16 +48,29 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Verifica che l'utente sia autenticato
-    if (!userId) {
-      console.error('[save-generated-app] Validazione fallita: userId mancante');
+    const supabase = getSupabaseAdmin();
+
+    // userId non viene mai fidato dal body: chiunque potrebbe passare l'id di
+    // un'altra vittima per creare app dentro il suo tenant. Si verifica sempre
+    // il JWT Supabase reale nell'header Authorization (già inviato da ogni
+    // chiamante, vedi dashboard/generator/attesa/[projectId]/page.tsx).
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
       return NextResponse.json({
         success: false,
         error: 'Utente non autenticato'
       }, { status: 401 });
     }
 
-    const supabase = getSupabaseAdmin();
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Token non valido'
+      }, { status: 401 });
+    }
+    const userId = user.id;
     console.log('[save-generated-app] Supabase admin client creato');
 
     // Ottieni il tenant dell'utente
@@ -124,10 +136,7 @@ export async function POST(request: NextRequest) {
         chars[Math.floor(Math.random() * chars.length)]
       ).join('');
       
-      console.log('[save-generated-app] Credenziali generate:', {
-        email: clientEmail,
-        password: clientPassword
-      });
+      console.log('[save-generated-app] Credenziali generate per:', clientEmail);
     }
 
     // Prepara i dati per l'inserimento
@@ -195,6 +204,14 @@ export async function POST(request: NextRequest) {
 
     console.log('[save-generated-app] App creata con successo:', newApp.id);
 
+    // Credenziali anche in app_credentials (mai esposta alla Data API
+    // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
+    // su apps.client_password/initial_password sopra mantenuto per
+    // compatibilità finché la pulizia finale non li azzera.
+    await supabase
+      .from('app_credentials')
+      .upsert({ app_id: newApp.id, client_password: clientPassword }, { onConflict: 'app_id' });
+
     // Registra l'app nella app_registry per la Management Console
     const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${newApp.slug}`;
     const { error: registryError } = await supabase
@@ -243,8 +260,7 @@ export async function POST(request: NextRequest) {
     success: true,
     appId: newApp.id,
     slug: newApp.slug,
-    clientEmail: clientEmail,
-    clientPassword: clientPassword
+    clientEmail: clientEmail
   });
 
   return NextResponse.json({

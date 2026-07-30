@@ -23,7 +23,6 @@ async function main() {
     return;
   }
   console.log('App trovata, tenant_id:', app.tenant_id);
-  console.log('client_password:', app.client_password);
 
   // Query fatture
   const { data: fatture, error: fattureError } = await supabase

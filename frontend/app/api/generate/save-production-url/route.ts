@@ -27,17 +27,49 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    const supabase = getSupabaseAdmin();
+
+    // appId non viene mai fidato dal body senza verifica: si controlla che
+    // l'utente autenticato (JWT Supabase reale) appartenga al tenant
+    // proprietario dell'app, altrimenti chiunque potrebbe riscrivere
+    // production_url di un'app arbitraria.
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      return NextResponse.json({ success: false, error: 'Utente non autenticato' }, { status: 401 });
+    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ success: false, error: 'Token non valido' }, { status: 401 });
+    }
+
+    const { data: app, error: appLookupError } = await supabase
+      .from('apps')
+      .select('tenant_id')
+      .eq('id', appId)
+      .single();
+    if (appLookupError || !app) {
+      return NextResponse.json({ success: false, error: 'App non trovata' }, { status: 404 });
+    }
+    const { data: membership } = await supabase
+      .from('tenant_members')
+      .select('tenant_id')
+      .eq('tenant_id', app.tenant_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (!membership) {
+      return NextResponse.json({ success: false, error: 'Non autorizzato per questa app' }, { status: 403 });
+    }
+
     // Costruisce l'URL di produzione reale
     const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`;
-    
-    console.log('[save-production-url] URL di produzione generato:', appUrl);
 
-    const supabase = getSupabaseAdmin();
+    console.log('[save-production-url] URL di produzione generato:', appUrl);
 
     // Aggiorna l'app con l'URL di produzione
     const { error: updateError } = await supabase
       .from('apps')
-      .update({ 
+      .update({
         production_url: appUrl,
         updated_at: new Date().toISOString()
       })
