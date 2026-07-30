@@ -73,14 +73,16 @@ export default function AppLayout({ children }: PropsWithChildren) {
   const isClientProtected =
     pathname.startsWith(`/a/${slug}/dashboard`) ||
     pathname.startsWith(`/a/${slug}/app`) ||
+    pathname.startsWith(`/a/${slug}/gestionale`) ||
     pathname.startsWith(`/a/${slug}/fatture`);
-  // Solo la shell app/dashboard (sidebar + topbar + contenuto) ha bisogno di
-  // restare bloccata all'altezza del viewport: sidebar e footer fissi, scroll
-  // solo nell'area contenuto. Le altre route (fatture, settings, admin, ecc.)
-  // restano a scroll di pagina naturale come prima.
+  // Solo la shell app/dashboard/gestionale (sidebar + topbar + contenuto) ha
+  // bisogno di restare bloccata all'altezza del viewport: sidebar e footer
+  // fissi, scroll solo nell'area contenuto. Le altre route (fatture,
+  // settings, admin, ecc.) restano a scroll di pagina naturale come prima.
   const isAppShellRoute =
     pathname.startsWith(`/a/${slug}/dashboard`) ||
-    pathname.startsWith(`/a/${slug}/app`);
+    pathname.startsWith(`/a/${slug}/app`) ||
+    pathname.startsWith(`/a/${slug}/gestionale`);
 
   useEffect(() => {
     let cancelled = false;

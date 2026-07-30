@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
@@ -15,6 +15,8 @@ import InstallAppBanner from '@/components/InstallAppBanner';
 import PushNotificationBanner from '@/components/PushNotificationBanner';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import ComandiInstanceLanding from '@/components/comandi/ComandiInstanceLanding';
+import SitePreview, { type PreviewViewport } from '@/src/components/creator/SitePreview';
+import { sanitizeSiteBlueprint, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -26,11 +28,65 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
 
 // ─── Entry point della route /a/[slug] ─────────────────────────────────────
-// App legacy: gate a password storico (LegacyLoginGate, invariato).
-// App nuove (auth_mode='supabase'): landing pubblica di settore.
+// App legacy (motore gestionali v1): gate a password storico (LegacyLoginGate,
+// invariato). App auth_mode='supabase': landing pubblica di settore. App del
+// nuovo motore Sito/PWA (Creator v2, riconosciute da config.projectType,
+// vedi site-schema.ts): pagine pubbliche reali (PublicSiteRenderer) — il
+// login per l'area riservata resta lo stesso gate a password (auth_mode
+// è 'legacy' anche per queste), mostrato inline al click su "Accedi" invece
+// di essere l'intera pagina.
 function GeneratedAppRootPage() {
-  const { authMode } = useAppInfo();
+  const { authMode, config } = useAppInfo();
+  const [showLogin, setShowLogin] = useState(false);
+  const siteBlueprint = useMemo(() => sanitizeSiteBlueprint(config), [config]);
+
+  if (siteBlueprint) {
+    return showLogin ? <LegacyLoginGate /> : <PublicSiteRenderer schema={siteBlueprint} onRequestLogin={() => setShowLogin(true)} />;
+  }
+
   return authMode === 'supabase' ? <LandingPublic /> : <LegacyLoginGate />;
+}
+
+// ─── Rendering pubblico del motore Sito/PWA (Creator v2) ───────────────────
+// Riusa SitePreview.tsx (lo stesso motore usato nell'editor AppEditorView):
+// una sola implementazione per l'anteprima live e per il sito reale, niente
+// logica di rendering duplicata. Le sezioni "list" (Menu/Catalogo) mostrano
+// ancora dati di esempio dallo schema: leggere i record reali di app_records
+// da una pagina pubblica richiederebbe un endpoint di lettura senza
+// autenticazione (oggi ogni lettura passa da clientAuthMiddleware, a
+// password) — una scelta di sicurezza/prodotto deliberata da fare a parte,
+// non decisa qui implicitamente.
+function PublicSiteRenderer({ schema, onRequestLogin }: { schema: SiteBlueprintJSON; onRequestLogin: () => void }) {
+  const { slug } = useAppInfo();
+  const [activePageSlug, setActivePageSlug] = useState(schema.pages[0]?.slug);
+  const [viewport, setViewport] = useState<PreviewViewport>('desktop');
+
+  useEffect(() => {
+    const check = () => setViewport(window.innerWidth < 640 ? 'mobile' : 'desktop');
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  usePwaSetup(slug, schema.ui.primaryColor, schema.businessConfig.logoUrl || '/icons/icon-192x192.png', schema.businessConfig.name);
+
+  return (
+    <div className="min-h-screen" style={{ background: '#f8fafc' }}>
+      <div className="flex justify-end gap-2 p-3">
+        <FullscreenToggle color="#64748b" />
+        <button
+          onClick={onRequestLogin}
+          className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white shadow"
+          style={{ background: schema.ui.primaryColor }}
+        >
+          <LogIn size={15} /> Area Riservata
+        </button>
+      </div>
+      <div className={viewport === 'desktop' ? 'mx-auto max-w-4xl pb-8' : 'pb-8'}>
+        <SitePreview schema={schema} activePageSlug={activePageSlug} onNavigate={setActivePageSlug} viewport={viewport} />
+      </div>
+    </div>
+  );
 }
 
 interface CompanyInfo {
@@ -434,7 +490,12 @@ function LegacyLoginGate() {
        
        console.log('[Login] Saving session with appInfo:', sessionData.appInfo);
        localStorage.setItem(`app_session_${slug}`, JSON.stringify(sessionData));
-       window.location.href = `/a/${slug}/app`;
+       // App del nuovo motore Sito/PWA (Creator v2, config.projectType
+       // presente, vedi site-schema.ts): pannello admin dedicato su
+       // /gestionale, che riusa DynamicTable.tsx su config.adminPanel.entities
+       // invece del vecchio /app pensato per config.schema.tables.
+       const isNewEngineApp = !!(combinedConfig as Record<string, unknown>)?.projectType;
+       window.location.href = `/a/${slug}/${isNewEngineApp ? 'gestionale' : 'app'}`;
     } catch {
       setError(t('login_error_connection'));
       setSubmitting(false);
