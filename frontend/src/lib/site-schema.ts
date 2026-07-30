@@ -57,6 +57,10 @@ export const BusinessConfigSchema = z.object({
   phone: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || ''),
   email: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || ''),
   openingHours: z.array(OpeningHourSchema).optional().default([]),
+  // Lingua in cui l'app è stata generata (locale del Creator AI attivo al
+  // momento della generazione, es. 'it'|'en'|'fr'|'de'|'es'): vincola i testi
+  // generati dal modello e guida eventuali refactor/traduzioni successive.
+  language: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || 'it'),
 });
 export type BusinessConfig = z.infer<typeof BusinessConfigSchema>;
 
@@ -363,6 +367,7 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
     openingHours: Array.isArray(bc.openingHours)
       ? bc.openingHours.map((h: any) => ({ day: safeStr(h?.day), hours: safeStr(h?.hours, 'Chiuso') }))
       : [],
+    language: safeStr(bc.language, 'it'),
   };
 
   const uiRaw = r.ui || {};

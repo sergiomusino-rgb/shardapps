@@ -21,11 +21,13 @@ import { RotateCcw, AlertCircle } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import ProjectWizard from '@/src/components/creator/ProjectWizard';
 import AppEditorView from '@/src/components/creator/AppEditorView';
+import { useLanguage } from '@/src/lib/LanguageContext';
 import type { ProjectType } from '@/src/lib/site-schema';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 export default function CreatorPage() {
   const router = useRouter();
+  const { locale } = useLanguage();
   const [schema, setSchema] = useState<SiteBlueprintJSON | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +50,7 @@ export default function CreatorPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ userPrompt: prompt, projectType, lang: 'it' }),
+        body: JSON.stringify({ userPrompt: prompt, projectType, lang: locale }),
       });
       const data = await response.json();
 
@@ -97,7 +99,7 @@ export default function CreatorPage() {
         </div>
       ) : (
         <div className="h-[calc(100vh-180px)] min-h-[560px]">
-          <AppEditorView initialSchema={schema} onSchemaChange={setSchema} lang="it" />
+          <AppEditorView initialSchema={schema} onSchemaChange={setSchema} lang={locale} />
         </div>
       )}
     </div>
