@@ -1,60 +1,155 @@
 'use client';
 
 import Link from 'next/link';
-import BrandFooter from '@/components/BrandFooter'; // Importa il nuovo componente
 import LanguageSelector from '@/components/LanguageSelector';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { Bot, Video, Share2, Smartphone, CreditCard, ShieldCheck } from 'lucide-react';
+
+const LEFT_FEATURES = [
+  {
+    icon: Bot,
+    color: 'cyan',
+    title: 'Comandi AI',
+    desc: 'Assistente conversazionale integrato in ogni app: gestisci dati in linguaggio naturale.',
+  },
+  {
+    icon: Video,
+    color: 'purple',
+    title: 'ZeusX Vision',
+    desc: 'Crea video dinamici generati dall’AI a partire dalle tue immagini prodotto.',
+  },
+  {
+    icon: Share2,
+    color: 'emerald',
+    title: 'Reselling & Split',
+    desc: 'Rivendi gestionali ai tuoi clienti e ricevi la tua quota automaticamente via Stripe.',
+  },
+] as const;
+
+const RIGHT_FEATURES = [
+  {
+    icon: Smartphone,
+    color: 'blue',
+    title: 'PWA Istantanea',
+    desc: 'App pronte da installare su smartphone e desktop, senza store e senza attese.',
+  },
+  {
+    icon: CreditCard,
+    color: 'indigo',
+    title: 'Stripe Merchant of Record',
+    desc: 'Pagamenti, fatturazione e split gestiti direttamente da Stripe.',
+  },
+  {
+    icon: ShieldCheck,
+    color: 'cyan',
+    title: 'Data Isolation Totale',
+    desc: 'Ogni cliente ha il suo spazio dati completamente isolato e sicuro.',
+  },
+] as const;
+
+const COLOR_MAP: Record<string, string> = {
+  cyan: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]',
+  purple: 'bg-purple-500/10 border-purple-500/30 text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.3)]',
+  emerald: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)]',
+  blue: 'bg-blue-500/10 border-blue-500/30 text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.3)]',
+  indigo: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.3)]',
+};
+
+function FeatureCard({ f }: { f: (typeof LEFT_FEATURES)[number] | (typeof RIGHT_FEATURES)[number] }) {
+  return (
+    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 backdrop-blur-xl p-4">
+      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center mb-2 ${COLOR_MAP[f.color]}`}>
+        <f.icon className="w-5 h-5" />
+      </div>
+      <h3 className="font-bold text-white text-sm mb-1">{f.title}</h3>
+      <p className="text-xs text-slate-400 leading-snug">{f.desc}</p>
+    </div>
+  );
+}
 
 export default function Home() {
   const { t } = useLanguage();
 
   return (
-    <div className="bg-slate-950 text-white h-screen w-full font-sans flex flex-col justify-between overflow-hidden relative">
+    <div className="h-screen overflow-y-auto w-full font-sans relative text-white">
+
+      {/* SFONDO TECNO (FOTO) CON OVERLAY SCURO PER LEGGIBILITÀ */}
+      <div className="fixed inset-0 -z-10 bg-[#03060D] overflow-hidden">
+        <img
+          src="/hero-tech-background.jpg"
+          alt=""
+          className="w-full h-full object-cover scale-125"
+          style={{ filter: 'brightness(1.35) saturate(1.25) contrast(1.05)' }}
+        />
+        <div className="absolute inset-0 bg-[#03060D]/70" />
+      </div>
 
       {/* Selettore lingua (test infrastruttura i18n zero-impatto) */}
-      <div className="absolute top-6 right-6 z-30">
+      <div className="fixed top-6 right-6 z-30">
         <LanguageSelector />
       </div>
 
-      {/* HEADER */}
-      <header className="pt-10 pb-4 flex justify-center">
-        <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white">
-          ZEUS<span className="text-indigo-500">X</span>
-        </h1>
-      </header>
+      <div className="h-full flex flex-col justify-between">
 
-      {/* HERO SECTION */}
-      <main className="flex-1 flex items-center justify-center">
-        <section className="px-6 max-w-5xl w-full text-center flex flex-col items-center gap-6">
-          
-          <h2 className="text-4xl md:text-7xl font-black tracking-tight max-w-4xl leading-tight">
-            {t('welcome')}
-          </h2>
-          
-          <p className="text-lg md:text-xl text-slate-400 max-w-2xl font-light leading-relaxed">
-            {t('landing_subtitle')}
-          </p>
+        {/* HEADER */}
+        <header className="pt-10 pb-4 flex justify-center shrink-0">
+          <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white">
+            ZEUS<span className="text-indigo-500">X</span>
+          </h1>
+        </header>
 
-          <div className="mt-2 px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">
-            <p className="text-sm text-slate-300">
-              ⭐ {t('landing_badge_prefix')} <span className="text-indigo-400 font-bold">{t('landing_badge_bold')}</span>
-            </p>
+        {/* HERO + FUNZIONI A 3 COLONNE */}
+        <main className="flex-1 min-h-0 px-6 flex items-center">
+          <div className="max-w-[1800px] mx-auto w-full grid lg:grid-cols-[240px_1fr_240px] gap-12 items-center">
+
+            {/* COLONNA SINISTRA */}
+            <div className="hidden lg:block space-y-3">
+              {LEFT_FEATURES.map((f) => (
+                <FeatureCard key={f.title} f={f} />
+              ))}
+            </div>
+
+            {/* HERO CENTRALE */}
+            <section className="px-2 text-center flex flex-col items-center gap-4">
+
+              <h2 className="text-4xl md:text-7xl font-black tracking-tight max-w-4xl leading-tight">
+                AL SERVIZIO DEL TUO BUSINESS
+              </h2>
+
+              <p className="text-xl md:text-2xl text-slate-300 max-w-2xl font-semibold leading-relaxed">
+                L&apos;Olimpo dei Gestionali: Genera, Personalizza, Rivendi. Scaglia il Tuo Software sul Mercato e Guadagna in Automatico
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-4 mt-10 w-full sm:w-auto">
+                <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 rounded-xl text-center shadow-lg transition">
+                  {t('start')}
+                </Link>
+                <Link href="/info" className="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-8 py-4 rounded-xl text-center transition">
+                  {t('pricing')}
+                </Link>
+              </div>
+
+              <div className="mt-4 px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">
+                <p className="text-sm text-slate-300">
+                  ⭐ Leader con oltre <span className="text-indigo-400 font-bold">10.000 creazioni</span>
+                </p>
+              </div>
+            </section>
+
+            {/* COLONNA DESTRA */}
+            <div className="hidden lg:block space-y-3">
+              {RIGHT_FEATURES.map((f) => (
+                <FeatureCard key={f.title} f={f} />
+              ))}
+            </div>
           </div>
+        </main>
 
+        <div className="pb-6 shrink-0" />
+      </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 mt-6 w-full sm:w-auto">
-            <Link href="/login" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-4 rounded-xl text-center shadow-lg transition">
-              {t('start')}
-            </Link>
-            <Link href="/info" className="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-8 py-4 rounded-xl text-center transition">
-              {t('pricing')}
-            </Link>
-          </div>
-        </section>
-      </main>
-
-      {/* BRAND FOOTER FISSO (In basso a sinistra) */}
-      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-center gap-2 pointer-events-none">
+      {/* BRAND FOOTER FISSO (In alto a sinistra) */}
+      <div className="fixed top-6 left-6 z-50 flex flex-col items-center gap-2 pointer-events-none">
         <img
           src="/favicon.png"
           alt="ZeusX"
@@ -66,5 +161,3 @@ export default function Home() {
     </div>
   );
 }
-
-

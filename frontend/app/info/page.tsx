@@ -19,7 +19,7 @@ export default function InfoPage() {
   const plans = [
     {
       name: t('info_plan_starter'),
-      setup: '€4,99',
+      setup: '€10',
       monthly: '25€/mese per app',
       slots: 1,
       features: [
@@ -32,7 +32,7 @@ export default function InfoPage() {
     },
     {
       name: t('info_plan_pro'),
-      setup: '€50',
+      setup: '€79',
       monthly: '25€/mese per app',
       slots: 5,
       features: [
@@ -45,9 +45,9 @@ export default function InfoPage() {
     },
     {
       name: t('info_plan_business'),
-      setup: '€250',
+      setup: '€299',
       monthly: '25€/mese per app',
-      slots: 100,
+      slots: 50,
       features: [
         t('info_feature_business_1'),
         t('info_feature_business_2'),
