@@ -5,7 +5,6 @@ import { SYSTEM_TABLES, getTableByName, createEmptyRecord } from './table-defini
 import DynamicDataTable from './DynamicDataTable';
 import DynamicRecordModal from './DynamicRecordModal';
 import CreateCustomTableModal from './CreateCustomTableModal';
-import AITableModal from './AITableModal';
 import EditTableModal from './EditTableModal';
 import CustomTableRenderer from './CustomTableRenderer';
 import CustomRecordModal from './CustomRecordModal';
@@ -238,7 +237,7 @@ function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
 // Adatta i design token di settore (design.md, da lib/designTokens.ts) alla
 // stessa forma di getThemeVars, così tutti i componenti che già ricevono
 // `colors` come prop (DynamicDataTable, DynamicRecordModal, CustomTableRenderer,
-// CreateCustomTableModal, AITableModal, EditTableModal, CustomRecordModal,
+// CreateCustomTableModal, EditTableModal, CustomRecordModal,
 // SettingsModal, ecc.) ottengono la palette del settore senza alcuna modifica
 // al loro codice interno — cambia solo come `colors` viene calcolato qui sotto.
 // Schiarisce (percent > 0) o scurisce (percent < 0) un colore esadecimale,
@@ -1267,9 +1266,6 @@ export function ViewerProFinal() {
   const [customRecordsLoading, setCustomRecordsLoading] = useState(false);
   const [showCreateCustomTable, setShowCreateCustomTable] = useState(false);
   const [creatingCustomTable, setCreatingCustomTable] = useState(false);
-  const [showAITableModal, setShowAITableModal] = useState(false);
-  const [aiTableGenerating, setAiTableGenerating] = useState(false);
-  const [aiTableError, setAiTableError] = useState<string | null>(null);
   const [resettingSchema, setResettingSchema] = useState(false);
   const [customModalRecord, setCustomModalRecord] = useState<any | null | 'new'>(null);
   const [customSaving, setCustomSaving] = useState(false);
@@ -1651,35 +1647,6 @@ export function ViewerProFinal() {
       alert(err instanceof Error ? err.message : 'Errore');
     } finally {
       setCreatingCustomTable(false);
-    }
-  }, [session, loadCustomTables]);
-
-  // Traduce una richiesta in linguaggio naturale in una tabella personalizzata
-  // tramite /api/client/apps/{id}/schema (Groq + riuso della stessa API di
-  // creazione usata da handleCreateCustomTable qui sopra).
-  const handleGenerateAITable = useCallback(async (instruction: string) => {
-    if (!session) return;
-    setAiTableGenerating(true);
-    setAiTableError(null);
-    try {
-      const res = await fetch(`/api/client/apps/${session.appInfo.id}/schema`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getAuthToken(session)}`,
-        },
-        body: JSON.stringify({ instruction }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Errore generazione tabella');
-      }
-      setShowAITableModal(false);
-      await loadCustomTables();
-    } catch (err) {
-      setAiTableError(err instanceof Error ? err.message : 'Errore');
-    } finally {
-      setAiTableGenerating(false);
     }
   }, [session, loadCustomTables]);
 
@@ -2152,7 +2119,6 @@ export function ViewerProFinal() {
         datiAziendaliTable={datiAziendaliTable}
         onEditTable={setEditTable}
         onCreateTable={() => setShowCreateCustomTable(true)}
-        onCreateAITable={() => { setAiTableError(null); setShowAITableModal(true); }}
         onOpenSettings={() => setShowSettings(true)}
         onLogout={handleLogout}
         logoUrl={logoUrl}
@@ -2274,17 +2240,6 @@ export function ViewerProFinal() {
           onSave={handleCreateCustomTable}
           onClose={() => setShowCreateCustomTable(false)}
           saving={creatingCustomTable}
-          colors={colors}
-        />
-      )}
-
-      {/* AI Table Modal */}
-      {showAITableModal && (
-        <AITableModal
-          onGenerate={handleGenerateAITable}
-          onClose={() => setShowAITableModal(false)}
-          generating={aiTableGenerating}
-          error={aiTableError}
           colors={colors}
         />
       )}

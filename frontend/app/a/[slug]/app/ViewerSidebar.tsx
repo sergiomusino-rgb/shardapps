@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, Settings, LogOut, Plus, Settings2,
   MessageSquare, Mail, MessageCircle, Upload, Download, FileText,
-  FileSpreadsheet, File as FileIcon, Sparkles, Receipt, ExternalLink,
+  FileSpreadsheet, File as FileIcon, Receipt, ExternalLink,
 } from 'lucide-react';
 import { Sheet } from '@/components/ui/sheet';
 import { sortTablesForSidebar, type TableDef } from './table-definitions';
@@ -19,7 +19,6 @@ interface ViewerSidebarProps {
   datiAziendaliTable: TableDef | null | undefined;
   onEditTable: (table: TableDef) => void;
   onCreateTable: () => void;
-  onCreateAITable: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
   logoUrl: string;
@@ -33,7 +32,7 @@ interface ViewerSidebarProps {
 
 function SidebarContent({
   tables, customTables, activeView, onNavigate, datiAziendaliTable,
-  onEditTable, onCreateTable, onCreateAITable, onOpenSettings, onLogout,
+  onEditTable, onCreateTable, onOpenSettings, onLogout,
   logoUrl, companyName, slug,
 }: Omit<ViewerSidebarProps, 'isMobile' | 'open' | 'onClose'>) {
   const [comunicazioniOpen, setComunicazioniOpen] = useState(false);
@@ -91,13 +90,6 @@ function SidebarContent({
           className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-tenant-sidebar-hover px-3.5 py-2 text-sm font-medium text-tenant-sidebar-text transition-colors hover:brightness-95"
         >
           <Plus size={14} /> Nuova Tabella
-        </button>
-        <button
-          type="button"
-          onClick={onCreateAITable}
-          className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-xl bg-tenant-primary/12 px-3.5 py-2 text-sm font-medium text-tenant-primary transition-colors hover:bg-tenant-primary/20"
-        >
-          <Sparkles size={14} /> Crea con AI
         </button>
 
         <CollapsibleSection
