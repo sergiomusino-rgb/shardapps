@@ -110,9 +110,9 @@ export function SidebarBrandFooter() {
       <Image
         src="/zeusxapps.jpeg"
         alt="ZeusX"
-        width={14}
-        height={14}
-        className="h-3.5 w-3.5 shrink-0 rounded object-contain"
+        width={56}
+        height={56}
+        className="h-14 w-14 shrink-0 rounded object-contain"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
       <p className="m-0 text-[11px] font-semibold text-tenant-sidebar-text/50">
