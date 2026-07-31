@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
 
 export default function SettingsPage() {
@@ -9,6 +10,35 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+  // Piano del tenant a cui appartiene l'utente: stessa query di app/pricing/
+  // page.tsx (tenant_members -> tenants.plan), così l'etichetta qui e in
+  // pricing sono sempre coerenti tra loro.
+  const [currentPlan, setCurrentPlan] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadCurrentPlan() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: memberships } = await supabase
+        .from('tenant_members')
+        .select('tenant_id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      const tenantId = memberships?.[0]?.tenant_id;
+      if (!tenantId) return;
+
+      const { data: tenant } = await supabase
+        .from('tenants')
+        .select('plan')
+        .eq('id', tenantId)
+        .single();
+
+      setCurrentPlan(tenant?.plan || 'free');
+    }
+    loadCurrentPlan();
+  }, []);
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -59,13 +89,14 @@ export default function SettingsPage() {
           <h3 className="text-base font-bold text-slate-200 border-b border-slate-800/60 pb-2">Profilo Utente</h3>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">Nome</label>
-              <input 
-                type="text" 
-                defaultValue="Sergio" 
-                disabled
-                className="w-full bg-slate-950 border border-slate-800 text-slate-400 rounded-xl px-4 py-2.5 text-sm cursor-not-allowed"
-              />
+              <label className="block text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">Piano Utente</label>
+              <Link
+                href="/pricing"
+                className="w-full bg-slate-950 border border-slate-800 text-indigo-400 rounded-xl px-4 py-2.5 text-sm font-bold uppercase flex items-center justify-between hover:border-indigo-500/60 transition"
+              >
+                {currentPlan || '...'}
+                <span className="text-xs font-normal normal-case text-slate-500">Gestisci →</span>
+              </Link>
             </div>
             <div>
               <label className="block text-xs text-slate-400 uppercase tracking-wider font-semibold mb-2">Account Status</label>
