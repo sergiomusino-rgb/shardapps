@@ -13,7 +13,6 @@ import { TableDef, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findD
 import { DesignLayout, DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
-import HeaderClock from '@/components/HeaderClock';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
 import { renderCellValue } from './cellRenderers';
 import { Sheet } from '@/components/ui/sheet';
@@ -319,7 +318,6 @@ export default function DynamicLayoutRenderer({
           title={pageTitle}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
           showMenuToggle={isMobile}
-          extraActions={!isMobile ? <HeaderClock textColor={colors.text} mutedColor={colors.textSecondary} /> : undefined}
         />
 
         {/* Content area */}
