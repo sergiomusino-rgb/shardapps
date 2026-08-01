@@ -80,7 +80,7 @@ export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' |
 //   è un'attività operativa quotidiana, non riservata a owner/admin.
 export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'agents', 'company'];
 export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company'];
-export const AGENT_TABS: Tab[] = ['catalog', 'warehouse', 'customers'];
+export const AGENT_TABS: Tab[] = ['catalog', 'customers'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -285,7 +285,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
             </div>
           )}
           {tab === 'catalog' && <CatalogTab tenantId={tenantId} readOnly={isAgent} role={role} />}
-          {tab === 'warehouse' && <WarehouseTab tenantId={tenantId} readOnly={isAgent} />}
+          {tab === 'warehouse' && !isAgent && <WarehouseTab tenantId={tenantId} />}
           {tab === 'customers' && <CustomersTab tenantId={tenantId} openNewOnMount={openCustomerFormOnLoad} />}
           {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}

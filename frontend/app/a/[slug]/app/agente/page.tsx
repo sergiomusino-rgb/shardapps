@@ -41,6 +41,7 @@ import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 import InstallAppBanner from '@/components/InstallAppBanner';
+import InstallAppCard from '@/components/comandi/InstallAppCard';
 import type { Customer, ParsedOrderItem, DiscardedItem } from '@/types/comandi';
 
 interface AgentOrderResult {
@@ -368,6 +369,12 @@ export default function ComandiAgentPage() {
         <div>
           <h1 className="text-2xl font-bold">{t('comandi_agent_page_title')}</h1>
         </div>
+
+        {/* Punto di riferimento stabile per installare l'app sul telefono:
+            a differenza del banner flottante (dismissabile e temporaneo),
+            questa resta sempre visibile — l'agente sul campo non ha accesso
+            alla tab Azienda dove sta la stessa card per il ruolo pieno. */}
+        <InstallAppCard appName={pwaAppName} />
 
         {result ? (
           <ResultCard result={result} t={t} onNewOrder={handleNewOrder} />
