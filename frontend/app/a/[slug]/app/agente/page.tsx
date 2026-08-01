@@ -77,7 +77,34 @@ export default function ComandiAgentPage() {
   const appInfo = useAppInfo();
   const { t } = useLanguage();
   const router = useRouter();
-  usePwaSetup(appInfo.slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
+
+  // Icona e nome dell'app installabile: quelli scelti dal titolare in Azienda
+  // (tenants.logo_url / name), non il brand fisso "Comand AI" — ogni agente
+  // che installa l'app sul telefono deve vedere l'identità della propria
+  // azienda, non quella del reseller. Fallback sui valori fissi finché il
+  // fetch non risolve o se l'azienda non ha ancora caricato un logo/nome.
+  const [companyName, setCompanyName] = useState('');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabaseBrowser as any)
+        .from('tenants')
+        .select('name, logo_url')
+        .eq('id', appInfo.tenantId)
+        .single();
+      if (cancelled) return;
+      const tenant = data as { name?: string; logo_url?: string } | null;
+      setCompanyName(tenant?.name || '');
+      setCompanyLogoUrl(tenant?.logo_url || '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [appInfo.tenantId]);
+
+  const pwaAppName = companyName || COMANDI_PWA_APP_NAME;
+  usePwaSetup(appInfo.slug, COMANDI_PWA_THEME_COLOR, companyLogoUrl || COMANDI_PWA_APPLE_TOUCH_ICON, pwaAppName);
   // Voci sidebar, come nella Dashboard. Un ruolo 'agent' vede solo Catalogo
   // (in sola lettura nella Dashboard), coerente con l'RBAC definito in
   // ComandiInstanceDashboard (AGENT_TABS).
@@ -480,7 +507,7 @@ export default function ComandiAgentPage() {
       </div>
 
       <InstallAppBanner
-        appName={COMANDI_PWA_APP_NAME}
+        appName={pwaAppName}
         slug={appInfo.slug}
         primaryColor={COMANDI_PWA_THEME_COLOR}
         textColor="#ffffff"

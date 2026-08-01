@@ -27,11 +27,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   if ((app as { app_type?: string } | null)?.app_type === 'comandi_ai') {
     const tenantId = (app as { tenant_id?: string }).tenant_id;
     let tenantName: string | null = null;
+    let tenantLogo: string | null = null;
     if (tenantId) {
-      const { data: tenant } = await supabase.from('tenants').select('name').eq('id', tenantId).single();
-      tenantName = (tenant as { name?: string } | null)?.name || null;
+      // Cast necessario: 'logo_url' (migrazione 20260808000010) non è ancora
+      // presente nel tipo Database generato.
+      const { data: tenant } = await (supabase as any)
+        .from('tenants')
+        .select('name, logo_url')
+        .eq('id', tenantId)
+        .single();
+      const t = tenant as { name?: string; logo_url?: string } | null;
+      tenantName = t?.name || null;
+      tenantLogo = t?.logo_url || null;
     }
     const appName = tenantName || app?.name || 'Comand AI';
+
+    // Il logo caricato dal titolare in Azienda ha priorità sull'icona fissa
+    // Comand AI: è così che ogni tenant installa l'app con la propria
+    // identità (icona + nome) invece del brand del reseller.
+    const icons = [
+      ...(tenantLogo ? [{ src: tenantLogo, sizes: 'any', type: 'image/png', purpose: 'any' as const }] : []),
+      { src: '/icons/comandi-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/comandi-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/comandi-icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ];
 
     const manifest = {
       name: appName,
@@ -43,11 +62,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       orientation: 'portrait',
       background_color: '#030712',
       theme_color: '#d97706',
-      icons: [
-        { src: '/icons/comandi-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-        { src: '/icons/comandi-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-        { src: '/icons/comandi-icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      ],
+      icons,
       screenshots: [],
       prefer_related_applications: false,
       categories: ['business', 'productivity'],
