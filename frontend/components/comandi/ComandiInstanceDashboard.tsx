@@ -42,6 +42,16 @@ import { supabase } from '@/src/lib/supabase';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
 import { updateOrderStatusAction, getOrderAudioSignedUrlAction } from '@/app/actions/comandi-orders';
 import { listAgentsAction, createAgentAction, regenerateAgentPasswordAction, deleteAgentAction, type AgentRecord } from '@/app/actions/comandi-agents';
+import {
+  listInvoicesAction,
+  createInvoiceAction,
+  updateInvoiceStatusAction,
+  getInvoiceAction,
+  type InvoiceRecord,
+  type InvoiceStato,
+  type InvoiceTipo,
+} from '@/app/actions/comandi-invoices';
+import { downloadInvoicePdf, PDF_LAYOUTS, type PdfLayoutMeta } from '@/app/a/[slug]/fatture/pdfTemplates';
 import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
@@ -55,17 +65,19 @@ import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantM
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
 // il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
 // (i link puntano alla Dashboard con ?tab=...).
-export type Tab = 'catalog' | 'customers' | 'company' | 'orders' | 'agents';
+export type Tab = 'catalog' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices';
 
 // Tab visibili per ruolo:
 // - 'agent': solo catalogo (sola lettura) e clienti — niente dati aziendali,
-//   incassi, o gestione di altri agenti, come da requisito RBAC del ruolo.
+//   incassi, documenti fiscali, o gestione di altri agenti, come da
+//   requisito RBAC del ruolo.
 // - 'owner'/'admin': tutto, inclusa 'agents' (creazione/gestione dei
 //   rappresentanti sul campo con accesso ridotto — un'azione amministrativa,
 //   non deve essere visibile a un account operativo generico 'member').
-// - 'member' (es. cassa): tutto tranne 'agents'.
-export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'agents', 'company'];
-export const MEMBER_TABS: Tab[] = ['catalog', 'customers', 'orders', 'company'];
+// - 'member' (es. cassa): tutto tranne 'agents' — emettere fatture/ricevute
+//   è un'attività operativa quotidiana, non riservata a owner/admin.
+export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'invoices', 'agents', 'company'];
+export const MEMBER_TABS: Tab[] = ['catalog', 'customers', 'orders', 'invoices', 'company'];
 export const AGENT_TABS: Tab[] = ['catalog', 'customers'];
 
 export interface ComandiInstanceDashboardProps {
@@ -266,6 +278,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'customers' && !isAgent && <CustomersTab tenantId={tenantId} />}
           {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
+          {tab === 'invoices' && !isAgent && <InvoicesTab />}
           {tab === 'agents' && canManageAgents && <AgentsTab tenantId={tenantId} slug={slug} />}
         </main>
       </div>
@@ -2320,6 +2333,549 @@ function AgentsTab({ tenantId, slug }: { tenantId: string; slug: string }) {
               )}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab Fatture e Ricevute ─────────────────────────────────────────────────
+// Riusa le tabelle fatture/righe_fattura e la stessa generazione PDF
+// (pdfTemplates.ts) del modulo del motore a schema generato, con dati e
+// autenticazione presi da Comandi (Server Action comandi-invoices.ts) invece
+// del vecchio flusso a password — colore PDF fissato sull'ambra del brand
+// Comandi invece del colore per-tenant generico.
+
+interface InvoiceRigaForm {
+  key: string;
+  descrizione: string;
+  quantita: string;
+  prezzoUnitario: string;
+  aliquotaIva: string;
+}
+
+const EMPTY_INVOICE_RIGA = (): InvoiceRigaForm => ({
+  key: Math.random().toString(36).slice(2),
+  descrizione: '',
+  quantita: '1',
+  prezzoUnitario: '0',
+  aliquotaIva: '22',
+});
+
+function InvoicesTab() {
+  const { t } = useLanguage();
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
+  const [tipoDocumento, setTipoDocumento] = useState<InvoiceTipo>('fattura');
+  const [dataEmissione, setDataEmissione] = useState(() => new Date().toISOString().slice(0, 10));
+  const [clienteNome, setClienteNome] = useState('');
+  const [clientePiva, setClientePiva] = useState('');
+  const [clienteIndirizzo, setClienteIndirizzo] = useState('');
+  const [metodoPagamento, setMetodoPagamento] = useState('');
+  const [righe, setRighe] = useState<InvoiceRigaForm[]>([EMPTY_INVOICE_RIGA()]);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTipo, setFilterTipo] = useState<'tutti' | InvoiceTipo>('tutti');
+  const [filterStato, setFilterStato] = useState<'tutti' | InvoiceStato>('tutti');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [layoutByInvoiceId, setLayoutByInvoiceId] = useState<Record<string, PdfLayoutMeta['key']>>({});
+
+  const loadInvoices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_invoices_error_session'));
+        return;
+      }
+      const result = await listInvoicesAction({ accessToken });
+      if (!result.success || !result.invoices) {
+        setError(result.error || t('comandi_dashboard_invoices_error_generic'));
+        return;
+      }
+      setInvoices(result.invoices);
+    } catch (err) {
+      console.error('[InvoicesTab] Errore caricamento documenti:', err);
+      setError(t('comandi_dashboard_invoices_error_generic'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    loadInvoices();
+  }, [loadInvoices]);
+
+  const addRiga = () => setRighe((prev) => [...prev, EMPTY_INVOICE_RIGA()]);
+  const removeRiga = (key: string) => {
+    setRighe((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.key !== key)));
+  };
+  const updateRiga = (key: string, field: keyof Omit<InvoiceRigaForm, 'key'>, value: string) => {
+    setRighe((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  };
+
+  const totals = righe.reduce(
+    (acc, r) => {
+      const qty = parseFloat(r.quantita) || 0;
+      const price = parseFloat(r.prezzoUnitario) || 0;
+      const iva = parseFloat(r.aliquotaIva) || 0;
+      const subtotal = qty * price;
+      acc.imponibile += subtotal;
+      acc.iva += subtotal * (iva / 100);
+      return acc;
+    },
+    { imponibile: 0, iva: 0 }
+  );
+  const totaleGenerale = totals.imponibile + totals.iva;
+
+  const resetForm = () => {
+    setTipoDocumento('fattura');
+    setDataEmissione(new Date().toISOString().slice(0, 10));
+    setClienteNome('');
+    setClientePiva('');
+    setClienteIndirizzo('');
+    setMetodoPagamento('');
+    setRighe([EMPTY_INVOICE_RIGA()]);
+    setFormError(null);
+  };
+
+  const handleCreate = async () => {
+    setFormError(null);
+    if (!clienteNome.trim()) {
+      setFormError(t('comandi_dashboard_invoices_error_customer_required'));
+      return;
+    }
+    const parsedRighe = righe.map((r) => ({
+      descrizione: r.descrizione.trim(),
+      quantita: parseFloat(r.quantita),
+      prezzoUnitario: parseFloat(r.prezzoUnitario),
+      aliquotaIva: parseFloat(r.aliquotaIva),
+    }));
+    if (parsedRighe.some((r) => !r.descrizione || !Number.isFinite(r.quantita) || r.quantita <= 0 || !Number.isFinite(r.prezzoUnitario))) {
+      setFormError(t('comandi_dashboard_invoices_error_rows_invalid'));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setFormError(t('comandi_dashboard_invoices_error_session'));
+        return;
+      }
+      const result = await createInvoiceAction({
+        tipoDocumento,
+        dataEmissione,
+        clienteNome: clienteNome.trim(),
+        clientePiva: clientePiva.trim() || undefined,
+        clienteIndirizzo: clienteIndirizzo.trim() || undefined,
+        metodoPagamento: metodoPagamento.trim() || undefined,
+        righe: parsedRighe,
+        accessToken,
+      });
+      if (!result.success) {
+        setFormError(result.error || t('comandi_dashboard_invoices_error_generic'));
+        return;
+      }
+      resetForm();
+      setShowForm(false);
+      await loadInvoices();
+    } catch (err) {
+      console.error('[InvoicesTab] Errore creazione documento:', err);
+      setFormError(t('comandi_dashboard_invoices_error_generic'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateStato = async (invoiceId: string, stato: InvoiceStato) => {
+    setInvoices((prev) => prev.map((inv) => (inv.id === invoiceId ? { ...inv, stato } : inv)));
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) return;
+      const result = await updateInvoiceStatusAction({ invoiceId, stato, accessToken });
+      if (!result.success) {
+        setError(result.error || t('comandi_dashboard_invoices_error_generic'));
+        await loadInvoices();
+      }
+    } catch (err) {
+      console.error('[InvoicesTab] Errore aggiornamento stato:', err);
+      await loadInvoices();
+    }
+  };
+
+  const handleDownloadPdf = async (invoiceId: string) => {
+    setDownloadingId(invoiceId);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_invoices_error_session'));
+        return;
+      }
+      const result = await getInvoiceAction({ invoiceId, accessToken });
+      if (!result.success || !result.invoice) {
+        setError(result.error || t('comandi_dashboard_invoices_error_generic'));
+        return;
+      }
+      const inv = result.invoice;
+      const layout = layoutByInvoiceId[invoiceId] || 'moderno';
+      downloadInvoicePdf(layout, {
+        tipoDocumento: inv.tipoDocumento,
+        numero: inv.numeroFattura,
+        anno: inv.anno,
+        dataEmissione: inv.dataEmissione,
+        stato: inv.stato,
+        cliente: { nome: inv.clienteNome, piva: inv.clientePiva, indirizzo: inv.clienteIndirizzo },
+        righe: inv.righe,
+        azienda: {
+          ragioneSociale: inv.azienda.ragioneSociale,
+          piva: inv.azienda.piva,
+          indirizzo: inv.azienda.indirizzo,
+          telefono: inv.azienda.telefono,
+        },
+        // Ambra del brand Comandi, fissa: a differenza del modulo generico
+        // (colore per-tenant), qui non c'è un colore "azienda" da leggere.
+        primaryColorHex: COMANDI_PWA_THEME_COLOR,
+      });
+    } catch (err) {
+      console.error('[InvoicesTab] Errore generazione PDF:', err);
+      setError(t('comandi_dashboard_invoices_error_generic'));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const formatCurrency = (n: number) => new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' }).format(n);
+  const formatDate = (iso: string) => {
+    try { return new Date(iso).toLocaleDateString('it-IT'); } catch { return iso; }
+  };
+
+  const filtered = invoices.filter((inv) => {
+    const matchStato = filterStato === 'tutti' || inv.stato === filterStato;
+    const matchTipo = filterTipo === 'tutti' || inv.tipoDocumento === filterTipo;
+    const term = searchTerm.trim().toLowerCase();
+    const matchSearch =
+      !term ||
+      inv.clienteNome.toLowerCase().includes(term) ||
+      inv.numeroFattura.toLowerCase().includes(term) ||
+      (inv.clientePiva || '').toLowerCase().includes(term);
+    return matchStato && matchTipo && matchSearch;
+  });
+
+  const stats = {
+    totale: filtered.length,
+    bozze: filtered.filter((f) => f.stato === 'bozza').length,
+    emesse: filtered.filter((f) => f.stato === 'emessa').length,
+    pagate: filtered.filter((f) => f.stato === 'pagata').length,
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <div className="text-2xl font-bold text-white">{stats.totale}</div>
+          <div className="text-xs text-gray-500">{t('comandi_dashboard_invoices_stat_total')}</div>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <div className="text-2xl font-bold text-gray-400">{stats.bozze}</div>
+          <div className="text-xs text-gray-500">{t('comandi_dashboard_invoices_stato_bozza')}</div>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <div className="text-2xl font-bold text-blue-400">{stats.emesse}</div>
+          <div className="text-xs text-gray-500">{t('comandi_dashboard_invoices_stato_emessa')}</div>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <div className="text-2xl font-bold text-green-400">{stats.pagate}</div>
+          <div className="text-xs text-gray-500">{t('comandi_dashboard_invoices_stato_pagata')}</div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            {t('comandi_dashboard_invoices_title')}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowForm((v) => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {t('comandi_dashboard_invoices_new_button')}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={t('comandi_dashboard_invoices_search_placeholder')}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+          />
+          <select
+            value={filterTipo}
+            onChange={(e) => setFilterTipo(e.target.value as typeof filterTipo)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="tutti">{t('comandi_dashboard_invoices_filter_all')}</option>
+            <option value="fattura">{t('comandi_dashboard_invoices_tipo_fattura')}</option>
+            <option value="ricevuta">{t('comandi_dashboard_invoices_tipo_ricevuta')}</option>
+          </select>
+          <select
+            value={filterStato}
+            onChange={(e) => setFilterStato(e.target.value as typeof filterStato)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="tutti">{t('comandi_dashboard_invoices_filter_all')}</option>
+            <option value="bozza">{t('comandi_dashboard_invoices_stato_bozza')}</option>
+            <option value="emessa">{t('comandi_dashboard_invoices_stato_emessa')}</option>
+            <option value="pagata">{t('comandi_dashboard_invoices_stato_pagata')}</option>
+            <option value="annullata">{t('comandi_dashboard_invoices_stato_annullata')}</option>
+          </select>
+        </div>
+
+        {showForm && (
+          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-950/40 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => setTipoDocumento('fattura')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${tipoDocumento === 'fattura' ? 'border-amber-500/40 bg-amber-500/10 text-amber-400' : 'border-gray-700 text-gray-400 hover:bg-gray-800'}`}
+              >
+                {t('comandi_dashboard_invoices_tipo_fattura')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipoDocumento('ricevuta')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${tipoDocumento === 'ricevuta' ? 'border-amber-500/40 bg-amber-500/10 text-amber-400' : 'border-gray-700 text-gray-400 hover:bg-gray-800'}`}
+              >
+                {t('comandi_dashboard_invoices_tipo_ricevuta')}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <input
+                value={clienteNome}
+                onChange={(e) => setClienteNome(e.target.value)}
+                placeholder={t('comandi_dashboard_invoices_customer_name_placeholder')}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+              <input
+                value={clientePiva}
+                onChange={(e) => setClientePiva(e.target.value)}
+                placeholder={t('comandi_dashboard_invoices_customer_vat_placeholder')}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+              <input
+                value={clienteIndirizzo}
+                onChange={(e) => setClienteIndirizzo(e.target.value)}
+                placeholder={t('comandi_dashboard_invoices_customer_address_placeholder')}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+              <input
+                value={metodoPagamento}
+                onChange={(e) => setMetodoPagamento(e.target.value)}
+                placeholder={t('comandi_dashboard_invoices_payment_method_placeholder')}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+              <input
+                type="date"
+                value={dataEmissione}
+                onChange={(e) => setDataEmissione(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white sm:col-span-2"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 mt-3">
+              {righe.map((riga) => (
+                <div key={riga.key} className="grid grid-cols-2 sm:grid-cols-[1fr_5rem_6rem_5rem_auto] gap-2 items-center">
+                  <input
+                    value={riga.descrizione}
+                    onChange={(e) => updateRiga(riga.key, 'descrizione', e.target.value)}
+                    placeholder={t('comandi_dashboard_invoices_row_description_placeholder')}
+                    className="col-span-2 sm:col-span-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white placeholder:text-gray-500"
+                  />
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={riga.quantita}
+                    onChange={(e) => updateRiga(riga.key, 'quantita', e.target.value)}
+                    placeholder={t('comandi_dashboard_invoices_row_qty_placeholder')}
+                    className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white placeholder:text-gray-500"
+                  />
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-500">€</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={riga.prezzoUnitario}
+                      onChange={(e) => updateRiga(riga.key, 'prezzoUnitario', e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-5 pr-2 py-1.5 text-sm text-white"
+                    />
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="100"
+                      value={riga.aliquotaIva}
+                      onChange={(e) => updateRiga(riga.key, 'aliquotaIva', e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-2 pr-5 py-1.5 text-sm text-white"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-gray-500">%</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRiga(riga.key)}
+                    disabled={righe.length === 1}
+                    className="p-1.5 rounded text-gray-500 hover:bg-red-500/15 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed justify-self-end"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addRiga}
+                className="self-start flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {t('comandi_dashboard_invoices_add_row_button')}
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-col items-end gap-1 text-sm">
+              <div className="flex items-center gap-3 text-gray-400">
+                <span>{t('comandi_dashboard_invoices_totals_taxable')}</span>
+                <span className="text-white font-mono">{formatCurrency(totals.imponibile)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-gray-400">
+                <span>{t('comandi_dashboard_invoices_totals_vat')}</span>
+                <span className="text-white font-mono">{formatCurrency(totals.iva)}</span>
+              </div>
+              <div className="flex items-center gap-3 text-base font-bold">
+                <span className="text-gray-300">{t('comandi_dashboard_invoices_totals_total')}</span>
+                <span className="text-amber-400 font-mono">{formatCurrency(totaleGenerale)}</span>
+              </div>
+            </div>
+
+            {formError && <p className="mt-2 text-xs text-red-400">{formError}</p>}
+
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={saving}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 transition-colors"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {t('comandi_dashboard_invoices_save_button')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); resetForm(); }}
+                className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-700 text-gray-300 hover:bg-gray-800"
+              >
+                {t('comandi_dashboard_invoices_cancel_button')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-500">…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-gray-500">{t('comandi_dashboard_invoices_empty')}</p>
+      ) : (
+        <div className="rounded-xl border border-gray-800 bg-gray-900/40 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-900/80">
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_type')}</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_number')}</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_date')}</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_customer')}</th>
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_status')}</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_total')}</th>
+                  <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">{t('comandi_dashboard_invoices_col_actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((inv) => (
+                  <tr key={inv.id} className="border-t border-gray-800/60 hover:bg-gray-800/20">
+                    <td className="px-3 py-2.5 text-xs">
+                      <span className={`px-2 py-0.5 rounded-full font-semibold ${inv.tipoDocumento === 'ricevuta' ? 'bg-amber-500/15 text-amber-400' : 'border border-gray-700 text-gray-300'}`}>
+                        {inv.tipoDocumento === 'ricevuta' ? t('comandi_dashboard_invoices_tipo_ricevuta') : t('comandi_dashboard_invoices_tipo_fattura')}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-sm text-white font-mono">{inv.numeroFattura}/{inv.anno}</td>
+                    <td className="px-3 py-2.5 text-sm text-gray-300">{formatDate(inv.dataEmissione)}</td>
+                    <td className="px-3 py-2.5 text-sm text-gray-300 max-w-[180px] truncate">{inv.clienteNome}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <select
+                        value={inv.stato}
+                        onChange={(e) => handleUpdateStato(inv.id, e.target.value as InvoiceStato)}
+                        className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-xs text-white"
+                      >
+                        <option value="bozza">{t('comandi_dashboard_invoices_stato_bozza')}</option>
+                        <option value="emessa">{t('comandi_dashboard_invoices_stato_emessa')}</option>
+                        <option value="pagata">{t('comandi_dashboard_invoices_stato_pagata')}</option>
+                        <option value="annullata">{t('comandi_dashboard_invoices_stato_annullata')}</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-sm text-white font-mono">{formatCurrency(inv.totale)}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <select
+                          value={layoutByInvoiceId[inv.id] || 'moderno'}
+                          onChange={(e) => setLayoutByInvoiceId((prev) => ({ ...prev, [inv.id]: e.target.value as PdfLayoutMeta['key'] }))}
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-1.5 py-1 text-xs text-white"
+                          title={t('comandi_dashboard_invoices_layout_label')}
+                        >
+                          {PDF_LAYOUTS.map((layout) => (
+                            <option key={layout.key} value={layout.key}>{layout.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPdf(inv.id)}
+                          disabled={downloadingId === inv.id}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40"
+                        >
+                          {downloadingId === inv.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                          PDF
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
