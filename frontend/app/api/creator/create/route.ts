@@ -79,6 +79,59 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
+    // Consumo atomico dello slot: canCreateApp() sopra è solo un pre-check
+    // (SELECT poi confronto in memoria) per un errore rapido in UI, ma non
+    // chiude la finestra di race tra richieste concorrenti sullo stesso
+    // tenant — vedi increment_tenant_app_count (migration
+    // 20260808000005_atomic_tenant_slot_increment.sql) per i dettagli. Questo
+    // è il vero cancello: se non ottiene una riga, lo slot non è più
+    // disponibile (consumato nel frattempo da un'altra richiesta) e l'app
+    // NON viene creata.
+    if (user.id !== CREATOR_ADMIN_USER_ID) {
+      // Cast: la RPC non è ancora nei tipi generati (supabase gen types),
+      // richiede l'applicazione della migration 20260808000005 al DB remoto.
+      const { data: slotResult, error: slotError } = await supabase.rpc('increment_tenant_app_count' as any, {
+        p_tenant_id: tenantId,
+      }) as { data: unknown[] | null; error: any };
+      if (slotError && slotError.code !== 'PGRST202' && slotError.code !== '42883') {
+        // Errore reale (non "funzione non ancora deployata"): blocca la creazione.
+        console.error('[Creator] increment_tenant_app_count error:', slotError);
+        return NextResponse.json({
+          success: false,
+          error: 'Errore controllo limite app',
+          code: 'SLOTS_CHECK_ERROR',
+        }, { status: 500 });
+      }
+      if (slotError) {
+        // PGRST202/42883 = la migration 20260808000005 non è ancora stata
+        // applicata al DB remoto: fallback al vecchio comportamento
+        // (non atomico, stessa race condition di prima) invece di rompere la
+        // creazione app per tutti finché la migration non viene deployata.
+        console.warn('[Creator] increment_tenant_app_count non disponibile, fallback non atomico:', slotError.message);
+        if (!tenant || (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1)) {
+          return NextResponse.json({
+            success: false,
+            error: 'SlotsExhausted',
+            message: 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.',
+            redirectTo: '/pricing',
+            code: 'SLOTS_EXHAUSTED',
+          }, { status: 403 });
+        }
+        await supabase
+          .from('tenants')
+          .update({ total_apps_created: (tenant.total_apps_created || 0) + 1 })
+          .eq('id', tenantId);
+      } else if (!slotResult || slotResult.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'SlotsExhausted',
+          message: 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.',
+          redirectTo: '/pricing',
+          code: 'SLOTS_EXHAUSTED',
+        }, { status: 403 });
+      }
+    }
+
     // Non fidarsi ciecamente del JSON ricevuto dal client (è lo stesso schema
     // che gli abbiamo restituito in anteprima, ma potrebbe essere stato
     // manomesso): ri-sanitizza prima di salvarlo.
@@ -134,14 +187,9 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // Incrementa il contatore permanente di app create (non si libera mai),
-    // stesso meccanismo di frontend/app/api/apps/route.ts.
-    if (user.id !== CREATOR_ADMIN_USER_ID) {
-      await supabase
-        .from('tenants')
-        .update({ total_apps_created: (tenant?.total_apps_created || 0) + 1 })
-        .eq('id', tenantId);
-    }
+    // Il contatore è già stato incrementato atomicamente sopra, prima
+    // dell'insert (increment_tenant_app_count), quindi non c'è più nulla da
+    // fare qui.
 
     return NextResponse.json({
       success: true,

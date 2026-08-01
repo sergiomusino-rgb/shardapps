@@ -644,7 +644,7 @@
   "success_error": "Error",
   "success_missing_params": "Faltan parámetros",
   "success_back_generator": "Volver al generador",
-  "success_congrats": "🎉 ¡Felicidades!",
+  "success_congrats": "¡FELICIDADES!",
   "success_app_created": "¡Su software de gestión se ha creado con éxito!",
   "success_app_id": "ID App:",
   "success_active": "✓ Activo",
@@ -731,7 +731,6 @@
   "zeusx_generator_error_create": "Ocurrió un error al crear la app. Por favor, inténtalo de nuevo.",
   "zeusx_generator_error_connection": "Error de conexión. Por favor, inténtalo más tarde.",
   "zeusx_generator_back_dashboard": "← Volver al Panel",
-  "success_congrats": "¡FELICIDADES!",
   "success_start_using": "¡Comienza a usar tu app ZEUSX!",
   "success_demo_app": "App Demo",
   "success_demo_type": "Tipo:",
@@ -894,18 +893,29 @@
   "mgmt_err_stripe_connect": "Error al conectar con Stripe",
   "mgmt_err_network": "Error de red",
   "mgmt_err_min_price_starter": "El plan Starter requiere un precio mínimo de 25,00€",
-  "mgmt_err_update_price": "Error al actualizar el precio"
+  "mgmt_err_update_price": "Error al actualizar el precio",
+  "waiting_title_creating": "Preparando el proyecto...",
+  "waiting_title_building": "Tu sistema de gestión está tomando forma!",
+  "waiting_title_done": "Sistema de gestión creado con éxito!",
+  "waiting_title_error": "Se ha producido un error",
+  "waiting_subtitle_creating": "Estamos configurando el entorno de desarrollo...",
+  "waiting_subtitle_building": "La IA está generando tu interfaz. Tarda entre 4 y 40 minutos.",
+  "waiting_subtitle_done": "Tu sistema de gestión está listo! Serás redirigido...",
+  "waiting_error_invalid_session": "Sesión no válida. Vuelve a iniciar sesión.",
+  "waiting_error_session_expired": "Sesión caducada. Vuelve a iniciar sesión.",
+  "waiting_error_status_check": "Error {status}: No se pudo verificar el estado del proyecto.",
+  "waiting_error_generic": "Error al comprobar el estado",
+  "waiting_log_title": "Registro de construcción",
+  "waiting_button_go_to_project": "Ir al proyecto",
+  "waiting_button_preview": "Vista previa",
+  "waiting_button_back_to_generator": "Volver al generador",
+  "waiting_button_retry": "Reintentar",
+  "success_your_app": "Tu App",
+  "success_app_id_label": "Identificador de la App",
+  "success_button_go_to_management": "Ir a Gestión",
+  "success_button_go_to_app_details": "Ir a los detalles de la app",
+  "success_button_new_prompt": "Nuevo Prompt",
+  "success_credentials_label": "Credenciales del Cliente",
+  "success_email_label": "Correo electrónico",
+  "success_loading_credentials": "Cargando credenciales..."
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

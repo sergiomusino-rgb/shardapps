@@ -5,6 +5,7 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
 const Groq = require('groq-sdk');
+const { aiLimiter } = require('../middleware/rate-limit');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -603,7 +604,7 @@ Regole:
 // come richiesto: Groq (llama-3.1-8b-instant di default) invece di
 // OpenRouter/Claude usato per la generazione schema, coerente con l'uso già
 // esistente di Groq per i task rapidi (vedi comandi-voice-extraction.ts).
-router.post('/client/apps/:appId/chat', clientAuthMiddleware, async (req, res) => {
+router.post('/client/apps/:appId/chat', clientAuthMiddleware, aiLimiter, async (req, res) => {
   try {
     const { messages, activeTable } = req.body || {};
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -650,6 +651,7 @@ router.post('/client/apps/:appId/chat', clientAuthMiddleware, async (req, res) =
         .from('app_records')
         .select('data')
         .eq('app_id', req.appId)
+        .eq('tenant_id', req.tenantId)
         .eq('table_name', activeTable)
         .order('created_at', { ascending: false })
         .limit(30);

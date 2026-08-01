@@ -197,7 +197,7 @@ export default function AuthGuard({
               Vai al Login
             </a>
             <a
-              href="/dashboard/pricing"
+              href="/pricing"
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-800"
             >
               Vedi Piani

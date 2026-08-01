@@ -293,7 +293,15 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         if (planId === 'credit_topup') {
           const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
           const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
-          const applied = await applyCheckoutSessionOnce(supabase, session.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
+          // Chiave di idempotenza = payment_intent, non session.id: sia questo
+          // evento che payment_intent.succeeded (sotto) accreditano lo stesso
+          // acquisto credit_topup, e Stripe invia sempre entrambi per i
+          // checkout mode:'payment'. Usare lo stesso id in entrambi i punti fa
+          // sì che processed_checkout_sessions catturi il duplicato invece di
+          // accreditare due volte (era il bug: due chiavi diverse per lo
+          // stesso acquisto bypassavano il vincolo unique).
+          const idempotencyKey = session.payment_intent || session.id;
+          const applied = await applyCheckoutSessionOnce(supabase, idempotencyKey, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
           if (applied) {
             console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
           }
@@ -479,14 +487,32 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
             console.error(`[Stripe Webhook] errore accredito crediti per credit_topup`, err);
           }
         } else {
-          // Regular plan upgrade - create subscription
-          if (feePriceId) {
+          // Regular plan upgrade - create subscription (stesso guard idempotente
+          // usato nel branch checkout.session.completed: senza, ogni evento
+          // duplicato payment_intent.succeeded/checkout.session.completed per lo
+          // stesso acquisto creava una fee subscription orfana e non tracciata).
+          const { data: existingSub } = await supabase
+            .from('subscriptions')
+            .select('stripe_subscription_id')
+            .eq('tenant_id', tenantId)
+            .maybeSingle();
+
+          if (feePriceId && !existingSub?.stripe_subscription_id) {
             try {
               const feeSubscription = await stripe.subscriptions.create({
                 customer: paymentIntent.customer,
                 items: [{ price: feePriceId, quantity: 0 }],
                 metadata: { tenant_id: tenantId, type: 'app_fee' },
                 proration_behavior: 'always_invoice',
+              });
+
+              const feeSubItem = feeSubscription.items.data[0];
+              await upsertSubscription(supabase, tenantId, {
+                stripe_customer_id: paymentIntent.customer,
+                stripe_subscription_id: feeSubscription.id,
+                status: feeSubscription.status,
+                current_period_start: getPeriodISO(feeSubItem, 'current_period_start'),
+                current_period_end: getPeriodISO(feeSubItem, 'current_period_end'),
               });
 
               console.log(`[Stripe Webhook] Fee subscription creata: ${feeSubscription.id} per tenant ${tenantId}`);

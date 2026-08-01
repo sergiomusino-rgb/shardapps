@@ -19,22 +19,44 @@ export interface TenantStatus {
 
 export async function getUserTenantsStatus(userId: string): Promise<TenantStatus[]> {
   const supabase = getServiceSupabase();
-  // FIXME: la funzione `check_user_tenant_status` non esiste nello schema
-  // generato (supabase gen types) dal DB remoto collegato — non è mai stata
-  // applicata con una migrazione. Ogni chiamata a questa funzione (quindi
-  // /api/billing tramite ensureTenantAccess) sta probabilmente fallendo in
-  // produzione. Il cast bypassa solo l'errore di tipo; va creata la funzione
-  // remota (o va sostituita questa chiamata con l'equivalente logica diretta).
-  const { data, error } = await supabase.rpc('check_user_tenant_status' as any, {
-    p_user_id: userId,
-  });
 
-  if (error) {
-    console.error('getUserTenantsStatus error:', error);
+  // Sostituisce la RPC `check_user_tenant_status`, mai applicata al DB remoto
+  // (ogni chiamata falliva sempre, quindi /api/billing era completamente
+  // rotto in produzione): stessa logica calcolata direttamente dalle tabelle
+  // esistenti (tenant_members, subscriptions, apps) invece di una funzione
+  // Postgres inesistente.
+  const { data: memberships, error: membershipsError } = await supabase
+    .from('tenant_members')
+    .select('tenant_id')
+    .eq('user_id', userId);
+
+  if (membershipsError) {
+    console.error('getUserTenantsStatus error:', membershipsError);
     throw new Error('Errore nel controllo dello stato tenant');
   }
 
-  return (data || []) as TenantStatus[];
+  const tenantIds = [...new Set((memberships || []).map((m) => m.tenant_id))];
+  if (tenantIds.length === 0) return [];
+
+  const [{ data: subscriptions }, { data: apps }] = await Promise.all([
+    supabase.from('subscriptions').select('tenant_id, status').in('tenant_id', tenantIds),
+    supabase.from('apps').select('tenant_id, trial_ends_at').in('tenant_id', tenantIds),
+  ]);
+
+  const now = Date.now();
+  return tenantIds.map((tenant_id) => {
+    const subscription = subscriptions?.find((s) => s.tenant_id === tenant_id);
+    const has_active_subscription = subscription?.status === 'active' || subscription?.status === 'trialing';
+    const any_trial_active = (apps || []).some(
+      (a) => a.tenant_id === tenant_id && a.trial_ends_at && new Date(a.trial_ends_at).getTime() > now
+    );
+    return {
+      tenant_id,
+      has_active_subscription,
+      any_trial_active,
+      blocked: !has_active_subscription && !any_trial_active,
+    };
+  });
 }
 
 export async function ensureTenantAccess(userId: string, tenantId?: string): Promise<{ tenantId: string; status: TenantStatus }> {
@@ -74,23 +96,25 @@ export async function getTenantAppsCount(tenantId: string): Promise<number> {
   return count || 0;
 }
 
+// Pre-check non atomico (va bene per un'anteprima/UX rapida): il vero
+// cancello che chiude la race condition sulla creazione app è la RPC
+// increment_tenant_app_count, chiamata subito prima dell'insert in
+// app/api/creator/create/route.ts e app/api/apps/route.ts.
 export async function canCreateApp(tenantId: string): Promise<{ allowed: boolean; reason?: string }> {
   const supabase = getServiceSupabase();
 
-  // FIXME: la funzione `can_create_app` non esiste nello schema generato dal
-  // DB remoto collegato — mai applicata con una migrazione. Nessun chiamante
-  // attivo nel repo oggi (funzione non importata altrove), ma va creata
-  // remotamente prima di riutilizzarla.
-  const { data, error } = await supabase.rpc('can_create_app' as any, {
-    p_tenant_id: tenantId,
-  });
+  const { data: tenant, error } = await supabase
+    .from('tenants')
+    .select('app_limit, total_apps_created')
+    .eq('id', tenantId)
+    .single();
 
-  if (error) {
+  if (error || !tenant) {
     console.error('canCreateApp error:', error);
     return { allowed: false, reason: 'Errore interno' };
   }
 
-  if (!data) {
+  if ((tenant.total_apps_created || 0) >= (tenant.app_limit ?? 1)) {
     return { allowed: false, reason: 'UpgradeToProRequired' };
   }
 

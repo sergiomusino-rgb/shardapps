@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
           user_id: user.id,
           email: user.email,
           full_name: user.user_metadata?.full_name || user.email?.split('@')[0],
-          role: 'admin',
+          role: 'viewer',
           subscription_plan: 'free',
         });
 

@@ -58,7 +58,7 @@
   "login_error_email_not_confirmed": "E-Mail nicht bestätigt. Prüfen Sie Ihren Posteingang.",
   "login_error_password_length": "Das Passwort muss mindestens 6 Zeichen enthalten.",
   "login_error_already_registered": "Ein Konto mit dieser E-Mail existiert bereits. Versuchen Sie sich anzumelden.",
-  "login_error_connection": "Verbindungsfehler. Bitte versuchen Sie es später erneut.",
+  "login_error_connection": "Verbindungsfehler",
   "login_success_registered": "Registrierung abgeschlossen! Melden Sie sich mit Ihren Daten an.",
   "login_success_register_confirm": "Registrierung abgeschlossen! Prüfen Sie Ihre E-Mail zur Bestätigung, dann melden Sie sich an.",
   "login_success_reset": "Wiederherstellungs-E-Mail gesendet! Prüfen Sie Ihren Posteingang.",
@@ -645,7 +645,7 @@
   "success_error": "Fehler",
   "success_missing_params": "Fehlende Parameter",
   "success_back_generator": "Zurück zum Generator",
-  "success_congrats": "🎉 Herzlichen Glückwunsch!",
+  "success_congrats": "HERZLICHEN GLÜCKWUNSCH!",
   "success_app_created": "Ihre Verwaltungssoftware wurde erfolgreich erstellt!",
   "success_app_id": "App-ID:",
   "success_active": "✓ Aktiv",
@@ -701,7 +701,6 @@
   "login_error_not_found": "App nicht gefunden",
   "login_error_blocked": "App blockiert",
   "login_error_wrong_password": "Falsches Passwort",
-  "login_error_connection": "Verbindungsfehler",
   "login_password_placeholder": "Geben Sie Ihr Passwort ein",
   "login_verifying": "Überprüfung...",
   "login_access": "Anmelden",
@@ -732,7 +731,6 @@
   "zeusx_generator_error_create": "Beim Erstellen der App ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.",
   "zeusx_generator_error_connection": "Verbindungsfehler. Bitte versuchen Sie es später.",
   "zeusx_generator_back_dashboard": "← Zurück zum Dashboard",
-  "success_congrats": "HERZLICHEN GLÜCKWUNSCH!",
   "success_start_using": "Starten Sie Ihre ZEUSX App!",
   "success_demo_app": "Demo-App",
   "success_demo_type": "Typ:",
@@ -895,18 +893,29 @@
   "mgmt_err_stripe_connect": "Fehler bei der Verbindung zu Stripe",
   "mgmt_err_network": "Netzwerkfehler",
   "mgmt_err_min_price_starter": "Der Starter-Plan erfordert einen Mindestpreis von 25,00€",
-  "mgmt_err_update_price": "Fehler beim Aktualisieren des Preises"
+  "mgmt_err_update_price": "Fehler beim Aktualisieren des Preises",
+  "waiting_title_creating": "Projekt wird vorbereitet...",
+  "waiting_title_building": "Ihre Verwaltungssoftware nimmt Gestalt an!",
+  "waiting_title_done": "Verwaltungssoftware erfolgreich erstellt!",
+  "waiting_title_error": "Ein Fehler ist aufgetreten",
+  "waiting_subtitle_creating": "Wir richten die Entwicklungsumgebung ein...",
+  "waiting_subtitle_building": "Die KI generiert Ihre Oberfläche. Dies dauert 4-40 Minuten.",
+  "waiting_subtitle_done": "Ihre Verwaltungssoftware ist bereit! Sie werden weitergeleitet...",
+  "waiting_error_invalid_session": "Ungültige Sitzung. Bitte melden Sie sich erneut an.",
+  "waiting_error_session_expired": "Sitzung abgelaufen. Bitte melden Sie sich erneut an.",
+  "waiting_error_status_check": "Fehler {status}: Projektstatus konnte nicht überprüft werden.",
+  "waiting_error_generic": "Fehler bei der Statusprüfung",
+  "waiting_log_title": "Build-Protokoll",
+  "waiting_button_go_to_project": "Zum Projekt",
+  "waiting_button_preview": "Vorschau",
+  "waiting_button_back_to_generator": "Zurück zum Generator",
+  "waiting_button_retry": "Erneut versuchen",
+  "success_your_app": "Deine App",
+  "success_app_id_label": "App-Kennung",
+  "success_button_go_to_management": "Zu Management",
+  "success_button_go_to_app_details": "Zu den App-Details",
+  "success_button_new_prompt": "Neuer Prompt",
+  "success_credentials_label": "Client-Zugangsdaten",
+  "success_email_label": "E-Mail",
+  "success_loading_credentials": "Zugangsdaten werden geladen..."
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

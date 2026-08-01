@@ -54,10 +54,14 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Aggiungi il system prompt se non è già presente
-    const allMessages: AiRouterMessage[] = messages[0]?.role === 'system'
-      ? messages
-      : [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
+    // Il system prompt è sempre quello del server: un client che invia il
+    // proprio messaggio con role:'system' non deve poter sostituire la
+    // persona/istruzioni dell'assistente (jailbreak) né consumare il budget
+    // AI della piattaforma per usi non previsti.
+    const allMessages: AiRouterMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages.filter((m: AiRouterMessage) => m?.role !== 'system'),
+    ];
 
     // Chat generico: task "chat" -> tier "fast" dell'AI Router (nessuna
     // generazione complessa di app/codice, non serve il modello avanzato).

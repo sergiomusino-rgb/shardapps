@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 
 // Controllo esplicito della chiave Stripe
 if (!process.env.STRIPE_SECRET_KEY) {
@@ -66,9 +67,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'L\'app non ha un account Stripe Connect configurato' }, { status: 400 });
     }
 
-    // Application fee: 25% vanno a ZeusX, il resto all'account connesso
-    // Per le subscription, Stripe richiede application_fee_percent invece di application_fee_amount
-    const applicationFeePercent = 25;
+    // Fee ZeusX fissa (€25/mese per app, coerente con apps/checkout,
+    // apps/checkout/managed e a/[slug]/create-checkout-session — non più il
+    // 25% del prezzo cliente, che divergeva dagli altri tre flussi). Stripe
+    // però non supporta un application_fee_amount fisso su una subscription
+    // a destination charge: si converte il fisso in una percentuale
+    // equivalente sul prezzo di questo cliente, così l'incasso netto per
+    // ZeusX resta sempre €25 a prescindere da quanto il reseller fa pagare.
+    const applicationFeePercent = Math.min(
+      100,
+      Math.round((ZEUSX_MINIMUM_FEE_EUR / app.client_subscription_price) * 10000) / 100
+    );
 
     // Crea la sessione di checkout per conto dell'account connesso
     const session = await stripe.checkout.sessions.create({
