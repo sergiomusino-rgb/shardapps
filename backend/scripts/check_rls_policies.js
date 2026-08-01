@@ -29,42 +29,45 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const COMMANDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 
-// Contratto verificato a mano il 2026-08-08 (vedi 20260630000011_rls_
-// policies_auth_uid.sql e 20260808000011_close_stale_permissive_tenant_
-// policies.sql). Se l'elenco REALE di policy permissive per una di queste
-// tabelle/comandi non combacia esattamente, è un cambiamento — voluto o un
-// refuso come quello di questo audit — da rivedere prima del deploy.
+// Contratto verificato il 2026-08-08 leggendo le USING/WITH CHECK REALI
+// via list_rls_policies() — non i file di migrazione, che per tenants/
+// tenant_members/apps/subscriptions si sono rivelati non allineati al
+// database live (drift da modifiche fatte a mano su Dashboard Supabase, mai
+// tracciate in una migrazione). Se l'elenco REALE di policy permissive per
+// una di queste tabelle/comandi non combacia esattamente, è un cambiamento —
+// voluto o un refuso — da rivedere prima del deploy.
 const BASELINE = {
   tenants: {
-    SELECT: ['tenants_select_member'],
-    INSERT: ['tenants_insert_authenticated'],
-    UPDATE: ['tenants_update_owner'],
-    DELETE: ['tenants_delete_owner'],
+    // has_table_access('tenants') è l'accesso RBAC per gli admin/reseller
+    // ZeusX, in OR con l'appartenenza/ruolo nel tenant per l'utente normale.
+    SELECT: ['tenants_select'],
+    INSERT: ['tenants_insert'],
+    UPDATE: ['tenants_update'],
+    DELETE: ['tenants_delete'],
   },
   tenant_members: {
-    // manage_owner è FOR ALL: vale anche per SELECT, oltre a select_own —
-    // due policy su SELECT qui sono corrette, non una sovrapposizione da
-    // correggere (l'owner deve poter vedere tutte le righe del suo tenant,
-    // non solo la propria).
-    SELECT: ['tenant_members_select_own', 'tenant_members_manage_owner'],
-    INSERT: ['tenant_members_manage_owner'],
-    UPDATE: ['tenant_members_manage_owner'],
-    DELETE: ['tenant_members_manage_owner'],
+    // Dopo 20260808000013: SOLA lettura della propria riga da client. Ogni
+    // scrittura (creazione agenti, cambio ruolo, ecc.) passa da Server
+    // Action con service role, che bypassa RLS — quindi nessuna policy di
+    // INSERT/UPDATE/DELETE per anon/authenticated è corretto, non un buco:
+    // un array vuoto significa "nessuna policy permissiva" = scrittura
+    // sempre negata per chiunque non sia service_role.
+    SELECT: ['tenant_members_select_own'],
+    INSERT: [],
+    UPDATE: [],
+    DELETE: [],
   },
   apps: {
-    SELECT: ['apps_select_tenant_member'],
-    INSERT: ['apps_insert_tenant_member'],
-    UPDATE: ['apps_update_tenant_member'],
-    DELETE: ['apps_delete_tenant_member'],
+    SELECT: ['apps_select', 'apps_select_by_totalum_app_id', 'apps_select_public_active', 'apps_service_role_all'],
+    INSERT: ['apps_insert', 'apps_service_role_all'],
+    UPDATE: ['apps_service_role_all', 'apps_update'],
+    DELETE: ['apps_delete', 'apps_service_role_all'],
   },
   subscriptions: {
-    // manage_service_role è USING(false): blocca sempre anon/authenticated,
-    // service_role bypassa RLS a prescindere. Combacia con select_tenant_member
-    // solo su SELECT perché è FOR ALL — anche questo è atteso, non un refuso.
-    SELECT: ['subscriptions_select_tenant_member', 'subscriptions_manage_service_role'],
-    INSERT: ['subscriptions_manage_service_role'],
-    UPDATE: ['subscriptions_manage_service_role'],
-    DELETE: ['subscriptions_manage_service_role'],
+    SELECT: ['subscriptions_manage_service_role', 'subscriptions_select'],
+    INSERT: ['subscriptions_insert', 'subscriptions_manage_service_role'],
+    UPDATE: ['subscriptions_manage_service_role', 'subscriptions_update'],
+    DELETE: ['subscriptions_delete', 'subscriptions_manage_service_role'],
   },
   catalog_items: {
     SELECT: ['catalog_items_select_tenant_member'],
