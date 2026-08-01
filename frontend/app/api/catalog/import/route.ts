@@ -1,10 +1,19 @@
 // ─── Comandi: Catalog Bulk Import API Route (Next.js App Router) ──────────────
-// Importazione massiva del catalogo prodotti da file Excel (.xlsx) o CSV,
-// con colonne standard: code, name, category, price, unit. Usa il pacchetto
-// 'xlsx' (SheetJS) per leggere entrambi i formati con la stessa API — NB:
-// installato dal CDN ufficiale SheetJS (non dal registry npm, fermo alla
-// 0.18.5 con una vulnerabilità nota di prototype pollution, vedi
+// Importazione massiva del catalogo prodotti da file Excel (.xlsx) o CSV. Usa
+// il pacchetto 'xlsx' (SheetJS) per leggere entrambi i formati con la stessa
+// API — NB: installato dal CDN ufficiale SheetJS (non dal registry npm, fermo
+// alla 0.18.5 con una vulnerabilità nota di prototype pollution, vedi
 // package.json: "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz").
+//
+// Mappatura tollerante: le intestazioni non devono coincidere esattamente con
+// le colonne di catalog_items. Vengono normalizzate (accenti/spazi/underscore
+// rimossi, minuscolo) e riconosciute tramite sinonimi comuni IT/EN (vedi
+// FIELD_SYNONYMS) — es. "prezzo"/"costo" per price, "nome"/"prodotto" per
+// name, "immagine"/"foto" per image_url. Colonne assenti o valori non validi
+// non bloccano la riga: viene applicato un fallback sicuro (name -> "Prodotto
+// Senza Nome", price -> 0, category -> "Generale", description/image_url ->
+// vuoto) e l'accaduto è riportato in 'errors' come nota informativa, non come
+// fallimento dell'importazione.
 //
 // Sicurezza: stesso principio delle altre route Comandi (agent-voice-order,
 // generate-video) — tenant_id derivato ESCLUSIVAMENTE dall'utente risolto dal
@@ -49,7 +58,9 @@ interface CatalogImportRow {
   tenant_id: string;
   sku: string;
   name: string;
-  category: string | null;
+  category: string;
+  description: string;
+  image_url: string | null;
   unit_price: number;
   unit_of_measure: string;
 }
@@ -83,14 +94,62 @@ async function getUserIdFromBearerToken(request: NextRequest): Promise<string | 
 
 // ─── Parsing & validazione righe ────────────────────────────────────────────
 
-// Lettura case/whitespace-insensitive dell'header: il template generato usa
-// esattamente questi nomi, ma un utente potrebbe rinominarli con maiuscole
-// diverse aprendo il file in Excel.
-function getField(row: Record<string, unknown>, name: string): string {
-  const key = Object.keys(row).find((k) => k.trim().toLowerCase() === name);
-  if (key === undefined) return '';
-  const value = row[key];
-  return value === null || value === undefined ? '' : String(value).trim();
+type CanonicalField = 'code' | 'name' | 'category' | 'price' | 'description' | 'image_url' | 'unit';
+
+// Sinonimi comuni (IT/EN) accettati per ogni colonna del catalogo: l'utente
+// non è vincolato ai nomi esatti del template, può caricare un file esportato
+// da un altro gestionale purché usi uno di questi alias.
+const FIELD_SYNONYMS: Record<CanonicalField, string[]> = {
+  code: ['code', 'sku', 'codice', 'codiceprodotto', 'cod'],
+  name: ['name', 'nome', 'prodotto', 'titolo', 'nomeprodotto', 'articolo'],
+  category: ['category', 'categoria', 'gruppo', 'reparto', 'tipo'],
+  price: ['price', 'prezzo', 'costo', 'prezzounitario', 'importo'],
+  description: ['description', 'descrizione', 'note', 'desc'],
+  image_url: ['imageurl', 'immagine', 'foto', 'immagineurl', 'fotourl', 'image', 'img'],
+  unit: ['unit', 'unita', 'unitadimisura', 'um', 'unitamisura'],
+};
+
+const SYNONYM_TO_FIELD = new Map<string, CanonicalField>();
+(Object.entries(FIELD_SYNONYMS) as [CanonicalField, string[]][]).forEach(([field, synonyms]) => {
+  synonyms.forEach((synonym) => SYNONYM_TO_FIELD.set(synonym, field));
+});
+
+// Normalizza un'intestazione per il confronto: rimuove accenti, spazi,
+// underscore e trattini, converte in minuscolo. Così "Prezzo (€)", "prezzo_unitario"
+// e "PREZZO" mappano tutti sullo stesso sinonimo.
+function normalizeKey(raw: string): string {
+  return raw
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+// Legge una riga grezza del foglio e la traduce nei campi canonici del
+// catalogo, indipendentemente da come sono nominate le colonne nel file
+// originale. Se più colonne mappano sullo stesso campo, vince la prima non vuota.
+function mapRowToCanonical(row: Record<string, unknown>): Partial<Record<CanonicalField, string>> {
+  const result: Partial<Record<CanonicalField, string>> = {};
+  for (const [key, rawValue] of Object.entries(row)) {
+    const field = SYNONYM_TO_FIELD.get(normalizeKey(key));
+    if (!field || result[field]) continue;
+    const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+    if (value) result[field] = value;
+  }
+  return result;
+}
+
+// Genera uno SKU leggibile per righe senza codice prodotto, invece di
+// bloccare l'importazione: es. "Birra 33cl" -> "AUTO-BIRRA-33CL-1".
+function slugify(input: string): string {
+  const slug = input
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug.slice(0, 40) || 'PRODOTTO';
 }
 
 // Accetta sia il formato "1234.56" sia quello europeo "1.234,56" / "12,50",
@@ -112,11 +171,21 @@ function parsePrice(raw: string): number | null {
 function parseWorkbookRows(buffer: Buffer): Record<string, unknown>[] {
   // XLSX riconosce dal contenuto sia i formati binari Excel (.xlsx/.xls) sia
   // il testo CSV, quindi una sola API copre entrambi i formati richiesti.
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  // codepage 65001 (UTF-8) esplicita: senza, un CSV UTF-8 senza BOM viene
+  // letto con la codepage di default (Latin-1/Windows-1252) e ogni carattere
+  // accentato (Città, Perché, Caffè...) risulta corrotto — comune nei
+  // cataloghi italiani sia nelle intestazioni sia nei nomi prodotto.
+  const workbook = XLSX.read(buffer, { type: 'buffer', codepage: 65001 });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) return [];
   const sheet = workbook.Sheets[firstSheetName];
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  // raw:false forza il testo formattato della cella (es. "3,50", "0102")
+  // invece del valore già tipizzato da SheetJS: senza, un prezzo CSV in
+  // formato europeo come "3,50" viene interpretato come numero usando la
+  // virgola come separatore delle migliaia -> 350, ancora prima che
+  // parsePrice() possa intervenire. Con raw:false il parsing numerico resta
+  // interamente sotto il nostro controllo (parsePrice, sku come stringa).
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
 }
 
 interface ValidationResult {
@@ -124,39 +193,56 @@ interface ValidationResult {
   errors: RowError[];
 }
 
+// Valori di fallback usati quando una colonna manca o non è valorizzata nel
+// file: l'obiettivo è che una riga "sporca" venga comunque importata (con una
+// nota informativa) invece di far fallire l'intera importazione.
+const DEFAULT_NAME = 'Prodotto Senza Nome';
+const DEFAULT_CATEGORY = 'Generale';
+const DEFAULT_UNIT = 'pz';
+
 function validateRows(rawRows: Record<string, unknown>[], tenantId: string): ValidationResult {
-  const errors: RowError[] = [];
+  const notices: RowError[] = [];
   const bySku = new Map<string, { row: number; item: CatalogImportRow }>();
+  let autoSkuCounter = 0;
 
   rawRows.forEach((raw, index) => {
     // Riga 1 = header, quindi la prima riga dati è la 2.
     const rowNumber = index + 2;
+    const fields = mapRowToCanonical(raw);
 
-    const code = getField(raw, 'code');
-    const name = getField(raw, 'name');
-    const category = getField(raw, 'category');
-    const priceRaw = getField(raw, 'price');
-    const unit = getField(raw, 'unit');
-
-    if (!code && !name && !priceRaw) {
+    const hasAnyValue = Object.values(fields).some((value) => !!value);
+    if (!hasAnyValue) {
       // Riga completamente vuota (comune a fine file su export Excel): la
       // saltiamo silenziosamente, non è un errore da segnalare all'utente.
       return;
     }
 
+    let code = fields.code ?? '';
     if (!code) {
-      errors.push({ row: rowNumber, error: 'Campo "code" mancante' });
-      return;
+      autoSkuCounter += 1;
+      code = `AUTO-${slugify(fields.name || `RIGA-${rowNumber}`)}-${autoSkuCounter}`;
+      notices.push({ row: rowNumber, error: `Campo "code" mancante: assegnato automaticamente il codice "${code}"` });
     }
-    if (!name) {
-      errors.push({ row: rowNumber, error: 'Campo "name" mancante' });
-      return;
+
+    const name = fields.name || DEFAULT_NAME;
+    if (!fields.name) {
+      notices.push({ row: rowNumber, error: `Campo "name" mancante: assegnato il valore predefinito "${DEFAULT_NAME}"` });
     }
-    const price = parsePrice(priceRaw);
-    if (price === null) {
-      errors.push({ row: rowNumber, error: `Campo "price" non valido: "${priceRaw}"` });
-      return;
+
+    let price = 0;
+    if (fields.price) {
+      const parsed = parsePrice(fields.price);
+      if (parsed === null) {
+        notices.push({ row: rowNumber, error: `Campo "price" non valido ("${fields.price}"): impostato a 0` });
+      } else {
+        price = parsed;
+      }
     }
+
+    const category = fields.category || DEFAULT_CATEGORY;
+    const description = fields.description || '';
+    const image_url = fields.image_url || null;
+    const unit = fields.unit || DEFAULT_UNIT;
 
     // Due righe con lo stesso codice non possono coesistere in un unico
     // upsert (ON CONFLICT non può aggiornare due volte la stessa riga nella
@@ -164,7 +250,7 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string): Val
     // segnalate come sostituite invece di fallire silenziosamente.
     const existing = bySku.get(code);
     if (existing) {
-      errors.push({ row: existing.row, error: `Codice "${code}" duplicato nel file: sostituito dalla riga ${rowNumber}` });
+      notices.push({ row: existing.row, error: `Codice "${code}" duplicato nel file: sostituito dalla riga ${rowNumber}` });
     }
 
     bySku.set(code, {
@@ -173,15 +259,17 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string): Val
         tenant_id: tenantId,
         sku: code,
         name,
-        category: category || null,
+        category,
+        description,
+        image_url,
         unit_price: price,
-        unit_of_measure: unit || 'pz',
+        unit_of_measure: unit,
       },
     });
   });
 
   const validRows = Array.from(bySku.values()).map((entry) => entry.item);
-  return { validRows, errors };
+  return { validRows, errors: notices };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -314,10 +402,10 @@ export async function POST(request: NextRequest) {
   const chunks = chunk(validRows, UPSERT_CHUNK_SIZE);
 
   for (const rowsChunk of chunks) {
-    // Cast necessario: 'category' è una colonna aggiunta dalla migrazione
-    // 20260804000000, non ancora presente nel tipo Database generato (stesso
-    // scostamento già visto per altre colonne recenti in questo modulo, es.
-    // orders.audio_url in app/actions/comandi-orders.ts).
+    // Cast necessario: 'category' (migrazione 20260804000000) e 'image_url'
+    // (migrazione 20260808000006) sono colonne non ancora presenti nel tipo
+    // Database generato (stesso scostamento già visto per altre colonne
+    // recenti in questo modulo, es. orders.audio_url in app/actions/comandi-orders.ts).
     const { error: upsertError, count } = await (supabaseAdmin as any)
       .from('catalog_items')
       .upsert(rowsChunk, { onConflict: 'tenant_id,sku', count: 'exact' });
