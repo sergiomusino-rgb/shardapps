@@ -254,9 +254,28 @@ router.post('/sync-plan', async (req, res) => {
       .select('tenant_id')
       .eq('tenant_id', tenantId)
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (!membership) return res.status(403).json({ error: 'Tenant non autorizzato' });
+    let authorized = !!membership;
+    if (!authorized) {
+      // Stesso ordine di risoluzione di create-checkout-session (frontend):
+      // un tenant trovato per owner_id non ha sempre una riga tenant_members
+      // corrispondente — viene creata solo quando il tenant stesso viene
+      // creato al momento del checkout, non quando esisteva già con
+      // owner_id impostato in altro modo. Senza questo fallback, /sync-plan
+      // rifiuta con 403 un pagamento legittimo: il piano viene comunque
+      // aggiornato dal webhook (che risolve il tenant solo dal metadata),
+      // ma l'utente non lo vede mai confermato/sincronizzato in app.
+      const { data: tenantByOwner } = await supabase
+        .from('tenants')
+        .select('id')
+        .eq('id', tenantId)
+        .eq('owner_id', user.id)
+        .maybeSingle();
+      authorized = !!tenantByOwner;
+    }
+
+    if (!authorized) return res.status(403).json({ error: 'Tenant non autorizzato' });
 
     if (session.payment_status !== 'paid') {
       return res.json({ paid: false, plan: 'free', appLimit: 0, creditsAdded: 0 });

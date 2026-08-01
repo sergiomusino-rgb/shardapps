@@ -85,24 +85,42 @@ export default function PricingPage() {
 
   async function loadCurrentPlan(userId: string) {
     try {
-      const { data: memberships } = await supabase
-        .from('tenant_members')
-        .select('tenant_id')
-        .eq('user_id', userId)
-        .limit(1) as any;
+      // Stesso ordine di risoluzione del tenant usato in
+      // create-checkout-session/route.ts: owner_id prima, tenant_members
+      // come fallback. Un tenant trovato per owner_id non ha sempre una riga
+      // tenant_members corrispondente (creata solo quando il tenant stesso
+      // viene creato al momento del checkout) — leggendo il piano solo da
+      // tenant_members, un pagamento già andato a buon fine (e già scritto
+      // su tenants.plan dal webhook) restava invisibile su questa pagina.
+      const { data: tenantByOwner } = await supabase
+        .from('tenants')
+        .select('id, plan, app_limit, total_apps_created')
+        .eq('owner_id', userId)
+        .maybeSingle() as any;
 
-      if (memberships?.[0]?.tenant_id) {
-        const { data: tenant } = await supabase
-          .from('tenants')
-          .select('plan, app_limit, total_apps_created')
-          .eq('id', memberships[0].tenant_id)
-          .single() as any;
+      let tenant = tenantByOwner;
 
-        if (tenant) {
-          setCurrentPlan(tenant.plan || 'free');
-          setSlotsTotal(tenant.app_limit ?? 1);
-          setSlotsUsed(tenant.total_apps_created || 0);
+      if (!tenant) {
+        const { data: memberships } = await supabase
+          .from('tenant_members')
+          .select('tenant_id')
+          .eq('user_id', userId)
+          .limit(1) as any;
+
+        if (memberships?.[0]?.tenant_id) {
+          const { data: tenantFromMembership } = await supabase
+            .from('tenants')
+            .select('plan, app_limit, total_apps_created')
+            .eq('id', memberships[0].tenant_id)
+            .single() as any;
+          tenant = tenantFromMembership;
         }
+      }
+
+      if (tenant) {
+        setCurrentPlan(tenant.plan || 'free');
+        setSlotsTotal(tenant.app_limit ?? 1);
+        setSlotsUsed(tenant.total_apps_created || 0);
       }
     } catch (err) {
       console.error('Error loading plan:', err);
