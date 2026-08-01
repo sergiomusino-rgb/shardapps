@@ -27,10 +27,15 @@ export interface CatalogItem {
   name: string;
   category: string | null;
   description: string | null;
+  image_url: string | null;
   unit_price: number;
   stock_qty: number;
   unit_of_measure: string;
   is_active: boolean;
+  // Colonne del file importato (app/api/catalog/import) senza un campo
+  // nativo corrispondente (es. Brand, Formato/Confezione, Aliquota IVA di un
+  // listino ingrosso reale): coppie nome colonna -> valore testuale.
+  extra_fields: Record<string, string> | null;
   created_at: string; // TIMESTAMPTZ
   updated_at: string; // TIMESTAMPTZ
 }

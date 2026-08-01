@@ -152,6 +152,7 @@
   "comandi_dashboard_catalog_col_stock": "Stock",
   "comandi_dashboard_catalog_col_active": "Activo",
   "comandi_dashboard_catalog_col_synonyms": "Sinónimos:",
+  "comandi_dashboard_catalog_extra_fields_toggle": "{count} campos adicionales importados",
   "comandi_dashboard_catalog_add_button": "Añadir",
   "comandi_dashboard_catalog_delete_confirm": "¿Eliminar este producto del catálogo?",
   "comandi_dashboard_catalog_empty": "Aún no hay productos en el catálogo. Añade uno arriba.",

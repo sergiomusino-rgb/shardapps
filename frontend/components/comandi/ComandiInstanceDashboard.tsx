@@ -318,6 +318,18 @@ function CatalogTab({
   const [importError, setImportError] = useState<string | null>(null);
   const [isDraggingImport, setIsDraggingImport] = useState(false);
   const [showImportErrors, setShowImportErrors] = useState(false);
+  // Espansione per-prodotto della sezione "Altri campi" (extra_fields):
+  // chiusa di default per non appesantire la lista, l'utente la apre solo
+  // sui prodotti che gli interessano.
+  const [expandedExtraFields, setExpandedExtraFields] = useState<Set<string>>(new Set());
+  const toggleExtraFields = (itemId: string) => {
+    setExpandedExtraFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
 
   const loadCatalog = useCallback(async () => {
     setLoading(true);
@@ -762,6 +774,29 @@ function CatalogTab({
                 />
                 )}
               </div>
+
+              {!!item.extra_fields && Object.keys(item.extra_fields).length > 0 && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleExtraFields(item.id)}
+                    className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-600 hover:text-gray-400"
+                  >
+                    {t('comandi_dashboard_catalog_extra_fields_toggle').replace('{count}', String(Object.keys(item.extra_fields).length))}
+                    <ChevronDown className={`w-3 h-3 transition-transform ${expandedExtraFields.has(item.id) ? 'rotate-180' : ''}`} />
+                  </button>
+                  {expandedExtraFields.has(item.id) && (
+                    <dl className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                      {Object.entries(item.extra_fields).map(([key, value]) => (
+                        <div key={key} className="flex items-baseline gap-1.5 text-xs">
+                          <dt className="text-gray-500 shrink-0">{key}:</dt>
+                          <dd className="text-gray-300 truncate">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

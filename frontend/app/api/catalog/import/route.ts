@@ -63,6 +63,7 @@ interface CatalogImportRow {
   image_url: string | null;
   unit_price: number;
   unit_of_measure: string;
+  extra_fields: Record<string, string>;
 }
 
 // ─── Client Supabase ────────────────────────────────────────────────────────
@@ -164,18 +165,43 @@ function matchField(header: string): CanonicalField | null {
   return null;
 }
 
+interface MappedRow {
+  fields: Partial<Record<CanonicalField, string>>;
+  // Colonne del file senza un campo nativo corrispondente (es. "Brand",
+  // "Formato/Confezione", "Aliquota IVA" di un listino ingrosso reale):
+  // dato reale che l'utente si aspetta di ritrovare, conservato invece di
+  // essere scartato in silenzio solo perché Comandi non ha una colonna
+  // dedicata per esso (vedi catalog_items.extra_fields).
+  extras: Record<string, string>;
+}
+
 // Legge una riga grezza del foglio e la traduce nei campi canonici del
 // catalogo, indipendentemente da come sono nominate le colonne nel file
-// originale. Se più colonne mappano sullo stesso campo, vince la prima non vuota.
-function mapRowToCanonical(row: Record<string, unknown>): Partial<Record<CanonicalField, string>> {
-  const result: Partial<Record<CanonicalField, string>> = {};
+// originale. Se più colonne mappano sullo stesso campo, vince la prima non
+// vuota. Le colonne non riconosciute finiscono in `extras` con l'intestazione
+// originale come chiave, non vengono scartate.
+function mapRowToCanonical(row: Record<string, unknown>): MappedRow {
+  const fields: Partial<Record<CanonicalField, string>> = {};
+  const extras: Record<string, string> = {};
   for (const [key, rawValue] of Object.entries(row)) {
-    const field = matchField(key);
-    if (!field || result[field]) continue;
     const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
-    if (value) result[field] = value;
+    if (!value) continue;
+
+    const field = matchField(key);
+    if (field) {
+      if (!fields[field]) fields[field] = value;
+      continue;
+    }
+
+    // "__COLONNA_N" è il segnaposto assegnato in arrayRowsToObjects a una
+    // cella di intestazione vuota: non è un'intestazione reale del file,
+    // non ha senso mostrarla all'utente come campo extra.
+    const header = key.trim();
+    if (header && !/^__COLONNA_\d+$/.test(header)) {
+      extras[header] = value;
+    }
   }
-  return result;
+  return { fields, extras };
 }
 
 // Genera uno SKU leggibile per righe senza codice prodotto, invece di
@@ -206,15 +232,28 @@ function parsePrice(raw: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-// Conta quanti campi canonici DISTINTI riconosce una riga se trattata come
-// intestazione: usato per individuare dove inizia davvero la tabella.
-function countRecognizedFields(headerRow: unknown[]): number {
+// Restituisce l'insieme dei campi canonici DISTINTI riconosciuti se la riga
+// venisse trattata come intestazione: usato sia per individuare dove inizia
+// davvero la tabella prodotti in un foglio, sia — con più fogli — per capire
+// quali fogli sono tabelle prodotti e quali no.
+function recognizedFieldsInRow(headerRow: unknown[]): Set<CanonicalField> {
   const fields = new Set<CanonicalField>();
   for (const cell of headerRow) {
     const field = matchField(cell === null || cell === undefined ? '' : String(cell));
     if (field) fields.add(field);
   }
-  return fields.size;
+  return fields;
+}
+
+// Una riga è considerata una vera intestazione di catalogo prodotti solo se
+// riconosce "price" insieme ad almeno uno tra "name"/"code": è la
+// combinazione che distingue una tabella prodotti da un foglio di
+// anagrafica/sconti/riepilogo, che può comunque contenere singole parole
+// come "categoria" o "note" pur non essendo affatto un elenco di prodotti
+// (es. il foglio "Anagrafica & Listini" di un listino ingrosso reale, con
+// colonne "Categoria Prodotto"/"Note per Rappresentante" ma nessun prezzo).
+function looksLikeProductHeader(fields: Set<CanonicalField>): boolean {
+  return fields.has('price') && (fields.has('name') || fields.has('code'));
 }
 
 // Molti listini/gestionali esportano un blocco titolo (ragione sociale,
@@ -222,16 +261,13 @@ function countRecognizedFields(headerRow: unknown[]): number {
 // sempre che la riga 1 sia l'intestazione lascerebbe l'intero file
 // irriconoscibile (0 colonne mappate su alcun sinonimo -> 0 prodotti
 // importati, senza che l'utente capisca perché). Cerca invece, nelle prime
-// righe, la prima che riconosce almeno 2 campi distinti: è quasi certamente
-// la riga di intestazione reale (le righe dati raramente contengono, per
-// caso, due o più parole come "prezzo"/"categoria"/"nome" nei loro valori).
+// righe, la prima che sembra un'intestazione di catalogo prodotti.
 const HEADER_SCAN_LIMIT = 20;
-const MIN_RECOGNIZED_FIELDS_FOR_HEADER = 2;
 
 function findHeaderRowIndex(rows: unknown[][]): number {
   const limit = Math.min(rows.length, HEADER_SCAN_LIMIT);
   for (let i = 0; i < limit; i++) {
-    if (countRecognizedFields(rows[i]) >= MIN_RECOGNIZED_FIELDS_FOR_HEADER) return i;
+    if (looksLikeProductHeader(recognizedFieldsInRow(rows[i]))) return i;
   }
   return -1;
 }
@@ -258,11 +294,24 @@ function arrayRowsToObjects(rows: unknown[][], headerIndex: number): Record<stri
     .filter((obj) => Object.values(obj).some((value) => String(value ?? '').trim() !== ''));
 }
 
+interface ParsedWorkbookRow {
+  data: Record<string, unknown>;
+  sheetName: string;
+  // Riga (1-based) nel foglio di origine, per i messaggi di errore/nota.
+  rowNumber: number;
+}
+
 interface ParsedWorkbook {
-  rows: Record<string, unknown>[];
-  // Riga (1-based) del file in cui si trova l'intestazione riconosciuta,
-  // usata per calcolare il numero di riga reale nei messaggi di errore/nota.
-  headerRowNumber: number;
+  rows: ParsedWorkbookRow[];
+  // true se righe da più di un foglio sono confluite nell'import: determina
+  // se i messaggi devono specificare il nome del foglio o restare come prima
+  // (il caso comune resta un file con un solo foglio prodotti).
+  multiSheet: boolean;
+  // Fogli con contenuto ma senza alcuna riga che sembri un'intestazione di
+  // catalogo prodotti (es. un foglio di anagrafica/sconti): ignorati
+  // dall'import, segnalati all'utente invece di essere processati alla
+  // cieca o scomparire in silenzio.
+  skippedSheets: string[];
 }
 
 function parseWorkbookRows(buffer: Buffer): ParsedWorkbook {
@@ -273,33 +322,53 @@ function parseWorkbookRows(buffer: Buffer): ParsedWorkbook {
   // accentato (Città, Perché, Caffè...) risulta corrotto — comune nei
   // cataloghi italiani sia nelle intestazioni sia nei nomi prodotto.
   const workbook = XLSX.read(buffer, { type: 'buffer', codepage: 65001 });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) return { rows: [], headerRowNumber: 1 };
-  const sheet = workbook.Sheets[firstSheetName];
 
-  // header:1 legge la matrice grezza senza assumere alcuna riga come
-  // intestazione, per poter individuare dove inizia davvero la tabella
-  // (vedi findHeaderRowIndex). raw:false forza il testo formattato della
-  // cella (es. "3,50", "0102") invece del valore già tipizzato da SheetJS:
-  // senza, un prezzo CSV in formato europeo come "3,50" viene interpretato
-  // come numero usando la virgola come separatore delle migliaia -> 350,
-  // ancora prima che parsePrice() possa intervenire.
-  const arrayRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }) as unknown[][];
-  if (arrayRows.length === 0) return { rows: [], headerRowNumber: 1 };
+  const rows: ParsedWorkbookRow[] = [];
+  const skippedSheets: string[] = [];
 
-  const headerIndex = findHeaderRowIndex(arrayRows);
-  if (headerIndex === -1) {
-    // Nessuna riga tra le prime HEADER_SCAN_LIMIT sembra un'intestazione
-    // riconoscibile: fallback storico (riga 1 come intestazione) così il
-    // file viene comunque processato — validateRows segnalerà comunque le
-    // righe con contenuto ma nessun campo riconosciuto.
-    return {
-      rows: XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false }),
-      headerRowNumber: 1,
-    };
+  // Un file Excel può avere più fogli (es. un listino ingrosso con un foglio
+  // prodotti e un foglio di anagrafica categorie/sconti a parte): li
+  // esamina tutti invece di limitarsi al primo, adattandosi a ciascuno.
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+
+    // header:1 legge la matrice grezza senza assumere alcuna riga come
+    // intestazione, per poter individuare dove inizia davvero la tabella
+    // (vedi findHeaderRowIndex). raw:false forza il testo formattato della
+    // cella (es. "3,50", "0102") invece del valore già tipizzato da SheetJS:
+    // senza, un prezzo CSV in formato europeo come "3,50" viene interpretato
+    // come numero usando la virgola come separatore delle migliaia -> 350,
+    // ancora prima che parsePrice() possa intervenire.
+    const arrayRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }) as unknown[][];
+    if (arrayRows.length === 0) continue;
+
+    const headerIndex = findHeaderRowIndex(arrayRows);
+    if (headerIndex === -1) {
+      skippedSheets.push(sheetName);
+      continue;
+    }
+
+    arrayRowsToObjects(arrayRows, headerIndex).forEach((data, i) => {
+      rows.push({ data, sheetName, rowNumber: headerIndex + 2 + i });
+    });
   }
 
-  return { rows: arrayRowsToObjects(arrayRows, headerIndex), headerRowNumber: headerIndex + 1 };
+  if (rows.length === 0 && workbook.SheetNames.length > 0) {
+    // Nessun foglio contiene una tabella prodotti riconoscibile (nemmeno con
+    // la soglia allentata): fallback storico sul primo foglio con la riga 1
+    // come intestazione, così il file viene comunque processato —
+    // validateRows segnalerà comunque le righe con contenuto ma nessun
+    // campo riconosciuto, invece di restituire un'importazione vuota senza
+    // alcuna spiegazione.
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    const fallbackRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
+    fallbackRows.forEach((data, i) => rows.push({ data, sheetName: firstSheetName, rowNumber: i + 2 }));
+    return { rows, multiSheet: false, skippedSheets: skippedSheets.filter((s) => s !== firstSheetName) };
+  }
+
+  const usedSheets = new Set(rows.map((r) => r.sheetName));
+  return { rows, multiSheet: usedSheets.size > 1, skippedSheets };
 }
 
 interface ValidationResult {
@@ -314,15 +383,20 @@ const DEFAULT_NAME = 'Prodotto Senza Nome';
 const DEFAULT_CATEGORY = 'Generale';
 const DEFAULT_UNIT = 'pz';
 
-function validateRows(rawRows: Record<string, unknown>[], tenantId: string, headerRowNumber: number): ValidationResult {
+function validateRows(rawRows: ParsedWorkbookRow[], tenantId: string, multiSheet: boolean): ValidationResult {
   const notices: RowError[] = [];
   const bySku = new Map<string, { row: number; item: CatalogImportRow }>();
   let autoSkuCounter = 0;
   let unrecognizedRowCount = 0;
 
-  rawRows.forEach((raw, index) => {
-    const rowNumber = headerRowNumber + 1 + index;
-    const fields = mapRowToCanonical(raw);
+  // Con più fogli confluiti nello stesso import, il numero di riga da solo è
+  // ambiguo (es. "riga 8" può esistere in più fogli): antepone il nome del
+  // foglio ai messaggi solo in quel caso, per non cambiare il testo del caso
+  // comune (un solo foglio prodotti, la stragrande maggioranza dei file).
+  const sheetPrefix = (sheetName: string) => (multiSheet ? `Foglio "${sheetName}" — ` : '');
+
+  rawRows.forEach(({ data: raw, sheetName, rowNumber }) => {
+    const { fields, extras } = mapRowToCanonical(raw);
 
     const hasAnyMappedValue = Object.values(fields).some((value) => !!value);
     const hasAnyRawValue = Object.values(raw).some((value) => value !== null && value !== undefined && String(value).trim() !== '');
@@ -338,7 +412,7 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string, head
       // l'utente si aspetta di vedere importato — va segnalato esplicitamente
       // invece di scomparire in silenzio come se fosse vuota.
       unrecognizedRowCount += 1;
-      notices.push({ row: rowNumber, error: 'Riga con contenuto ma nessuna colonna riconosciuta: ignorata' });
+      notices.push({ row: rowNumber, error: `${sheetPrefix(sheetName)}Riga con contenuto ma nessuna colonna riconosciuta: ignorata` });
       return;
     }
 
@@ -346,19 +420,19 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string, head
     if (!code) {
       autoSkuCounter += 1;
       code = `AUTO-${slugify(fields.name || `RIGA-${rowNumber}`)}-${autoSkuCounter}`;
-      notices.push({ row: rowNumber, error: `Campo "code" mancante: assegnato automaticamente il codice "${code}"` });
+      notices.push({ row: rowNumber, error: `${sheetPrefix(sheetName)}Campo "code" mancante: assegnato automaticamente il codice "${code}"` });
     }
 
     const name = fields.name || DEFAULT_NAME;
     if (!fields.name) {
-      notices.push({ row: rowNumber, error: `Campo "name" mancante: assegnato il valore predefinito "${DEFAULT_NAME}"` });
+      notices.push({ row: rowNumber, error: `${sheetPrefix(sheetName)}Campo "name" mancante: assegnato il valore predefinito "${DEFAULT_NAME}"` });
     }
 
     let price = 0;
     if (fields.price) {
       const parsed = parsePrice(fields.price);
       if (parsed === null) {
-        notices.push({ row: rowNumber, error: `Campo "price" non valido ("${fields.price}"): impostato a 0` });
+        notices.push({ row: rowNumber, error: `${sheetPrefix(sheetName)}Campo "price" non valido ("${fields.price}"): impostato a 0` });
       } else {
         price = parsed;
       }
@@ -375,7 +449,8 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string, head
     // segnalate come sostituite invece di fallire silenziosamente.
     const existing = bySku.get(code);
     if (existing) {
-      notices.push({ row: existing.row, error: `Codice "${code}" duplicato nel file: sostituito dalla riga ${rowNumber}` });
+      const suffix = multiSheet ? ` del foglio "${sheetName}"` : '';
+      notices.push({ row: existing.row, error: `Codice "${code}" duplicato nel file: sostituito dalla riga ${rowNumber}${suffix}` });
     }
 
     bySku.set(code, {
@@ -389,6 +464,7 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string, head
         image_url,
         unit_price: price,
         unit_of_measure: unit,
+        extra_fields: extras,
       },
     });
   });
@@ -402,7 +478,7 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string, head
   // prodotti importati" senza capirne il motivo.
   if (validRows.length === 0 && unrecognizedRowCount > 0) {
     notices.unshift({
-      row: headerRowNumber,
+      row: 0,
       error: 'Nessuna colonna del file è stata riconosciuta: verifica che l\'intestazione contenga nomi come "nome"/"prodotto", "prezzo", "categoria" (anche in colonne composte, es. "Descrizione Prodotto"), oppure scarica il template CSV.',
     });
   }
@@ -494,14 +570,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 1. Parsing del workbook ──────────────────────────────────────────────
-  let rawRows: Record<string, unknown>[];
-  let headerRowNumber: number;
+  // ── 1. Parsing del workbook (tutti i fogli, non solo il primo) ───────────
+  let parsed: ParsedWorkbook;
   try {
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
-    const parsed = parseWorkbookRows(buffer);
-    rawRows = parsed.rows;
-    headerRowNumber = parsed.headerRowNumber;
+    parsed = parseWorkbookRows(buffer);
   } catch (err) {
     console.error('[catalog-import] Errore parsing file:', err);
     return NextResponse.json(
@@ -509,6 +582,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  const rawRows = parsed.rows;
 
   if (rawRows.length === 0) {
     return NextResponse.json(
@@ -524,7 +598,19 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 2. Validazione + pulizia righe ───────────────────────────────────────
-  const { validRows, errors } = validateRows(rawRows, tenantId, headerRowNumber);
+  const { validRows, errors } = validateRows(rawRows, tenantId, parsed.multiSheet);
+
+  // Fogli con contenuto ma senza alcuna tabella prodotti riconoscibile (es.
+  // un foglio di anagrafica/sconti a parte): valorizzato solo quando il file
+  // aveva più di un foglio (nel fallback a foglio singolo il nome del foglio
+  // "saltato" viene escluso, vedi parseWorkbookRows), quindi non serve un
+  // controllo aggiuntivo su parsed.multiSheet — che riguarda invece se più
+  // fogli hanno contribuito righe valide, non quanti fogli aveva il file.
+  if (parsed.skippedSheets.length > 0) {
+    for (const sheetName of parsed.skippedSheets) {
+      errors.unshift({ row: 0, error: `Foglio "${sheetName}" ignorato: nessuna tabella prodotti riconosciuta al suo interno.` });
+    }
+  }
 
   if (validRows.length === 0) {
     return NextResponse.json({
@@ -543,10 +629,11 @@ export async function POST(request: NextRequest) {
   const chunks = chunk(validRows, UPSERT_CHUNK_SIZE);
 
   for (const rowsChunk of chunks) {
-    // Cast necessario: 'category' (migrazione 20260804000000) e 'image_url'
-    // (migrazione 20260808000006) sono colonne non ancora presenti nel tipo
-    // Database generato (stesso scostamento già visto per altre colonne
-    // recenti in questo modulo, es. orders.audio_url in app/actions/comandi-orders.ts).
+    // Cast necessario: 'category' (migrazione 20260804000000), 'image_url'
+    // (migrazione 20260808000006) e 'extra_fields' (migrazione
+    // 20260808000007) sono colonne non ancora presenti nel tipo Database
+    // generato (stesso scostamento già visto per altre colonne recenti in
+    // questo modulo, es. orders.audio_url in app/actions/comandi-orders.ts).
     const { error: upsertError, count } = await (supabaseAdmin as any)
       .from('catalog_items')
       .upsert(rowsChunk, { onConflict: 'tenant_id,sku', count: 'exact' });

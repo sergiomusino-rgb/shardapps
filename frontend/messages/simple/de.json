@@ -153,6 +153,7 @@
   "comandi_dashboard_catalog_col_stock": "Bestand",
   "comandi_dashboard_catalog_col_active": "Aktiv",
   "comandi_dashboard_catalog_col_synonyms": "Synonyme:",
+  "comandi_dashboard_catalog_extra_fields_toggle": "{count} weitere importierte Felder",
   "comandi_dashboard_catalog_add_button": "Hinzufügen",
   "comandi_dashboard_catalog_delete_confirm": "Dieses Produkt aus dem Katalog löschen?",
   "comandi_dashboard_catalog_empty": "Noch keine Produkte im Katalog. Fügen Sie oben eines hinzu.",
