@@ -203,9 +203,25 @@ export async function POST(request: NextRequest) {
     });
     transcript = (transcription.text || '').trim();
   } catch (err) {
-    console.error('[agent-voice-order] Errore trascrizione Whisper:', err);
+    // Il messaggio generico non bastava a capire perché fallisse solo dal
+    // telefono (nessun accesso ai log del provider durante il debug): il
+    // dettaglio dell'errore Groq (status/messaggio) viene incluso anche nella
+    // risposta mostrata in app, non solo nel log server, così è visibile
+    // subito senza dover controllare la dashboard di hosting.
+    const apiErr = err as { status?: number; message?: string; error?: unknown };
+    console.error('[agent-voice-order] Errore trascrizione Whisper:', {
+      status: apiErr?.status,
+      message: apiErr?.message,
+      error: apiErr?.error,
+      raw: err,
+    });
+    const detail = apiErr?.status
+      ? ` (Groq ${apiErr.status}: ${apiErr.message || 'errore sconosciuto'})`
+      : apiErr?.message
+        ? ` (${apiErr.message})`
+        : '';
     return NextResponse.json(
-      { success: false, error: 'Trascrizione audio non riuscita. Riprova.', code: 'TRANSCRIPTION_ERROR' },
+      { success: false, error: `Trascrizione audio non riuscita. Riprova.${detail}`, code: 'TRANSCRIPTION_ERROR' },
       { status: 502 }
     );
   }
