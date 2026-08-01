@@ -112,7 +112,7 @@ Non aggiungere testo prima o dopo il JSON.`;
 const SITE_SECTION_TYPES_DOC = `Ogni sezione di pagina DEVE avere uno di questi "type" (nessun altro valore è ammesso):
 - "hero": { type, title, subtitle?, imageUrl?, ctaLabel?, ctaHref? } — intestazione principale della Home.
 - "about": { type, title, body, imageUrl? } — storia/chi siamo.
-- "gallery": { type, title?, images: string[] } — galleria immagini (usa URL placeholder plausibili tipo https://images.unsplash.com/... se non hai immagini reali).
+- "gallery": { type, title?, images: string[] } — galleria immagini. Lascia images: [] se non hai URL di immagini reali: l'app mostra da sola dei placeholder puliti al posto delle foto mancanti. NON inventare un URL Unsplash "plausibile": un ID foto inventato spesso non esiste davvero e appare come immagine rotta sul sito pubblico.
 - "list": { type, title?, entity, layout: "grid"|"list", emptyLabel? } — elenco dinamico di elementi di un'entità di adminPanel.entities (es. "entity":"prodotti" per il Menu/Catalogo). NON inventare i dati qui: solo il riferimento all'entità, i dati veri arrivano dal pannello admin.
 - "form": { type, title?, entity?, submitLabel? } — form collegato a un'entità admin (es. "prenotazioni" per la pagina Prenota); se entity è vuoto è un form di contatto generico.
 - "contact": { type, title?, showMap, showForm } — riepilogo contatti (usa i dati di businessConfig), mappa e/o form opzionali.

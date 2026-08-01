@@ -9,7 +9,7 @@
 // esempio generati dai field type dell'entità collegata, stesso approccio
 // del mock già usato in DynamicAppPreview.tsx per il motore gestionali.
 
-import { useMemo } from 'react';
+import { useMemo, type SyntheticEvent } from 'react';
 import { Phone, MessageCircle, MapPin, Mail, Star, Menu as MenuIcon } from 'lucide-react';
 import type {
   SiteBlueprintJSON,
@@ -21,6 +21,17 @@ import type {
 import type { Field } from '@/src/lib/blueprint-schema';
 
 // ─── Helpers colore ─────────────────────────────────────────────────────────
+
+// L'AI in generazione inventa URL Unsplash "plausibili" quando non ha foto
+// reali (vedi il prompt in app/api/creator/generate/route.ts): l'ID foto può
+// non esistere davvero su Unsplash e l'<img> mostrerebbe l'icona nativa di
+// immagine rotta del browser — su una galleria, uno spazio vuoto/rotto
+// visivamente pesante. Nascondere l'elemento invece di lasciare l'icona: in
+// un contenitore flex la riga si ricompone sulle immagini rimaste, senza
+// buchi.
+function hideOnImageError(e: SyntheticEvent<HTMLImageElement>) {
+  e.currentTarget.style.display = 'none';
+}
 
 function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || '#6366f1').replace('#', '');
@@ -152,7 +163,7 @@ function SectionRenderer({
     case 'hero':
       return (
         <section
-          className="relative flex flex-col items-center justify-center gap-4 px-6 py-20 text-center"
+          className="relative flex flex-col items-center justify-center gap-4 px-6 py-16 text-center"
           style={{
             backgroundImage: section.imageUrl ? `linear-gradient(${hexToRgba('#000000', 0.55)}, ${hexToRgba('#000000', 0.55)}), url(${section.imageUrl})` : undefined,
             backgroundColor: section.imageUrl ? undefined : hexToRgba(primary, 0.12),
@@ -184,10 +195,10 @@ function SectionRenderer({
 
     case 'about':
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           <div className={`mx-auto flex max-w-3xl flex-col gap-6 ${section.imageUrl ? 'sm:flex-row sm:items-center' : ''}`}>
             {section.imageUrl && (
-              <img src={section.imageUrl} alt="" className="h-48 w-full rounded-2xl object-cover sm:w-1/2" />
+              <img src={section.imageUrl} alt="" onError={hideOnImageError} className="h-48 w-full rounded-2xl object-cover sm:w-1/2" />
             )}
             <div className={section.imageUrl ? 'sm:w-1/2' : ''}>
               <h2 className="mb-3 text-2xl font-bold text-gray-900">{section.title}</h2>
@@ -199,12 +210,23 @@ function SectionRenderer({
 
     case 'gallery':
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           {section.title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{section.title}</h2>}
           {section.images.length > 0 ? (
-            <div className="mx-auto grid max-w-4xl grid-cols-2 gap-3 sm:grid-cols-3">
+            // flex-wrap invece di grid: quando il numero di immagini non è
+            // multiplo delle colonne (es. 4 immagini su 3 colonne), un grid
+            // lascerebbe le celle vuote dell'ultima riga come spazio bianco
+            // "orfano" a destra — qui l'ultima riga incompleta viene invece
+            // centrata, senza vuoto visibile.
+            <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-3">
               {section.images.map((src, i) => (
-                <img key={i} src={src} alt="" className="aspect-square w-full rounded-xl object-cover" />
+                <img
+                  key={i}
+                  src={src}
+                  alt=""
+                  onError={hideOnImageError}
+                  className="aspect-square w-[calc(50%-0.375rem)] rounded-xl object-cover sm:w-[calc(33.333%-0.5rem)]"
+                />
               ))}
             </div>
           ) : (
@@ -226,7 +248,7 @@ function SectionRenderer({
       const titleField = entity?.fields.find((f) => f.type === 'text' && f.id !== priceField?.id);
 
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           {section.title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{section.title}</h2>}
           {items.length === 0 ? (
             <p className="text-center text-sm text-gray-400">{section.emptyLabel}</p>
@@ -260,7 +282,7 @@ function SectionRenderer({
       ];
       const fields = entity ? entity.fields.filter((f) => f.type !== 'id') : genericFormFields;
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           {section.title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{section.title}</h2>}
           <form className="mx-auto flex max-w-md flex-col gap-3" onSubmit={(e) => e.preventDefault()}>
             {fields.map((f) => (
@@ -288,7 +310,7 @@ function SectionRenderer({
     case 'contact': {
       const bc = schema.businessConfig;
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           {section.title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{section.title}</h2>}
           <div className="mx-auto flex max-w-md flex-col gap-3 text-sm text-gray-700">
             {bc.address && <div className="flex items-center gap-2"><MapPin size={16} style={{ color: primary }} /> {bc.address}</div>}
@@ -316,7 +338,7 @@ function SectionRenderer({
 
     case 'reviews':
       return (
-        <section className="px-6 py-14">
+        <section className="px-6 py-10">
           {section.title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{section.title}</h2>}
           <div className="mx-auto grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2">
             {section.items.map((r, i) => (
@@ -334,7 +356,7 @@ function SectionRenderer({
 
     case 'cta':
       return (
-        <section className="px-6 py-16 text-center text-white" style={{ backgroundColor: primary }}>
+        <section className="px-6 py-12 text-center text-white" style={{ backgroundColor: primary }}>
           <h2 className="text-2xl font-bold">{section.title}</h2>
           {section.subtitle && <p className="mt-2 text-sm text-white/85">{section.subtitle}</p>}
           {(() => {
