@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, ClipboardList, LogOut, Mic, Package, Receipt, UserCog, Users, Warehouse, X } from 'lucide-react';
+import { Building2, ClipboardList, KeyRound, LogOut, Mic, Package, Receipt, UserCog, Users, Warehouse, X } from 'lucide-react';
 import ComandiHeaderBrand from './ComandiHeaderBrand';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
@@ -30,6 +30,7 @@ const TAB_ICON: Record<Tab, React.ReactNode> = {
   invoices: <Receipt className="w-[18px] h-[18px]" />,
   agents: <UserCog className="w-[18px] h-[18px]" />,
   company: <Building2 className="w-[18px] h-[18px]" />,
+  access: <KeyRound className="w-[18px] h-[18px]" />,
 };
 
 export interface ComandiSidebarProps {

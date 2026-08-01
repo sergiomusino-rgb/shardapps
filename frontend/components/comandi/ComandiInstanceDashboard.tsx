@@ -67,7 +67,7 @@ import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantM
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
 // il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
 // (i link puntano alla Dashboard con ?tab=...).
-export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices';
+export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices' | 'access';
 
 // Tab visibili per ruolo:
 // - 'agent': solo catalogo (sola lettura) e clienti — niente dati aziendali,
@@ -78,9 +78,12 @@ export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' |
 //   non deve essere visibile a un account operativo generico 'member').
 // - 'member' (es. cassa): tutto tranne 'agents' — emettere fatture/ricevute
 //   è un'attività operativa quotidiana, non riservata a owner/admin.
-export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'agents', 'company'];
-export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company'];
-export const AGENT_TABS: Tab[] = ['catalog', 'customers'];
+export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'agents', 'company', 'access'];
+export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company', 'access'];
+// 'access' (account personale, condivisione app, installazione PWA): a
+// differenza di 'company', non contiene dati aziendali/di fatturazione,
+// quindi è l'unica voce oltre a catalogo/clienti data anche al ruolo agente.
+export const AGENT_TABS: Tab[] = ['catalog', 'customers', 'access'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -291,6 +294,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
           {tab === 'invoices' && !isAgent && <InvoicesTab />}
           {tab === 'agents' && canManageAgents && <AgentsTab tenantId={tenantId} slug={slug} />}
+          {tab === 'access' && <AccessTab tenantId={tenantId} />}
         </main>
       </div>
 
@@ -1582,9 +1586,7 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
   if (loading) return <p className="text-sm text-gray-500">…</p>;
 
   return (
-    <>
-    <div className="grid lg:grid-cols-2 gap-6 items-start">
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 max-w-lg">
     <form onSubmit={handleSave} className="flex flex-col gap-4">
       {error && (
         <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
@@ -1695,13 +1697,35 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
     </form>
     <SubscriptionSection slug={slug} />
     </div>
-    <div className="flex flex-col gap-6">
+  );
+}
+
+// ─── Tab Accesso ────────────────────────────────────────────────────────────
+// A differenza di Azienda (dati aziendali + fatturazione, solo ruoli con
+// accesso pieno), qui non c'è nulla di sensibile a livello di tenant: ogni
+// utente gestisce solo le proprie credenziali, più condivisione/installazione
+// dell'app — per questo è l'unica voce, oltre a Catalogo e Clienti, data
+// anche al ruolo agente (vedi AGENT_TABS).
+function AccessTab({ tenantId }: { tenantId: string }) {
+  const [companyName, setCompanyName] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabase as any).from('tenants').select('name').eq('id', tenantId).single();
+      if (!cancelled) setCompanyName((data as { name?: string } | null)?.name || '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
+
+  return (
+    <div className="flex flex-col gap-6 max-w-lg">
       <MyAccountSection />
       <ShareAppSection tenantId={tenantId} />
-      <InstallAppCard appName={COMANDI_PWA_APP_NAME} />
+      <InstallAppCard appName={companyName || COMANDI_PWA_APP_NAME} />
     </div>
-    </div>
-    </>
   );
 }
 
