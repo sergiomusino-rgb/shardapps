@@ -635,14 +635,17 @@ function CatalogTab({
             placeholder={t('comandi_dashboard_catalog_col_name')}
             className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 col-span-2 sm:col-span-1"
           />
-          <input
-            type="number"
-            step="0.01"
-            value={newItem.unit_price}
-            onChange={(e) => setNewItem((v) => ({ ...v, unit_price: e.target.value }))}
-            placeholder={t('comandi_dashboard_catalog_col_price')}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
-          />
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">€</span>
+            <input
+              type="number"
+              step="0.01"
+              value={newItem.unit_price}
+              onChange={(e) => setNewItem((v) => ({ ...v, unit_price: e.target.value }))}
+              placeholder={t('comandi_dashboard_catalog_col_price')}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-6 pr-3 py-2 text-sm text-white placeholder:text-gray-500"
+            />
+          </div>
           <input
             value={newItem.unit_of_measure}
             onChange={(e) => setNewItem((v) => ({ ...v, unit_of_measure: e.target.value }))}
@@ -687,14 +690,17 @@ function CatalogTab({
                   disabled={readOnly}
                   className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white col-span-2 sm:col-span-1 disabled:opacity-70 disabled:cursor-not-allowed"
                 />
-                <input
-                  type="number"
-                  step="0.01"
-                  value={item.unit_price}
-                  onChange={(e) => updateItemField(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                  disabled={readOnly}
-                  className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                />
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-500">€</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={item.unit_price}
+                    onChange={(e) => updateItemField(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                    disabled={readOnly}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-5 pr-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                </div>
                 <input
                   value={item.unit_of_measure}
                   onChange={(e) => updateItemField(item.id, 'unit_of_measure', e.target.value)}
