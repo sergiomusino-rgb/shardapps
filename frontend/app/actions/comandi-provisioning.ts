@@ -91,7 +91,7 @@ export async function provisionComandiAppAction(
     }
 
     if (!userId) {
-      return { success: false, error: 'Devi effettuare il login per attivare Comandi AI' };
+      return { success: false, error: 'Devi effettuare il login per attivare Comand AI' };
     }
 
     const { data: membership } = await supabaseAdmin
@@ -203,7 +203,7 @@ export async function provisionComandiAppAction(
     const { data: newApp, error: appError } = await supabaseAdmin
       .from('apps')
       .insert({
-        name: 'Comandi AI',
+        name: 'Comand AI',
         slug,
         tenant_id: tenantId,
         app_type: 'comandi_ai',
@@ -222,7 +222,7 @@ export async function provisionComandiAppAction(
         production_url: productionUrl,
         config: {
           appType: 'comandi_ai',
-          appName: 'Comandi AI',
+          appName: 'Comand AI',
           sector: 'comandi',
           description: 'Cassa vocale AI per ristorazione e commercio',
           is_published: true,
@@ -284,7 +284,7 @@ export async function provisionComandiAppAction(
     // Registro per la Management Console
     const { error: registryError } = await supabaseAdmin.from('app_registry').insert({
       reseller_id: userId,
-      app_name: 'Comandi AI',
+      app_name: 'Comand AI',
       app_url: productionUrl,
       status: 'active',
       monthly_fee: MONTHLY_PRICE,

@@ -45,7 +45,7 @@ export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingP
       <main className="flex flex-col items-center px-6 pb-24">
         <section className="max-w-4xl w-full text-center flex flex-col items-center gap-6 pt-16">
           <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-tight">
-            Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
+            Comand<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
           </h1>
 
           <div className="px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">

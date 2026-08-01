@@ -31,12 +31,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const { data: tenant } = await supabase.from('tenants').select('name').eq('id', tenantId).single();
       tenantName = (tenant as { name?: string } | null)?.name || null;
     }
-    const appName = tenantName || app?.name || 'Comandi AI';
+    const appName = tenantName || app?.name || 'Comand AI';
 
     const manifest = {
       name: appName,
       short_name: appName.length > 14 ? `${appName.slice(0, 13)}…` : appName,
-      description: `Gestionale ordini di ${appName}, powered by Comandi AI`,
+      description: `Gestionale ordini di ${appName}, powered by Comand AI`,
       start_url: `/a/${slug}/dashboard`,
       scope: `/a/${slug}`,
       display: 'standalone',

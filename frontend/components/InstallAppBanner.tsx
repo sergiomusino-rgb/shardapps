@@ -2,11 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Share, SquarePlus, X } from 'lucide-react';
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
-}
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 
 interface InstallAppBannerProps {
   appName: string;
@@ -29,54 +25,36 @@ export default function InstallAppBanner({
   surfaceColor,
   borderColor,
 }: InstallAppBannerProps) {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [visible, setVisible] = useState(false);
-  const [isIos, setIsIos] = useState(false);
+  const { canInstall, isIos, isStandalone, promptInstall } = useInstallPrompt();
+  // true finché non verifichiamo localStorage (al mount), per non far
+  // lampeggiare il banner un istante prima di scoprire che era già chiuso.
+  const [dismissed, setDismissed] = useState(true);
+  const [showIosAfterDelay, setShowIosAfterDelay] = useState(false);
   const storageKey = `zeusx_install_dismissed_${slug}`;
 
   useEffect(() => {
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (window.navigator as unknown as { standalone?: boolean }).standalone === true;
-    if (isStandalone) return;
-    if (localStorage.getItem(storageKey) === '1') return;
-
-    const iosDevice = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
-    setIsIos(iosDevice);
-
-    const handlePrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setVisible(true);
-    };
-    window.addEventListener('beforeinstallprompt', handlePrompt);
-
-    // iOS non emette beforeinstallprompt: mostriamo comunque il banner con
-    // le istruzioni manuali dopo una breve pausa (non subito, per non essere invasivi).
-    let iosTimer: ReturnType<typeof setTimeout> | undefined;
-    if (iosDevice) {
-      iosTimer = setTimeout(() => setVisible(true), 2000);
-    }
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handlePrompt);
-      if (iosTimer) clearTimeout(iosTimer);
-    };
+    setDismissed(localStorage.getItem(storageKey) === '1');
   }, [storageKey]);
 
+  // iOS non emette beforeinstallprompt: mostriamo comunque il banner con le
+  // istruzioni manuali dopo una breve pausa (non subito, per non essere invasivi).
+  useEffect(() => {
+    if (!isIos) return;
+    const timer = setTimeout(() => setShowIosAfterDelay(true), 2000);
+    return () => clearTimeout(timer);
+  }, [isIos]);
+
   const dismiss = useCallback(() => {
-    setVisible(false);
+    setDismissed(true);
     localStorage.setItem(storageKey, '1');
   }, [storageKey]);
 
   const handleInstall = useCallback(async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    setVisible(false);
-    localStorage.setItem(storageKey, '1');
-  }, [deferredPrompt, storageKey]);
+    await promptInstall();
+    dismiss();
+  }, [promptInstall, dismiss]);
 
+  const visible = !isStandalone && !dismissed && (canInstall || (isIos && showIosAfterDelay));
   if (!visible) return null;
 
   return (

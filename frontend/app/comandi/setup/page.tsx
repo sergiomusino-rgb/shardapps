@@ -199,7 +199,7 @@ export default function ComandiSetupPage() {
               href="/comandi"
               className="text-3xl font-black tracking-tighter text-white"
             >
-              Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
+              Comand<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
             </Link>
             <p className="mt-3 text-xl font-bold text-white">{t('comandi_setup_title')}</p>
             <p className="mt-1 text-sm text-slate-400">{t('comandi_setup_subtitle')}</p>

@@ -44,6 +44,7 @@ import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 import InstallAppBanner from '@/components/InstallAppBanner';
+import InstallAppCard from '@/components/comandi/InstallAppCard';
 import { useAppInfo } from '@/app/a/[slug]/AppInfoContext';
 import { daysRemaining } from '@/app/a/[slug]/app/subscription-status';
 import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
@@ -1287,6 +1288,7 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
     <div className="flex flex-col gap-6">
       <MyAccountSection />
       <ShareAppSection tenantId={tenantId} />
+      <InstallAppCard appName={COMANDI_PWA_APP_NAME} />
     </div>
     </div>
     </>

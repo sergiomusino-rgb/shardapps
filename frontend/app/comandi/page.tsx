@@ -204,7 +204,7 @@ export default function ComandiLandingPage() {
       {/* HEADER */}
       <header className="pt-10 pb-4 flex justify-center">
         <Link href="/comandi" className="text-4xl md:text-5xl font-black tracking-tighter text-white">
-          Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
+          Comand<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
         </Link>
       </header>
 
@@ -263,7 +263,7 @@ export default function ComandiLandingPage() {
 
       {/* FOOTER */}
       <div className="flex flex-col items-center gap-2 pb-10">
-        <img src="/favicon.png" alt="Comandi AI" className="h-10 w-10 rounded-full object-cover" />
+        <img src="/favicon.png" alt="Comand AI" className="h-10 w-10 rounded-full object-cover" />
         <p className="text-xs text-slate-600">{t('login_footer').replace('{year}', String(new Date().getFullYear()))}</p>
       </div>
 
@@ -288,7 +288,7 @@ export default function ComandiLandingPage() {
 
             <div className="text-center mb-6">
               <p className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-2xl font-black tracking-tight text-transparent">
-                Comandi AI
+                Comand AI
               </p>
               <p className="mt-2 text-sm text-slate-400">
                 {isLogin ? t('login_title_login') : t('login_title_register')}
