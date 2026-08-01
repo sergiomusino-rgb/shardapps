@@ -42,7 +42,7 @@ import {
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
-import { updateOrderStatusAction, getOrderAudioSignedUrlAction } from '@/app/actions/comandi-orders';
+import { updateOrderStatusAction, getOrderAudioSignedUrlAction, listTenantMemberNamesAction } from '@/app/actions/comandi-orders';
 import { listAgentsAction, createAgentAction, regenerateAgentPasswordAction, deleteAgentAction, type AgentRecord } from '@/app/actions/comandi-agents';
 import {
   listInvoicesAction,
@@ -2020,6 +2020,10 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
   const { t } = useLanguage();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  // Nome da mostrare nella colonna "Agente": order.agent_id -> display_name
+  // impostato nella tab Agenti (tenant_members.display_name). Un ordine può
+  // appartenere a qualunque ruolo, non solo 'agent' (vedi listTenantMemberNamesAction).
+  const [agentNames, setAgentNames] = useState<Record<string, string>>({});
 
   // ── Conferma / annullamento ordine ───────────────────────────────────────
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
@@ -2052,6 +2056,17 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
         .limit(100);
       setOrders((data || []) as unknown as Order[]);
       setLoading(false);
+    })();
+  }, [tenantId]);
+
+  useEffect(() => {
+    (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const result = await listTenantMemberNamesAction({ accessToken: session.access_token });
+      if (result.success && result.names) setAgentNames(result.names);
     })();
   }, [tenantId]);
 
@@ -2355,6 +2370,7 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-800 bg-gray-900/60">
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_agent')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_date')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_customer')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_orders_col_status')}</th>
@@ -2368,6 +2384,7 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
               {orders.map((order) => (
                 <Fragment key={order.id}>
                   <tr className="border-b border-gray-800/60 last:border-b-0">
+                    <td className="px-4 py-2.5 text-gray-400">{(order.agent_id && agentNames[order.agent_id]) || '—'}</td>
                     <td className="px-4 py-2.5 text-gray-400">{new Date(order.created_at).toLocaleString()}</td>
                     <td className="px-4 py-2.5 text-white">{order.customer_name || '—'}</td>
                     <td className="px-4 py-2.5">
@@ -2445,7 +2462,7 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
                   </tr>
                   {audioOrderId === order.id && (
                     <tr className="border-b border-gray-800/60 last:border-b-0 bg-gray-950/40">
-                      <td colSpan={7} className="px-4 py-3">
+                      <td colSpan={8} className="px-4 py-3">
                         {audioError ? (
                           <p className="text-xs text-red-400">{audioError}</p>
                         ) : audioUrl ? (

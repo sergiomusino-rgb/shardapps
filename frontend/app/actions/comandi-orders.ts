@@ -267,6 +267,73 @@ export async function updateOrderStatusAction(input: UpdateOrderStatusInput): Pr
   }
 }
 
+// ─── Nomi agenti/membri per la colonna "Agente" in Storico Ordini ──────────
+// orders.agent_id può appartenere a QUALUNQUE membro del tenant (owner/admin/
+// member/agent: vedi il commento di sicurezza in
+// app/api/agent-voice-order/route.ts — "raccogliere un ordine è concesso a
+// tutti i ruoli"), non solo a chi ha ruolo 'agent'. La mappa va quindi letta
+// da tutta tenant_members senza filtrare per ruolo, a differenza di
+// listAgentsAction (comandi-agents.ts), che è la vista di gestione dei soli
+// account 'agent' e richiede owner/admin — qui basta essere del tenant, dato
+// che Storico Ordini è visibile anche al ruolo 'member'.
+
+const ListTenantMemberNamesInputSchema = z.object({ accessToken: z.string().min(1) });
+export type ListTenantMemberNamesInput = z.infer<typeof ListTenantMemberNamesInputSchema>;
+
+export interface ListTenantMemberNamesResult {
+  success: boolean;
+  names?: Record<string, string>;
+  error?: string;
+}
+
+export async function listTenantMemberNamesAction(
+  input: ListTenantMemberNamesInput
+): Promise<ListTenantMemberNamesResult> {
+  const validation = ListTenantMemberNamesInputSchema.safeParse(input);
+  if (!validation.success) return { success: false, error: 'Dati non validi' };
+
+  const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
+  const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
+
+  let userId: string | undefined;
+  try {
+    const userResult = await supabaseAuth.auth.getUser(validation.data.accessToken);
+    userId = userResult.data.user?.id || undefined;
+  } catch (err) {
+    console.error('[listTenantMemberNamesAction] Auth error:', err);
+  }
+  if (!userId) return { success: false, error: 'Devi effettuare il login' };
+
+  const { data: membership } = await supabaseAdmin
+    .from('tenant_members')
+    .select('tenant_id')
+    .eq('user_id', userId)
+    .limit(1)
+    .single();
+
+  const tenantId = membership?.tenant_id as string | undefined;
+  if (!tenantId) return { success: false, error: 'Nessun tenant associato all\'utente.' };
+
+  // Cast necessario: 'display_name' (migrazione 20260808000008) non è ancora
+  // presente nel tipo Database generato.
+  const { data: members, error: membersError } = await (supabaseAdmin as any)
+    .from('tenant_members')
+    .select('user_id, display_name')
+    .eq('tenant_id', tenantId);
+
+  if (membersError) {
+    console.error('[listTenantMemberNamesAction] Errore lettura tenant_members:', membersError);
+    return { success: false, error: 'Errore nel caricamento degli agenti' };
+  }
+
+  const names: Record<string, string> = {};
+  for (const row of (members || []) as { user_id: string; display_name: string | null }[]) {
+    if (row.display_name) names[row.user_id] = row.display_name;
+  }
+
+  return { success: true, names };
+}
+
 // ─── URL firmato per il memo audio dell'agente ─────────────────────────────────
 // Il bucket 'comandi-agent-audio' è privato (vedi migrazione
 // 20260803000000_comandi_agent_role.sql): l'audio non è mai raggiungibile con

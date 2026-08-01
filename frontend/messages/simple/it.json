@@ -281,6 +281,7 @@
   "comandi_dashboard_company_logo_error_type": "Il file deve essere un'immagine.",
   "comandi_dashboard_company_logo_error_size": "L'immagine supera i 5MB.",
   "comandi_dashboard_company_logo_error_generic": "Errore nel caricamento del logo.",
+  "comandi_dashboard_orders_col_agent": "Agente",
   "comandi_dashboard_orders_col_date": "Data",
   "comandi_dashboard_orders_col_customer": "Cliente",
   "comandi_dashboard_orders_col_status": "Stato",
