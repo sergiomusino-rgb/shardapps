@@ -365,10 +365,6 @@ export default function ComandiAgentPage() {
         </header>
 
         <main className="flex-1 overflow-y-auto px-4 py-6 max-w-lg w-full flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-bold">{t('comandi_agent_page_title')}</h1>
-        </div>
-
         {result ? (
           <ResultCard result={result} t={t} onNewOrder={handleNewOrder} />
         ) : (

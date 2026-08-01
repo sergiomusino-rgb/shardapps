@@ -351,7 +351,6 @@
   "comandi_dashboard_agent_restricted_banner": "Accès agent : vous pouvez consulter le catalogue en lecture seule. Pour la gestion complète et les données de l'entreprise/du chiffre d'affaires, contactez le titulaire.",
   "comandi_dashboard_agent_go_to_orders": "Aller à la Prise de Commandes",
   "comandi_agent_back_to_console": "Tableau de bord",
-  "comandi_agent_page_title": "Mode Agent",
   "comandi_agent_page_subtitle": "Enregistrez la commande à la voix pendant que vous êtes chez le client : elle est transcrite et structurée automatiquement.",
   "comandi_agent_agent_label": "Agent",
   "comandi_agent_customer_label": "Client",

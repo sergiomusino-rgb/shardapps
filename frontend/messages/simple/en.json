@@ -353,7 +353,6 @@
   "comandi_dashboard_agent_restricted_banner": "Agent access: you can browse the catalog in read-only mode. Contact the owner for full management and company/revenue data.",
   "comandi_dashboard_agent_go_to_orders": "Go to Order Taking",
   "comandi_agent_back_to_console": "Dashboard",
-  "comandi_agent_page_title": "Agent Mode",
   "comandi_agent_page_subtitle": "Record the order by voice while you're with the customer: it's transcribed and structured automatically.",
   "comandi_agent_agent_label": "Agent",
   "comandi_agent_customer_label": "Customer",

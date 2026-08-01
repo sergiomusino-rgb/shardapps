@@ -351,7 +351,6 @@
   "comandi_dashboard_agent_restricted_banner": "Agentenzugang: Sie können den Katalog nur lesen. Für die vollständige Verwaltung sowie Unternehmens-/Umsatzdaten wenden Sie sich an den Inhaber.",
   "comandi_dashboard_agent_go_to_orders": "Zur Bestellaufnahme",
   "comandi_agent_back_to_console": "Dashboard",
-  "comandi_agent_page_title": "Agentenmodus",
   "comandi_agent_page_subtitle": "Nehmen Sie die Bestellung per Sprache auf, während Sie beim Kunden sind: sie wird automatisch transkribiert und strukturiert.",
   "comandi_agent_agent_label": "Agent",
   "comandi_agent_customer_label": "Kunde",

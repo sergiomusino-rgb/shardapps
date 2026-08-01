@@ -353,7 +353,6 @@
   "comandi_dashboard_agent_restricted_banner": "Accesso agente: puoi consultare il catalogo in sola lettura. Per la gestione completa e i dati aziendali/incassi contatta il titolare.",
   "comandi_dashboard_agent_go_to_orders": "Vai a Raccolta Ordini",
   "comandi_agent_back_to_console": "Dashboard",
-  "comandi_agent_page_title": "Modalità Agente",
   "comandi_agent_page_subtitle": "Registra l'ordine a voce mentre sei dal cliente: viene trascritto e strutturato automaticamente.",
   "comandi_agent_agent_label": "Agente",
   "comandi_agent_customer_label": "Cliente",
