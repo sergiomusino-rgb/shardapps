@@ -46,7 +46,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     // Comand AI: è così che ogni tenant installa l'app con la propria
     // identità (icona + nome) invece del brand del reseller.
     const icons = [
-      ...(tenantLogo ? [{ src: tenantLogo, sizes: 'any', type: 'image/png', purpose: 'any' as const }] : []),
+      // Niente 'type' fisso: il file caricato può essere jpg/png/webp — il
+      // browser lo determina dal Content-Type servito da Supabase Storage,
+      // dichiarare qui 'image/png' su un jpg reale farebbe scartare l'icona.
+      ...(tenantLogo ? [{ src: tenantLogo, sizes: 'any', purpose: 'any' as const }] : []),
       { src: '/icons/comandi-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icons/comandi-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/icons/comandi-icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
