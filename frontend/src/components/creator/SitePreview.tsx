@@ -86,6 +86,45 @@ function resolveActionHref(button: ActionButton, schema: SiteBlueprintJSON): str
   }
 }
 
+// ─── Risoluzione CTA hero/cta (testo libero scritto dall'AI in generazione) ─
+// A differenza degli actionButtons (tipizzati call/whatsapp/map/email/custom,
+// sempre risolti in uno schema sicuro da resolveActionHref sopra), ctaHref
+// (hero) e buttonHref (cta) sono stringhe libere scritte dall'AI in
+// generazione (vedi HeroSectionSchema/CtaSectionSchema in site-schema.ts):
+// spesso un percorso "di fantasia" tipo "/preventivo" o "/contatti" che non
+// corrisponde a nessuna route reale — Next.js qui non fa alcun fallback, dà
+// un 404 secco. La navigazione interna del sito è sempre a stato (SiteNav
+// sopra chiama onNavigate, mai un href reale): un percorso che corrisponde a
+// una pagina del sito va risolto sullo stesso meccanismo invece di finire
+// come href letterale.
+type CtaTarget = { kind: 'nav'; slug: string } | { kind: 'link'; href: string };
+
+function resolveCtaTarget(rawHref: string | undefined, schema: SiteBlueprintJSON): CtaTarget {
+  const raw = (rawHref || '').trim();
+  const normalized = raw.replace(/^[#/]+/, '').toLowerCase();
+
+  if (normalized) {
+    const page = schema.pages.find(
+      (p) => p.slug.toLowerCase() === normalized || p.label.toLowerCase() === normalized
+    );
+    if (page) return { kind: 'nav', slug: page.slug };
+  }
+
+  if (/^(tel:|mailto:|https?:\/\/)/i.test(raw)) {
+    return { kind: 'link', href: raw };
+  }
+
+  // Nessuna pagina né URL riconosciuto: il primo pulsante di contatto
+  // configurato (chiamata/whatsapp/mappa/email) resta sempre valido ed è
+  // comunque un'azione sensata per una CTA come "Chiedi un preventivo",
+  // molto meglio di un link che porta a un 404.
+  if (schema.actionButtons.length > 0) {
+    return { kind: 'link', href: resolveActionHref(schema.actionButtons[0], schema) };
+  }
+
+  return { kind: 'link', href: '#' };
+}
+
 function actionIcon(type: ActionButton['type']) {
   switch (type) {
     case 'call': return <Phone size={16} />;
@@ -98,7 +137,15 @@ function actionIcon(type: ActionButton['type']) {
 
 // ─── Sezioni ─────────────────────────────────────────────────────────────────
 
-function SectionRenderer({ section, schema }: { section: PageSection; schema: SiteBlueprintJSON }) {
+function SectionRenderer({
+  section,
+  schema,
+  onNavigate,
+}: {
+  section: PageSection;
+  schema: SiteBlueprintJSON;
+  onNavigate?: (slug: string) => void;
+}) {
   const primary = schema.ui.primaryColor;
 
   switch (section.type) {
@@ -119,15 +166,19 @@ function SectionRenderer({ section, schema }: { section: PageSection; schema: Si
           {section.subtitle && (
             <p className={`max-w-md text-base ${section.imageUrl ? 'text-white/85' : 'text-gray-600'}`}>{section.subtitle}</p>
           )}
-          {section.ctaLabel && (
-            <a
-              href={section.ctaHref || '#'}
-              className="mt-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-90"
-              style={{ backgroundColor: primary }}
-            >
-              {section.ctaLabel}
-            </a>
-          )}
+          {section.ctaLabel && (() => {
+            const target = resolveCtaTarget(section.ctaHref, schema);
+            const ctaClassName = 'mt-2 rounded-full px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-90';
+            return target.kind === 'nav' ? (
+              <button type="button" onClick={() => onNavigate?.(target.slug)} className={ctaClassName} style={{ backgroundColor: primary }}>
+                {section.ctaLabel}
+              </button>
+            ) : (
+              <a href={target.href} className={ctaClassName} style={{ backgroundColor: primary }}>
+                {section.ctaLabel}
+              </a>
+            );
+          })()}
         </section>
       );
 
@@ -286,9 +337,19 @@ function SectionRenderer({ section, schema }: { section: PageSection; schema: Si
         <section className="px-6 py-16 text-center text-white" style={{ backgroundColor: primary }}>
           <h2 className="text-2xl font-bold">{section.title}</h2>
           {section.subtitle && <p className="mt-2 text-sm text-white/85">{section.subtitle}</p>}
-          <a href={section.buttonHref || '#'} className="mt-5 inline-block rounded-full bg-white px-6 py-3 text-sm font-semibold" style={{ color: primary }}>
-            {section.buttonLabel}
-          </a>
+          {(() => {
+            const target = resolveCtaTarget(section.buttonHref, schema);
+            const ctaClassName = 'mt-5 inline-block rounded-full bg-white px-6 py-3 text-sm font-semibold';
+            return target.kind === 'nav' ? (
+              <button type="button" onClick={() => onNavigate?.(target.slug)} className={ctaClassName} style={{ color: primary }}>
+                {section.buttonLabel}
+              </button>
+            ) : (
+              <a href={target.href} className={ctaClassName} style={{ color: primary }}>
+                {section.buttonLabel}
+              </a>
+            );
+          })()}
         </section>
       );
 
@@ -388,7 +449,9 @@ export default function SitePreview({
             <p className="text-sm">Questa pagina non ha ancora sezioni.</p>
           </div>
         ) : (
-          activePage.sections.map((section, i) => <SectionRenderer key={i} section={section} schema={schema} />)
+          activePage.sections.map((section, i) => (
+            <SectionRenderer key={i} section={section} schema={schema} onNavigate={onNavigate} />
+          ))
         )}
       </div>
       <StickyActionBar schema={schema} />
