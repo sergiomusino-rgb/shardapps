@@ -67,7 +67,7 @@ import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantM
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
 // il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
 // (i link puntano alla Dashboard con ?tab=...).
-export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices' | 'access';
+export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' | 'my_orders' | 'agents' | 'invoices' | 'access';
 
 // Tab visibili per ruolo:
 // - 'agent': solo catalogo (sola lettura) e clienti — niente dati aziendali,
@@ -82,8 +82,10 @@ export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'agents', 'customers', '
 export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company', 'access'];
 // 'access' (account personale, condivisione app, installazione PWA): a
 // differenza di 'company', non contiene dati aziendali/di fatturazione,
-// quindi è l'unica voce oltre a catalogo/clienti data anche al ruolo agente.
-export const AGENT_TABS: Tab[] = ['catalog', 'customers', 'access'];
+// quindi è una delle voci date anche al ruolo agente, insieme a 'my_orders'
+// (i propri ordini raccolti, sola lettura — niente incassi di tutto il
+// tenant né azioni di conferma/annullamento, quelle restano su 'orders').
+export const AGENT_TABS: Tab[] = ['catalog', 'customers', 'my_orders', 'access'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -290,6 +292,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'customers' && <CustomersTab tenantId={tenantId} openNewOnMount={openCustomerFormOnLoad} />}
           {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
+          {tab === 'my_orders' && <MyOrdersTab tenantId={tenantId} />}
           {tab === 'invoices' && !isAgent && <InvoicesTab />}
           {tab === 'agents' && canManageAgents && <AgentsTab tenantId={tenantId} slug={slug} />}
           {tab === 'access' && <AccessTab tenantId={tenantId} />}
@@ -2477,6 +2480,139 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab I miei ordini (ruolo agente) ───────────────────────────────────────
+// Versione ridotta di OrdersTab per il ruolo agente: solo i propri ordini
+// (filtrati per agent_id), sola lettura — niente incassi dell'intero tenant,
+// azioni di conferma/annullamento (già bloccate lato server per questo ruolo
+// in updateOrderStatusAction) o esportazione. Il memo audio resta
+// consultabile: è la propria registrazione.
+
+function MyOrdersTab({ tenantId }: { tenantId: string }) {
+  const { t } = useLanguage();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [audioOrderId, setAudioOrderId] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      const { data } = await supabase
+        .from('orders' as any)
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .eq('agent_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      setOrders((data || []) as unknown as Order[]);
+      setLoading(false);
+    })();
+  }, [tenantId]);
+
+  const handleToggleAudio = async (order: Order) => {
+    if (audioOrderId === order.id) {
+      setAudioOrderId(null);
+      setAudioUrl(null);
+      setAudioError(null);
+      return;
+    }
+    setAudioOrderId(order.id);
+    setAudioUrl(null);
+    setAudioError(null);
+    setAudioLoading(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setAudioError(t('comandi_dashboard_orders_action_error_session'));
+        return;
+      }
+      const result = await getOrderAudioSignedUrlAction({ orderId: order.id, accessToken: token });
+      if (!result.success || !result.url) {
+        setAudioError(result.error || t('comandi_dashboard_orders_audio_error_generic'));
+        return;
+      }
+      setAudioUrl(result.url);
+    } catch (err) {
+      console.error('[MyOrdersTab] Errore recupero audio:', err);
+      setAudioError(t('comandi_dashboard_orders_audio_error_generic'));
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
+  if (loading) return <p className="text-sm text-gray-500">…</p>;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {orders.length === 0 ? (
+        <p className="text-sm text-gray-500">{t('comandi_dashboard_my_orders_empty')}</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {orders.map((order) => (
+            <div key={order.id} className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white truncate">
+                    {order.customer_name || t('comandi_dashboard_orders_col_customer')}
+                  </p>
+                  <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ORDER_STATUS_BADGE_CLASS[order.status]}`}>
+                    {t(`comandi_order_status_${order.status.toLowerCase()}`)}
+                  </span>
+                  <span className="text-sm font-semibold text-white">{formatCurrency(Number(order.total_amount))}</span>
+                  {order.audio_url && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAudio(order)}
+                      title={t('comandi_dashboard_orders_action_listen')}
+                      className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
+                        audioOrderId === order.id
+                          ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                          : 'border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+                      }`}
+                    >
+                      {audioLoading && audioOrderId === order.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {audioOrderId === order.id && (
+                <div className="mt-3 pt-3 border-t border-gray-800">
+                  {audioError ? (
+                    <p className="text-xs text-red-400">{audioError}</p>
+                  ) : audioUrl ? (
+                    <audio controls autoPlay src={audioUrl} className="w-full max-w-md h-9" />
+                  ) : (
+                    <p className="text-xs text-gray-500">{t('comandi_dashboard_orders_audio_loading')}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

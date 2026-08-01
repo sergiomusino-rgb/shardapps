@@ -27,6 +27,7 @@ const TAB_ICON: Record<Tab, React.ReactNode> = {
   warehouse: <Warehouse className="w-[18px] h-[18px]" />,
   customers: <Users className="w-[18px] h-[18px]" />,
   orders: <ClipboardList className="w-[18px] h-[18px]" />,
+  my_orders: <ClipboardList className="w-[18px] h-[18px]" />,
   invoices: <Receipt className="w-[18px] h-[18px]" />,
   agents: <UserCog className="w-[18px] h-[18px]" />,
   company: <Building2 className="w-[18px] h-[18px]" />,
