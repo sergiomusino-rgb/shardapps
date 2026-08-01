@@ -68,6 +68,7 @@ export interface InvoiceRecord {
   dataEmissione: string;
   clienteNome: string;
   clientePiva: string | null;
+  clienteSdi: string | null;
   clienteIndirizzo: string | null;
   stato: InvoiceStato;
   tipoDocumento: InvoiceTipo;
@@ -96,7 +97,7 @@ export async function listInvoicesAction(input: z.infer<typeof ListInvoicesInput
 
   const { data: fattureRows, error: fattureError } = await (supabaseAdmin as any)
     .from('fatture')
-    .select('id, numero_fattura, anno, data_emissione, cliente_nome, cliente_piva, cliente_indirizzo, stato, tipo_documento, metodo_pagamento')
+    .select('id, numero_fattura, anno, data_emissione, cliente_nome, cliente_piva, cliente_sdi, cliente_indirizzo, stato, tipo_documento, metodo_pagamento')
     .eq('tenant_id', resolved.tenantId)
     .order('created_at', { ascending: false });
 
@@ -131,6 +132,7 @@ export async function listInvoicesAction(input: z.infer<typeof ListInvoicesInput
     dataEmissione: r.data_emissione,
     clienteNome: r.cliente_nome,
     clientePiva: r.cliente_piva,
+    clienteSdi: r.cliente_sdi,
     clienteIndirizzo: r.cliente_indirizzo,
     stato: r.stato,
     tipoDocumento: r.tipo_documento || 'fattura',
@@ -155,6 +157,7 @@ const CreateInvoiceInputSchema = z.object({
   dataEmissione: z.string().min(1),
   clienteNome: z.string().trim().min(1, 'Il nome del cliente è obbligatorio'),
   clientePiva: z.string().trim().optional(),
+  clienteSdi: z.string().trim().optional(),
   clienteIndirizzo: z.string().trim().optional(),
   metodoPagamento: z.string().trim().optional(),
   righe: z.array(InvoiceRigaInputSchema).min(1, 'Aggiungi almeno una riga'),
@@ -172,7 +175,7 @@ export async function createInvoiceAction(input: z.infer<typeof CreateInvoiceInp
   if (!validation.success) {
     return { success: false, error: validation.error.issues[0]?.message || 'Dati non validi' };
   }
-  const { tipoDocumento, dataEmissione, clienteNome, clientePiva, clienteIndirizzo, metodoPagamento, righe, accessToken } = validation.data;
+  const { tipoDocumento, dataEmissione, clienteNome, clientePiva, clienteSdi, clienteIndirizzo, metodoPagamento, righe, accessToken } = validation.data;
 
   // La ricevuta non richiede la P.IVA/CF del cliente (spesso un privato); la
   // fattura sì, per restare un documento fiscale valido — stessa regola del
@@ -213,6 +216,7 @@ export async function createInvoiceAction(input: z.infer<typeof CreateInvoiceInp
       data_emissione: dataEmissione,
       cliente_nome: clienteNome,
       cliente_piva: clientePiva || null,
+      cliente_sdi: clienteSdi || null,
       cliente_indirizzo: clienteIndirizzo || null,
       stato: 'bozza',
       metodo_pagamento: metodoPagamento || null,
@@ -329,7 +333,7 @@ export async function getInvoiceAction(input: z.infer<typeof GetInvoiceInputSche
 
   const { data: fattura, error: fatturaError } = await (supabaseAdmin as any)
     .from('fatture')
-    .select('id, numero_fattura, anno, data_emissione, cliente_nome, cliente_piva, cliente_indirizzo, stato, tipo_documento, metodo_pagamento')
+    .select('id, numero_fattura, anno, data_emissione, cliente_nome, cliente_piva, cliente_sdi, cliente_indirizzo, stato, tipo_documento, metodo_pagamento')
     .eq('id', invoiceId)
     .eq('tenant_id', resolved.tenantId)
     .maybeSingle();
@@ -368,6 +372,7 @@ export async function getInvoiceAction(input: z.infer<typeof GetInvoiceInputSche
       dataEmissione: fattura.data_emissione,
       clienteNome: fattura.cliente_nome,
       clientePiva: fattura.cliente_piva,
+      clienteSdi: fattura.cliente_sdi,
       clienteIndirizzo: fattura.cliente_indirizzo,
       stato: fattura.stato,
       tipoDocumento: fattura.tipo_documento || 'fattura',

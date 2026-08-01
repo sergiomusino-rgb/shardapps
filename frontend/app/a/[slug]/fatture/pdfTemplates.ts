@@ -13,7 +13,7 @@ export interface PdfInvoiceInput {
   anno: number;
   dataEmissione: string;
   stato: string;
-  cliente: { nome: string; piva?: string | null; indirizzo?: string | null };
+  cliente: { nome: string; piva?: string | null; sdi?: string | null; indirizzo?: string | null };
   righe: PdfInvoiceRiga[];
   azienda: {
     ragioneSociale: string;
@@ -131,6 +131,7 @@ export function generateClassicPdf(input: PdfInvoiceInput): jsPDF {
   doc.text(input.cliente.nome, MARGIN, y);
   y += 4.5;
   if (input.cliente.piva) { doc.text(`P.IVA/CF: ${input.cliente.piva}`, MARGIN, y); y += 4.5; }
+  if (input.cliente.sdi) { doc.text(`Codice SDI: ${input.cliente.sdi}`, MARGIN, y); y += 4.5; }
   if (input.cliente.indirizzo) { doc.text(input.cliente.indirizzo, MARGIN, y); y += 4.5; }
 
   y += 6;
@@ -242,6 +243,7 @@ export function generateModernPdf(input: PdfInvoiceInput): jsPDF {
   doc.setFontSize(8.5);
   doc.setTextColor(110, 110, 110);
   if (input.cliente.piva) { doc.text(`P.IVA/CF: ${input.cliente.piva}`, MARGIN, y); y += 4.2; }
+  if (input.cliente.sdi) { doc.text(`Codice SDI: ${input.cliente.sdi}`, MARGIN, y); y += 4.2; }
   if (input.cliente.indirizzo) { doc.text(input.cliente.indirizzo, MARGIN, y); y += 4.2; }
 
   y += 8;
@@ -355,6 +357,7 @@ export function generateMinimalPdf(input: PdfInvoiceInput): jsPDF {
   doc.setFontSize(8.5);
   doc.setTextColor(120, 120, 120);
   if (input.cliente.piva) { doc.text(`P.IVA/CF ${input.cliente.piva}`, MARGIN, y); y += 4; }
+  if (input.cliente.sdi) { doc.text(`Codice SDI ${input.cliente.sdi}`, MARGIN, y); y += 4; }
   if (input.cliente.indirizzo) { doc.text(input.cliente.indirizzo, MARGIN, y); y += 4; }
 
   y += 10;

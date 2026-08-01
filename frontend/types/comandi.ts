@@ -58,6 +58,7 @@ export interface Customer {
   address: string | null;
   city: string | null;
   vat_number: string | null; // Partita IVA o Codice Fiscale
+  sdi_code: string | null; // Codice Destinatario SDI per la fatturazione elettronica
   email: string | null;
   notes: string | null;
   created_at: string; // TIMESTAMPTZ

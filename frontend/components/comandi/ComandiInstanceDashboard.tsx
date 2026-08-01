@@ -838,6 +838,7 @@ function CatalogTab({
 const EMPTY_CUSTOMER_FORM = {
   name: '',
   vat_number: '',
+  sdi_code: '',
   address: '',
   city: '',
   phone: '',
@@ -902,6 +903,7 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
     setForm({
       name: customer.name || '',
       vat_number: customer.vat_number || '',
+      sdi_code: customer.sdi_code || '',
       address: customer.address || '',
       city: customer.city || '',
       phone: customer.phone || '',
@@ -925,6 +927,7 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
       const payload = {
         name,
         vat_number: form.vat_number.trim() || null,
+        sdi_code: form.sdi_code.trim() || null,
         address: form.address.trim() || null,
         city: form.city.trim() || null,
         phone: form.phone.trim() || null,
@@ -1023,6 +1026,18 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
                   className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
                 />
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  {t('comandi_dashboard_customers_field_sdi')}
+                </label>
+                <input
+                  value={form.sdi_code}
+                  onChange={(e) => setForm((v) => ({ ...v, sdi_code: e.target.value.toUpperCase() }))}
+                  placeholder={t('comandi_dashboard_customers_field_sdi_placeholder')}
+                  maxLength={7}
+                  className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white font-mono"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -1111,6 +1126,7 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
               <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-800 bg-gray-900/60">
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_name')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_vat')}</th>
+                <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_sdi')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_city')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_phone')}</th>
                 <th className="px-4 py-2.5 font-medium">{t('comandi_dashboard_customers_col_email')}</th>
@@ -1122,6 +1138,7 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
                 <tr key={customer.id} className="border-b border-gray-800/60 last:border-b-0">
                   <td className="px-4 py-2.5 text-white">{customer.name}</td>
                   <td className="px-4 py-2.5 text-gray-400">{customer.vat_number || '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-400 font-mono">{customer.sdi_code || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-400">{customer.city || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-400">{customer.phone || '—'}</td>
                   <td className="px-4 py-2.5 text-gray-400">{customer.email || '—'}</td>
@@ -2373,6 +2390,7 @@ function InvoicesTab() {
   const [dataEmissione, setDataEmissione] = useState(() => new Date().toISOString().slice(0, 10));
   const [clienteNome, setClienteNome] = useState('');
   const [clientePiva, setClientePiva] = useState('');
+  const [clienteSdi, setClienteSdi] = useState('');
   const [clienteIndirizzo, setClienteIndirizzo] = useState('');
   const [metodoPagamento, setMetodoPagamento] = useState('');
   const [righe, setRighe] = useState<InvoiceRigaForm[]>([EMPTY_INVOICE_RIGA()]);
@@ -2440,6 +2458,7 @@ function InvoicesTab() {
     setDataEmissione(new Date().toISOString().slice(0, 10));
     setClienteNome('');
     setClientePiva('');
+    setClienteSdi('');
     setClienteIndirizzo('');
     setMetodoPagamento('');
     setRighe([EMPTY_INVOICE_RIGA()]);
@@ -2476,6 +2495,7 @@ function InvoicesTab() {
         dataEmissione,
         clienteNome: clienteNome.trim(),
         clientePiva: clientePiva.trim() || undefined,
+        clienteSdi: clienteSdi.trim() || undefined,
         clienteIndirizzo: clienteIndirizzo.trim() || undefined,
         metodoPagamento: metodoPagamento.trim() || undefined,
         righe: parsedRighe,
@@ -2536,7 +2556,7 @@ function InvoicesTab() {
         anno: inv.anno,
         dataEmissione: inv.dataEmissione,
         stato: inv.stato,
-        cliente: { nome: inv.clienteNome, piva: inv.clientePiva, indirizzo: inv.clienteIndirizzo },
+        cliente: { nome: inv.clienteNome, piva: inv.clientePiva, sdi: inv.clienteSdi, indirizzo: inv.clienteIndirizzo },
         righe: inv.righe,
         azienda: {
           ragioneSociale: inv.azienda.ragioneSociale,
@@ -2684,6 +2704,13 @@ function InvoicesTab() {
                 onChange={(e) => setClientePiva(e.target.value)}
                 placeholder={t('comandi_dashboard_invoices_customer_vat_placeholder')}
                 className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+              <input
+                value={clienteSdi}
+                onChange={(e) => setClienteSdi(e.target.value.toUpperCase())}
+                placeholder={t('comandi_dashboard_invoices_customer_sdi_placeholder')}
+                maxLength={7}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 font-mono"
               />
               <input
                 value={clienteIndirizzo}
