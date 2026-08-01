@@ -11,6 +11,7 @@
 // (Firefox, molte versioni di Safari iOS), al costo di un giro server in più.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -93,11 +94,6 @@ export default function ComandiAgentPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
-  const [newCustomerName, setNewCustomerName] = useState('');
-  const [newCustomerPhone, setNewCustomerPhone] = useState('');
-  const [savingCustomer, setSavingCustomer] = useState(false);
-  const [customerError, setCustomerError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,35 +119,6 @@ export default function ComandiAgentPage() {
     setCustomerName(value);
     setSelectedCustomerId(null);
   }, []);
-
-  const handleSaveNewCustomer = useCallback(async () => {
-    const name = newCustomerName.trim();
-    if (!name) {
-      setCustomerError(t('comandi_agent_customer_error_name_required'));
-      return;
-    }
-    setSavingCustomer(true);
-    setCustomerError(null);
-    try {
-      const { data, error } = await (supabaseBrowser as any)
-        .from('customers')
-        .insert({ tenant_id: appInfo.tenantId, name, phone: newCustomerPhone.trim() || null })
-        .select('*')
-        .single();
-      if (error || !data) throw error || new Error('insert failed');
-      const created = data as Customer;
-      setCustomers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-      handlePickCustomer(created);
-      setShowNewCustomerForm(false);
-      setNewCustomerName('');
-      setNewCustomerPhone('');
-    } catch (err) {
-      console.error('[ComandiAgentPage] Errore creazione cliente:', err);
-      setCustomerError(t('comandi_agent_customer_error_generic'));
-    } finally {
-      setSavingCustomer(false);
-    }
-  }, [newCustomerName, newCustomerPhone, appInfo.tenantId, t, handlePickCustomer]);
 
   // ── Note ──────────────────────────────────────────────────────────────────
   const [notes, setNotes] = useState('');
@@ -305,6 +272,7 @@ export default function ComandiAgentPage() {
     <div className="flex h-screen overflow-hidden bg-gray-950 text-white">
       <div className="hidden md:block">
         <ComandiSidebar
+          tenantId={appInfo.tenantId}
           visibleTabs={navTabs}
           tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
           activeTab={null}
@@ -332,6 +300,7 @@ export default function ComandiAgentPage() {
           }`}
         >
           <ComandiSidebar
+            tenantId={appInfo.tenantId}
             visibleTabs={navTabs}
             tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
             activeTab={null}
@@ -423,50 +392,16 @@ export default function ComandiAgentPage() {
                 </div>
               )}
 
-              {!showNewCustomerForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowNewCustomerForm(true)}
-                  className="mt-3 flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {t('comandi_agent_customer_new_button')}
-                </button>
-              ) : (
-                <div className="mt-3 flex flex-col gap-2 rounded-lg border border-gray-800 bg-gray-950/60 p-3">
-                  <input
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                    placeholder={t('comandi_agent_customer_new_name_placeholder')}
-                    className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder:text-gray-500"
-                  />
-                  <input
-                    value={newCustomerPhone}
-                    onChange={(e) => setNewCustomerPhone(e.target.value)}
-                    placeholder={t('comandi_agent_customer_new_phone_placeholder')}
-                    className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder:text-gray-500"
-                  />
-                  {customerError && <p className="text-xs text-red-400">{customerError}</p>}
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSaveNewCustomer}
-                      disabled={savingCustomer}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50"
-                    >
-                      {savingCustomer ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                      {t('comandi_agent_customer_new_save')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowNewCustomerForm(false); setCustomerError(null); }}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-400 hover:text-white"
-                    >
-                      {t('comandi_agent_customer_new_cancel')}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Apre il form "Nuovo Cliente" della pagina Clienti (Dashboard),
+                  invece di un form ridotto duplicato qui: un solo punto dove
+                  si creano i clienti, con tutti i campi anagrafici. */}
+              <Link
+                href={`/a/${appInfo.slug}/dashboard?tab=customers&new=1`}
+                className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-amber-400 hover:text-amber-300"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {t('comandi_agent_customer_new_button')}
+              </Link>
             </section>
 
             {/* Registrazione vocale */}

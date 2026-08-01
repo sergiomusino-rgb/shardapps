@@ -30,6 +30,7 @@ import {
   Plus,
   QrCode,
   ShieldAlert,
+  Minus,
   Trash2,
   UploadCloud,
   UserCog,
@@ -66,7 +67,7 @@ import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantM
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
 // il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
 // (i link puntano alla Dashboard con ?tab=...).
-export type Tab = 'catalog' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices';
+export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' | 'agents' | 'invoices';
 
 // Tab visibili per ruolo:
 // - 'agent': solo catalogo (sola lettura) e clienti — niente dati aziendali,
@@ -77,9 +78,9 @@ export type Tab = 'catalog' | 'customers' | 'company' | 'orders' | 'agents' | 'i
 //   non deve essere visibile a un account operativo generico 'member').
 // - 'member' (es. cassa): tutto tranne 'agents' — emettere fatture/ricevute
 //   è un'attività operativa quotidiana, non riservata a owner/admin.
-export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'invoices', 'agents', 'company'];
-export const MEMBER_TABS: Tab[] = ['catalog', 'customers', 'orders', 'invoices', 'company'];
-export const AGENT_TABS: Tab[] = ['catalog', 'customers'];
+export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'agents', 'company'];
+export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company'];
+export const AGENT_TABS: Tab[] = ['catalog', 'warehouse', 'customers'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -161,6 +162,10 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
 
   const [tab, setTab] = useState<Tab>('catalog');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Deep-link dal pulsante "Nuovo Cliente" in Modalità Agente
+  // (/dashboard?tab=customers&new=1): apre subito la scheda cliente vuota
+  // invece di lasciare l'utente sulla sola tabella.
+  const [openCustomerFormOnLoad, setOpenCustomerFormOnLoad] = useState(false);
 
   // Deep-link diretto a una tab (es. dalla lista tab della pagina Agente, che
   // punta a /dashboard?tab=customers): letto da window.location invece di
@@ -168,8 +173,10 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
   // convenzione già in uso in app/a/[slug]/layout.tsx.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const requestedTab = new URLSearchParams(window.location.search).get('tab') as Tab | null;
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get('tab') as Tab | null;
     if (requestedTab && ALL_TABS.includes(requestedTab)) setTab(requestedTab);
+    if (params.get('new') === '1') setOpenCustomerFormOnLoad(true);
   }, []);
 
   // Un agente non deve mai restare su un tab non autorizzato: se il ruolo
@@ -194,6 +201,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
       {/* Sidebar desktop */}
       <div className="hidden md:block">
         <ComandiSidebar
+          tenantId={tenantId}
           visibleTabs={visibleTabs}
           tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
           activeTab={tab}
@@ -222,6 +230,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           }`}
         >
           <ComandiSidebar
+            tenantId={tenantId}
             visibleTabs={visibleTabs}
             tabLabel={(key) => t(`comandi_dashboard_tab_${key}`)}
             activeTab={tab}
@@ -276,7 +285,8 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
             </div>
           )}
           {tab === 'catalog' && <CatalogTab tenantId={tenantId} readOnly={isAgent} role={role} />}
-          {tab === 'customers' && !isAgent && <CustomersTab tenantId={tenantId} />}
+          {tab === 'warehouse' && <WarehouseTab tenantId={tenantId} readOnly={isAgent} />}
+          {tab === 'customers' && <CustomersTab tenantId={tenantId} openNewOnMount={openCustomerFormOnLoad} />}
           {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
           {tab === 'invoices' && !isAgent && <InvoicesTab />}
@@ -295,6 +305,35 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
     </div>
   );
 }
+
+// ─── Semaforo disponibilità (stock_qty) ────────────────────────────────────
+// Condiviso tra Catalogo e Magazzino: entrambi leggono/scrivono lo stesso
+// campo catalog_items.stock_qty, quindi lo stesso criterio di colore deve
+// valere in entrambe le viste.
+
+type StockStatus = 'available' | 'low' | 'out';
+
+const LOW_STOCK_DEFAULT_THRESHOLD = 5;
+
+function stockStatus(qty: number, threshold: number): StockStatus {
+  if (qty <= 0) return 'out';
+  if (qty <= threshold) return 'low';
+  return 'available';
+}
+
+const STOCK_STATUS_DOT: Record<StockStatus, string> = {
+  available: 'bg-green-500',
+  low: 'bg-amber-500',
+  out: 'bg-red-500',
+};
+
+// Badge pieno (bordo + sfondo tenue + testo colorato), più visibile del solo
+// pallino nelle liste dense come il Catalogo.
+const STOCK_STATUS_BADGE: Record<StockStatus, string> = {
+  available: 'border-green-500/40 bg-green-500/15 text-green-400',
+  low: 'border-amber-500/40 bg-amber-500/15 text-amber-400',
+  out: 'border-red-500/40 bg-red-500/15 text-red-400',
+};
 
 // ─── Tab Catalogo ───────────────────────────────────────────────────────────
 
@@ -717,7 +756,7 @@ function CatalogTab({
         <div className="flex flex-col gap-3">
           {items.map((item) => (
             <div key={item.id} className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-center">
+              <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 items-center">
                 <span className="text-xs font-mono text-gray-500 col-span-2 sm:col-span-1">{item.sku}</span>
                 <input
                   value={item.name}
@@ -742,6 +781,28 @@ function CatalogTab({
                   disabled={readOnly}
                   className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
                 />
+                {/* Semaforo disponibilità: stesso criterio e stesso campo
+                    (stock_qty) della tab Magazzino, sola lettura qui — la
+                    quantità si modifica dal Magazzino per non duplicare
+                    l'azione in due schermate diverse. */}
+                {(() => {
+                  const status = stockStatus(item.stock_qty, LOW_STOCK_DEFAULT_THRESHOLD);
+                  const statusLabel =
+                    status === 'available'
+                      ? t('comandi_dashboard_warehouse_status_available')
+                      : status === 'low'
+                        ? t('comandi_dashboard_warehouse_status_low')
+                        : t('comandi_dashboard_warehouse_status_out');
+                  return (
+                    <div
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${STOCK_STATUS_BADGE[status]}`}
+                      title={statusLabel}
+                    >
+                      <span className={`h-3 w-3 rounded-full shrink-0 ${STOCK_STATUS_DOT[status]}`} />
+                      {item.stock_qty} {item.unit_of_measure}
+                    </div>
+                  );
+                })()}
                 <label className="flex items-center gap-1.5 text-xs text-gray-400">
                   <input
                     type="checkbox"
@@ -828,6 +889,226 @@ function CatalogTab({
   );
 }
 
+// ─── Tab Magazzino ──────────────────────────────────────────────────────────
+// Stessa tabella catalog_items del Catalogo (nessuna tabella/colonna nuova):
+// qui la vista è invertita, il focus è la disponibilità (stock_qty) invece
+// dell'anagrafica prodotto, con lo stesso semaforo verde/arancio/rosso
+// mostrato nel Catalogo (vedi stockStatus più sopra). Modificare la quantità
+// qui aggiorna lo stesso record che il Catalogo mostra nel suo campo
+// "Stock" — sono la stessa fonte dati.
+
+function WarehouseTab({ tenantId, readOnly = false }: { tenantId: string; readOnly?: boolean }) {
+  const { t } = useLanguage();
+  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | StockStatus>('all');
+  const [threshold, setThreshold] = useState(LOW_STOCK_DEFAULT_THRESHOLD);
+
+  const loadItems = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('catalog_items' as any)
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .order('stock_qty', { ascending: true });
+      if (fetchError) throw fetchError;
+      setItems((data || []) as unknown as CatalogItem[]);
+    } catch (err) {
+      console.error('[WarehouseTab] Errore caricamento magazzino:', err);
+      setError(t('comandi_dashboard_warehouse_error_generic'));
+    } finally {
+      setLoading(false);
+    }
+  }, [tenantId, t]);
+
+  useEffect(() => {
+    loadItems();
+  }, [loadItems]);
+
+  const handleStockChange = async (id: string, nextQty: number) => {
+    const qty = Math.max(0, Math.round(nextQty));
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, stock_qty: qty } : i)));
+    const { error: updateError } = await (supabase as any)
+      .from('catalog_items')
+      .update({ stock_qty: qty })
+      .eq('id', id);
+    if (updateError) {
+      console.error('[WarehouseTab] Errore aggiornamento quantità:', updateError);
+      setError(t('comandi_dashboard_warehouse_error_generic'));
+    }
+  };
+
+  const counts = items.reduce(
+    (acc, item) => {
+      acc[stockStatus(item.stock_qty, threshold)] += 1;
+      return acc;
+    },
+    { available: 0, low: 0, out: 0 } as Record<StockStatus, number>
+  );
+
+  const filteredItems = items.filter((item) => {
+    if (filter !== 'all' && stockStatus(item.stock_qty, threshold) !== filter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q);
+  });
+
+  const statusLabel = (status: StockStatus) =>
+    status === 'available'
+      ? t('comandi_dashboard_warehouse_status_available')
+      : status === 'low'
+        ? t('comandi_dashboard_warehouse_status_low')
+        : t('comandi_dashboard_warehouse_status_out');
+
+  return (
+    <div className="flex flex-col gap-6">
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Riepilogo disponibilità */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <p className="text-xs uppercase tracking-wide text-gray-500">{t('comandi_dashboard_warehouse_stat_total')}</p>
+          <p className="text-2xl font-bold text-white mt-1">{items.length}</p>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
+            <span className="h-2 w-2 rounded-full bg-green-500" />
+            {t('comandi_dashboard_warehouse_stat_available')}
+          </p>
+          <p className="text-2xl font-bold text-green-400 mt-1">{counts.available}</p>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            {t('comandi_dashboard_warehouse_stat_low')}
+          </p>
+          <p className="text-2xl font-bold text-amber-400 mt-1">{counts.low}</p>
+        </div>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-gray-500">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            {t('comandi_dashboard_warehouse_stat_out')}
+          </p>
+          <p className="text-2xl font-bold text-red-400 mt-1">{counts.out}</p>
+        </div>
+      </div>
+
+      {/* Filtri, ricerca e soglia scorta bassa */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('comandi_dashboard_warehouse_search_placeholder')}
+            className="flex-1 min-w-[180px] bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {(['all', 'available', 'low', 'out'] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                  filter === key
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-400'
+                    : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
+                }`}
+              >
+                {key === 'all'
+                  ? t('comandi_dashboard_warehouse_filter_all')
+                  : statusLabel(key)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-gray-400">
+          {t('comandi_dashboard_warehouse_threshold_label')}
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={threshold}
+            onChange={(e) => setThreshold(Math.max(0, parseInt(e.target.value, 10) || 0))}
+            className="w-20 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1 text-sm text-white"
+          />
+        </label>
+      </div>
+
+      {/* Lista disponibilità */}
+      {loading ? (
+        <p className="text-sm text-gray-500">…</p>
+      ) : filteredItems.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          {items.length === 0
+            ? t('comandi_dashboard_warehouse_empty')
+            : t('comandi_dashboard_warehouse_empty_filtered')}
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filteredItems.map((item) => {
+            const status = stockStatus(item.stock_qty, threshold);
+            return (
+              <div
+                key={item.id}
+                className="rounded-xl border border-gray-800 bg-gray-900/40 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 items-center"
+              >
+                <div
+                  className={`flex items-center gap-2 col-span-2 sm:col-span-1 rounded-full border px-3 py-1.5 text-xs font-bold w-fit ${STOCK_STATUS_BADGE[status]}`}
+                >
+                  <span className={`h-3 w-3 rounded-full shrink-0 ${STOCK_STATUS_DOT[status]}`} />
+                  {statusLabel(status)}
+                </div>
+                <span className="text-xs font-mono text-gray-500">{item.sku}</span>
+                <span className="text-sm text-white truncate col-span-2 sm:col-span-2">{item.name}</span>
+                <div className="flex items-center gap-1.5 justify-self-start sm:justify-self-end col-span-2 sm:col-span-2">
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleStockChange(item.id, item.stock_qty - 1)}
+                      className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={item.stock_qty <= 0}
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={item.stock_qty}
+                    onChange={(e) => handleStockChange(item.id, parseFloat(e.target.value) || 0)}
+                    disabled={readOnly}
+                    className="w-20 text-center bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                  />
+                  <span className="text-xs text-gray-500">{item.unit_of_measure}</span>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => handleStockChange(item.id, item.stock_qty + 1)}
+                      className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab Clienti ────────────────────────────────────────────────────────────
 // Rubrica clienti del tenant: scheda in stile "Azienda" (stessi campi
 // anagrafici: nome, P.IVA/CF, indirizzo, città, telefono, vedi CompanyTab più
@@ -847,7 +1128,7 @@ const EMPTY_CUSTOMER_FORM = {
   notes: '',
 };
 
-function CustomersTab({ tenantId }: { tenantId: string }) {
+function CustomersTab({ tenantId, openNewOnMount = false }: { tenantId: string; openNewOnMount?: boolean }) {
   const { t } = useLanguage();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -898,6 +1179,17 @@ function CustomersTab({ tenantId }: { tenantId: string }) {
     setFormError(null);
     setShowForm(true);
   }, []);
+
+  // Deep-link da Modalità Agente (?tab=customers&new=1, vedi
+  // ComandiInstanceDashboard): apre subito la scheda vuota. Il ref evita di
+  // riaprirla se l'utente la chiude manualmente durante la sessione.
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (openNewOnMount && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      handleOpenNew();
+    }
+  }, [openNewOnMount, handleOpenNew]);
 
   const handleEdit = useCallback((customer: Customer) => {
     setEditingId(customer.id);

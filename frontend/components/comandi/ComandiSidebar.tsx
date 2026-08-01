@@ -14,14 +14,17 @@
 // - Pagina Agente: `onSelectTab` assente, le voci sono Link verso
 //   `${dashboardHref}?tab=...` (navigazione vera verso un'altra pagina).
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, ClipboardList, LogOut, Mic, Package, Receipt, UserCog, Users, X } from 'lucide-react';
+import { Building2, ClipboardList, LogOut, Mic, Package, Receipt, UserCog, Users, Warehouse, X } from 'lucide-react';
 import ComandiHeaderBrand from './ComandiHeaderBrand';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { supabase } from '@/src/lib/supabase';
 import type { Tab } from './ComandiInstanceDashboard';
 
 const TAB_ICON: Record<Tab, React.ReactNode> = {
   catalog: <Package className="w-[18px] h-[18px]" />,
+  warehouse: <Warehouse className="w-[18px] h-[18px]" />,
   customers: <Users className="w-[18px] h-[18px]" />,
   orders: <ClipboardList className="w-[18px] h-[18px]" />,
   invoices: <Receipt className="w-[18px] h-[18px]" />,
@@ -30,6 +33,7 @@ const TAB_ICON: Record<Tab, React.ReactNode> = {
 };
 
 export interface ComandiSidebarProps {
+  tenantId: string;
   visibleTabs: Tab[];
   tabLabel: (tab: Tab) => string;
   activeTab: Tab | null;
@@ -53,6 +57,7 @@ function itemClassName(active: boolean): string {
 }
 
 export default function ComandiSidebar({
+  tenantId,
   visibleTabs,
   tabLabel,
   activeTab,
@@ -67,6 +72,28 @@ export default function ComandiSidebar({
   onClose,
 }: ComandiSidebarProps) {
   const { t } = useLanguage();
+
+  // Logo aziendale caricato in Azienda (tenants.logo_url): mostrato in cima
+  // all'elenco, sopra "Modalità Agente", solo quando l'azienda ne ha
+  // caricato uno — altrimenti la sidebar resta invariata.
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Cast necessario: 'logo_url' (migrazione 20260808000010) non è
+      // ancora presente nel tipo Database generato.
+      const { data } = await (supabase as any)
+        .from('tenants')
+        .select('logo_url')
+        .eq('id', tenantId)
+        .single();
+      if (!cancelled) setCompanyLogoUrl((data as { logo_url?: string } | null)?.logo_url || '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
 
   return (
     <aside className="flex h-full w-64 flex-col border-r border-gray-800 bg-gray-900">
@@ -114,9 +141,19 @@ export default function ComandiSidebar({
           });
 
           // "Modalità Agente" apre in cima all'elenco: è il punto d'ingresso
-          // per registrare nuovi ordini, prima ancora del catalogo.
+          // per registrare nuovi ordini, prima ancora del catalogo. Il logo
+          // aziendale, quando presente, va sopra anche a questa voce.
           return (
             <>
+              {companyLogoUrl && (
+                <div className="flex justify-center pb-2 mb-1 border-b border-gray-800/60">
+                  <img
+                    src={companyLogoUrl}
+                    alt=""
+                    className="h-12 w-auto max-w-full rounded-lg object-contain"
+                  />
+                </div>
+              )}
               {agentEntry}
               {tabItems}
             </>
