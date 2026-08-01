@@ -212,7 +212,6 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           dashboardHref={`/a/${slug}/dashboard`}
           agentHref={`/a/${slug}/app/agente`}
           agentLabel={t('comandi_dashboard_go_to_console')}
-          showAgentEntry={!isAgent}
           onLogout={handleLogout}
           logoutLabel={t('comandi_dashboard_logout')}
         />
@@ -241,8 +240,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
             dashboardHref={`/a/${slug}/dashboard`}
             agentHref={`/a/${slug}/app/agente`}
             agentLabel={t('comandi_dashboard_go_to_console')}
-            showAgentEntry={!isAgent}
-            onLogout={handleLogout}
+              onLogout={handleLogout}
             logoutLabel={t('comandi_dashboard_logout')}
             onClose={() => setMobileMenuOpen(false)}
           />

@@ -42,7 +42,6 @@ export interface ComandiSidebarProps {
   dashboardHref: string;
   agentHref: string;
   agentLabel: string;
-  showAgentEntry: boolean;
   isOnAgentPage?: boolean;
   onLogout?: () => void;
   logoutLabel?: string;
@@ -66,7 +65,6 @@ export default function ComandiSidebar({
   dashboardHref,
   agentHref,
   agentLabel,
-  showAgentEntry,
   isOnAgentPage = false,
   onLogout,
   logoutLabel,
@@ -113,7 +111,11 @@ export default function ComandiSidebar({
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
         {(() => {
-          const agentEntry = showAgentEntry && (
+          // Sempre presente, per ogni ruolo: è il punto d'ingresso per
+          // registrare nuovi ordini, e deve restare raggiungibile anche
+          // quando un agente naviga su Catalogo/Clienti/Accesso dalla
+          // Dashboard, non solo dalla pagina Agente stessa.
+          const agentEntry = (
             <Link key="agente" href={agentHref} className={itemClassName(isOnAgentPage)}>
               <span className="flex-shrink-0">
                 <Mic className="w-[18px] h-[18px]" />

@@ -306,7 +306,6 @@ export default function ComandiAgentPage() {
           dashboardHref={`/a/${appInfo.slug}/dashboard`}
           agentHref={`/a/${appInfo.slug}/app/agente`}
           agentLabel={t('comandi_dashboard_go_to_console')}
-          showAgentEntry={navTabs.length > 0}
           isOnAgentPage
           onLogout={handleLogout}
           logoutLabel={t('comandi_dashboard_logout')}
@@ -334,8 +333,7 @@ export default function ComandiAgentPage() {
             dashboardHref={`/a/${appInfo.slug}/dashboard`}
             agentHref={`/a/${appInfo.slug}/app/agente`}
             agentLabel={t('comandi_dashboard_go_to_console')}
-            showAgentEntry={navTabs.length > 0}
-            isOnAgentPage
+              isOnAgentPage
             onLogout={handleLogout}
             logoutLabel={t('comandi_dashboard_logout')}
             onClose={() => setMobileMenuOpen(false)}
