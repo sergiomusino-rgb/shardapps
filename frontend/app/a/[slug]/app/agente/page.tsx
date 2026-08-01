@@ -32,7 +32,7 @@ import ComandiSidebar from '@/components/comandi/ComandiSidebar';
 import HeaderClock from '@/components/HeaderClock';
 import LanguageSelector from '@/components/LanguageSelector';
 import FullscreenToggle from '@/components/FullscreenToggle';
-import { ALL_TABS, AGENT_TABS, type Tab } from '@/components/comandi/ComandiInstanceDashboard';
+import { ALL_TABS, AGENT_TABS, TrialNudgeBanner, type Tab } from '@/components/comandi/ComandiInstanceDashboard';
 import { useAppInfo } from '../../AppInfoContext';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
@@ -348,6 +348,7 @@ export default function ComandiAgentPage() {
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
+        <TrialNudgeBanner slug={appInfo.slug} />
         <header className="flex h-16 items-center justify-between gap-3 border-b border-gray-800 bg-gray-900/60 px-4 md:justify-end md:px-6">
           <button
             type="button"
@@ -370,7 +371,6 @@ export default function ComandiAgentPage() {
         <main className="flex-1 overflow-y-auto px-4 py-6 max-w-lg mx-auto w-full flex flex-col gap-6">
         <div>
           <h1 className="text-2xl font-bold">{t('comandi_agent_page_title')}</h1>
-          <p className="text-gray-400 text-sm mt-1">{t('comandi_agent_page_subtitle')}</p>
         </div>
 
         {result ? (
@@ -469,22 +469,6 @@ export default function ComandiAgentPage() {
               )}
             </section>
 
-            {/* Note */}
-            <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-3">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 block">
-                  {t('comandi_agent_notes_label')}
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder={t('comandi_agent_notes_placeholder')}
-                  rows={2}
-                  className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-500"
-                />
-              </div>
-            </section>
-
             {/* Registrazione vocale */}
             <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-6 flex flex-col items-center gap-4">
               {!isSupported && (
@@ -537,6 +521,22 @@ export default function ComandiAgentPage() {
                 ) : (
                   <p className="text-sm text-gray-400">{t('comandi_agent_record_idle_prompt')}</p>
                 )}
+              </div>
+            </section>
+
+            {/* Note */}
+            <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 block">
+                  {t('comandi_agent_notes_label')}
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder={t('comandi_agent_notes_placeholder')}
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-500"
+                />
               </div>
             </section>
           </>

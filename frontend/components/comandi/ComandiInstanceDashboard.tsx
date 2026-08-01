@@ -11,6 +11,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import {
   AlertCircle,
+  Building2,
   Check,
   CheckCircle2,
   Copy,
@@ -97,7 +98,7 @@ function formatCurrency(value: number): string {
 // styling coerente col resto di Comandi (ambra/grigio) invece del gradiente
 // ZeusX generico, per restare in linea con l'isolamento white-label del
 // modulo (vedi commento nella diramazione comandi_ai di layout.tsx).
-function TrialNudgeBanner({ slug }: { slug: string }) {
+export function TrialNudgeBanner({ slug }: { slug: string }) {
   const { t } = useLanguage();
   const appInfo = useAppInfo();
   const [subscribing, setSubscribing] = useState(false);
@@ -1181,6 +1182,9 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [phone, setPhone] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1188,22 +1192,64 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from('tenants' as any)
-        .select('name, vat_number, address, city, phone')
+      // Cast necessario: 'logo_url' (migrazione 20260808000010) non è
+      // ancora presente nel tipo Database generato.
+      const { data } = await (supabase as any)
+        .from('tenants')
+        .select('name, vat_number, address, city, phone, logo_url')
         .eq('id', tenantId)
         .single();
       if (data) {
-        const tenant = data as { name?: string; vat_number?: string; address?: string; city?: string; phone?: string };
+        const tenant = data as { name?: string; vat_number?: string; address?: string; city?: string; phone?: string; logo_url?: string };
         setBusinessName(tenant.name || '');
         setVatNumber(tenant.vat_number || '');
         setAddress(tenant.address || '');
         setCity(tenant.city || '');
         setPhone(tenant.phone || '');
+        setLogoUrl(tenant.logo_url || '');
       }
       setLoading(false);
     })();
   }, [tenantId]);
+
+  // Caricato subito nel bucket pubblico 'vision-uploads' (già usato da ZeusX
+  // Vision) al momento della scelta del file: l'URL risultante viene salvato
+  // in tenants.logo_url solo quando l'utente preme "Salva dati aziendali",
+  // coerente col resto del form (un solo pulsante di salvataggio).
+  const handleLogoFile = async (file: File) => {
+    setLogoError(null);
+    if (!file.type.startsWith('image/')) {
+      setLogoError(t('comandi_dashboard_company_logo_error_type'));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLogoError(t('comandi_dashboard_company_logo_error_size'));
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setLogoError(t('comandi_dashboard_company_error_generic'));
+        return;
+      }
+      const ext = file.name.split('.').pop() || 'png';
+      const path = `${user.id}/comandi-logo-${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('vision-uploads')
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: publicUrlData } = supabase.storage.from('vision-uploads').getPublicUrl(path);
+      setLogoUrl(publicUrlData.publicUrl);
+    } catch (err) {
+      console.error('[CompanyTab] Errore caricamento logo:', err);
+      setLogoError(t('comandi_dashboard_company_logo_error_generic'));
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1224,6 +1270,7 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
         address: address.trim() || undefined,
         city: city.trim() || undefined,
         phone: phone.trim() || undefined,
+        logoUrl: logoUrl || undefined,
         seedDemoCatalog: false,
         accessToken: session.access_token,
       });
@@ -1260,6 +1307,39 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
         </div>
       )}
 
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+          {t('comandi_dashboard_company_logo_label')}
+        </label>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-16 h-16 rounded-xl border border-gray-700 bg-gray-800 overflow-hidden shrink-0">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="w-full h-full object-contain" />
+            ) : (
+              <Building2 className="w-6 h-6 text-gray-600" />
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:bg-gray-800 cursor-pointer w-fit">
+              {uploadingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+              {t('comandi_dashboard_company_logo_upload_button')}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={uploadingLogo}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleLogoFile(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            {logoError && <p className="text-xs text-red-400">{logoError}</p>}
+          </div>
+        </div>
+      </div>
       <div>
         <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
           {t('comandi_setup_business_name_label')}

@@ -16,6 +16,7 @@ const SetupTenantInputSchema = z.object({
   address: z.string().trim().optional(),
   city: z.string().trim().optional(),
   phone: z.string().trim().optional(),
+  logoUrl: z.string().trim().optional(),
   seedDemoCatalog: z.boolean().optional().default(false),
   // Stesso principio delle altre Server Action del modulo Comandi
   // (extractVoiceOrderAction/confirmOrderAction): l'app non usa
@@ -69,7 +70,7 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     if (!validation.success) {
       return { success: false, error: validation.error.issues[0]?.message || 'Dati non validi' };
     }
-    const { businessName, vatNumber, address, city, phone, seedDemoCatalog, accessToken } = validation.data;
+    const { businessName, vatNumber, address, city, phone, logoUrl, seedDemoCatalog, accessToken } = validation.data;
 
     const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
     const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
@@ -92,6 +93,7 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
       address: address || null,
       city: city || null,
       phone: phone || null,
+      ...(logoUrl !== undefined ? { logo_url: logoUrl || null } : {}),
     };
 
     // Un tenant può già esistere per questo utente creato da altri flussi
@@ -118,7 +120,10 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     }
 
     if (tenantId) {
-      const { error: updateError } = await supabaseAdmin
+      // Cast necessario: 'logo_url' (migrazione 20260808000010) non è
+      // ancora presente nel tipo Database generato (stesso scostamento già
+      // visto altrove nel modulo, es. catalog_items.category).
+      const { error: updateError } = await (supabaseAdmin as any)
         .from('tenants')
         .update(companyFields)
         .eq('id', tenantId);
@@ -133,7 +138,7 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
       // app_limit: 0, come le altre creazioni lazy di tenant nel progetto:
       // Comandi AI non consuma più uno slot (vedi comandi-provisioning.ts),
       // quindi non serve più pre-caricarne uno qui per coprirlo.
-      const { data: newTenant, error: tenantError } = await supabaseAdmin
+      const { data: newTenant, error: tenantError } = await (supabaseAdmin as any)
         .from('tenants')
         .insert({
           owner_id: userId,
