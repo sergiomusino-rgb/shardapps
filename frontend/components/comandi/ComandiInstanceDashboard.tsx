@@ -78,7 +78,7 @@ export type Tab = 'catalog' | 'warehouse' | 'customers' | 'company' | 'orders' |
 //   non deve essere visibile a un account operativo generico 'member').
 // - 'member' (es. cassa): tutto tranne 'agents' — emettere fatture/ricevute
 //   è un'attività operativa quotidiana, non riservata a owner/admin.
-export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'agents', 'company', 'access'];
+export const ALL_TABS: Tab[] = ['catalog', 'warehouse', 'agents', 'customers', 'orders', 'invoices', 'company', 'access'];
 export const MEMBER_TABS: Tab[] = ['catalog', 'warehouse', 'customers', 'orders', 'invoices', 'company', 'access'];
 // 'access' (account personale, condivisione app, installazione PWA): a
 // differenza di 'company', non contiene dati aziendali/di fatturazione,
