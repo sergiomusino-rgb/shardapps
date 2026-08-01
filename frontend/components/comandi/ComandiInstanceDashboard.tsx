@@ -43,6 +43,7 @@ import { updateOrderStatusAction, getOrderAudioSignedUrlAction } from '@/app/act
 import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
+import InstallAppBanner from '@/components/InstallAppBanner';
 import { useAppInfo } from '@/app/a/[slug]/AppInfoContext';
 import { daysRemaining } from '@/app/a/[slug]/app/subscription-status';
 import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
@@ -259,6 +260,15 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
         </main>
       </div>
+
+      <InstallAppBanner
+        appName={COMANDI_PWA_APP_NAME}
+        slug={slug}
+        primaryColor={COMANDI_PWA_THEME_COLOR}
+        textColor="#ffffff"
+        surfaceColor="#111827"
+        borderColor="#1f2937"
+      />
     </div>
   );
 }

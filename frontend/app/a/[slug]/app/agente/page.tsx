@@ -38,6 +38,7 @@ import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
+import InstallAppBanner from '@/components/InstallAppBanner';
 import type { Customer, ParsedOrderItem, DiscardedItem } from '@/types/comandi';
 
 interface AgentOrderResult {
@@ -527,6 +528,15 @@ export default function ComandiAgentPage() {
         )}
       </main>
       </div>
+
+      <InstallAppBanner
+        appName={COMANDI_PWA_APP_NAME}
+        slug={appInfo.slug}
+        primaryColor={COMANDI_PWA_THEME_COLOR}
+        textColor="#ffffff"
+        surfaceColor="#111827"
+        borderColor="#1f2937"
+      />
     </div>
   );
 }

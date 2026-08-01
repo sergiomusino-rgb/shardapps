@@ -5,6 +5,7 @@ import { Mic, Package, Share2 } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
+import InstallAppBanner from '@/components/InstallAppBanner';
 
 export interface ComandiInstanceLandingProps {
   slug: string;
@@ -81,6 +82,15 @@ export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingP
           })}
         </section>
       </main>
+
+      <InstallAppBanner
+        appName={COMANDI_PWA_APP_NAME}
+        slug={slug}
+        primaryColor={COMANDI_PWA_THEME_COLOR}
+        textColor="#ffffff"
+        surfaceColor="#0f172a"
+        borderColor="#1e293b"
+      />
     </div>
   );
 }
