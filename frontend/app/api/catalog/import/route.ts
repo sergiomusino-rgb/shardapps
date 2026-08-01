@@ -227,6 +227,15 @@ function parsePrice(raw: string): number | null {
     cleaned = cleaned.replace(/\./g, '').replace(',', '.');
   } else if (hasComma) {
     cleaned = cleaned.replace(',', '.');
+  } else if (hasDot && /^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    // Un punto senza virgola è ambiguo: "12.50" è quasi certamente un
+    // decimale (Number lo interpreta già correttamente, nessuna modifica
+    // necessaria) ma "1.200" da un export con separatore delle migliaia
+    // all'europea significa 1200, non 1.2 — senza questo caso finiva
+    // silenziosamente troncato a 1.2. Riconosciuto solo quando OGNI gruppo
+    // dopo il primo punto ha esattamente 3 cifre (mai un prezzo con 3
+    // decimali), altrimenti resta un normale separatore decimale.
+    cleaned = cleaned.replace(/\./g, '');
   }
   const value = Number(cleaned);
   return Number.isFinite(value) && value >= 0 ? value : null;

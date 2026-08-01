@@ -69,11 +69,16 @@ function getPeriodISO(sub, field) {
 }
 
 function getFeePriceId(planId) {
-  // Recurring monthly fee price IDs
+  // Recurring monthly fee price IDs. Override via env (STRIPE_FEE_PRICE_*),
+  // stesso pattern di routes/stripe.js::getFeePriceId: gli ID Price sono
+  // specifici per modalità Stripe (test/live) — senza un override da env,
+  // passare da una chiave test a una live (o viceversa) senza aggiornare
+  // questi valori fa fallire silenziosamente la creazione della fee
+  // subscription (errore "No such price", solo loggato, vedi catch sotto).
   const feePrices = {
-    starter: 'price_1TmdIgRZR2YaFu2sT5gkrMdx',
-    pro: 'price_1TmdK0RZR2YaFu2s8pXkLety',
-    business: 'price_1TmdKuRZR2YaFu2sHeH8fShE',
+    starter: process.env.STRIPE_FEE_PRICE_STARTER || 'price_1TmdIgRZR2YaFu2sT5gkrMdx',
+    pro: process.env.STRIPE_FEE_PRICE_PRO || 'price_1TmdK0RZR2YaFu2s8pXkLety',
+    business: process.env.STRIPE_FEE_PRICE_BUSINESS || 'price_1TmdKuRZR2YaFu2sHeH8fShE',
   };
   return feePrices[planId] || feePrices.starter;
 }

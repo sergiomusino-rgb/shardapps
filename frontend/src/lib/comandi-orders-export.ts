@@ -131,17 +131,23 @@ export function rowsToCsv(rows: OrderExportRow[]): string {
 }
 
 export function rowsToXlsxBuffer(rows: OrderExportRow[]): Buffer {
+  // Stessa difesa anti CSV/formula-injection di rowsToCsv: json_to_sheet
+  // scrive i valori come celle vive, un customer/productDescription/numero
+  // documento che inizia con =/+/-/@ diventerebbe una formula eseguita
+  // all'apertura in Excel (qui il rischio è più alto che nel CSV, perché
+  // questo stesso file .xlsx viene anche allegato via email, vedi
+  // orders-export/email/route.ts). Solo i campi testo/utente, non i numeri.
   const data = rows.map((r) => ({
-    [EXPORT_HEADERS[0]]: r.customer,
-    [EXPORT_HEADERS[1]]: r.productCode,
-    [EXPORT_HEADERS[2]]: r.productDescription,
+    [EXPORT_HEADERS[0]]: sanitizeCsvValue(r.customer),
+    [EXPORT_HEADERS[1]]: sanitizeCsvValue(r.productCode),
+    [EXPORT_HEADERS[2]]: sanitizeCsvValue(r.productDescription),
     [EXPORT_HEADERS[3]]: r.quantity,
-    [EXPORT_HEADERS[4]]: r.orderDate,
+    [EXPORT_HEADERS[4]]: sanitizeCsvValue(r.orderDate),
     [EXPORT_HEADERS[5]]: r.unitPrice,
     [EXPORT_HEADERS[6]]: r.productTotal,
     [EXPORT_HEADERS[7]]: r.orderTotal,
-    [EXPORT_HEADERS[8]]: r.deliveryNoteNumber,
-    [EXPORT_HEADERS[9]]: r.invoiceNumber,
+    [EXPORT_HEADERS[8]]: sanitizeCsvValue(r.deliveryNoteNumber),
+    [EXPORT_HEADERS[9]]: sanitizeCsvValue(r.invoiceNumber),
   }));
   const worksheet = XLSX.utils.json_to_sheet(data, { header: EXPORT_HEADERS });
   const workbook = XLSX.utils.book_new();

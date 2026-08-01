@@ -100,6 +100,7 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     // ZeusX (es. Creator AI) che impostano solo owner_id senza riga in
     // tenant_members: verifichiamo entrambi i percorsi per non duplicare.
     let tenantId: string | undefined;
+    let callerRole: string | undefined;
 
     const { data: ownedTenant } = await supabaseAdmin
       .from('tenants')
@@ -109,14 +110,26 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
 
     if (ownedTenant?.id) {
       tenantId = ownedTenant.id as string;
+      callerRole = 'owner'; // owner_id è per definizione il titolare
     } else {
       const { data: membership } = await supabaseAdmin
         .from('tenant_members')
-        .select('tenant_id')
+        .select('tenant_id, role')
         .eq('user_id', userId)
         .limit(1)
         .single();
       tenantId = membership?.tenant_id as string | undefined;
+      callerRole = (membership as { role?: string } | null)?.role;
+    }
+
+    // Questa action usa la service role key (bypassa RLS): il controllo di
+    // ruolo va fatto qui esplicitamente, altrimenti un membro 'agent' o
+    // 'member' potrebbe modificare i dati aziendali del tenant chiamando
+    // direttamente questa Server Action, nonostante l'UI la mostri solo a
+    // owner/admin (vedi CompanyTab, tab 'company' esclusa per !isAgent ma
+    // MAI ristretta esplicitamente a owner/admin lato server finora).
+    if (tenantId && callerRole !== 'owner' && callerRole !== 'admin') {
+      return { success: false, error: 'Solo il titolare o un amministratore può modificare i dati aziendali.' };
     }
 
     if (tenantId) {

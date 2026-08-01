@@ -18,8 +18,22 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ZeusX - Generazione Gestionali AI",
   description: "Crea gestionali personalizzati con intelligenza artificiale per il tuo business",
+  // manifest.json esisteva in public/ ma non era mai collegato: il sito
+  // principale (dashboard/pricing/login) non risultava installabile come
+  // PWA nonostante il file fosse pronto.
+  manifest: '/manifest.json',
   icons: {
     icon: '/favicon.png',
+    apple: '/icons/icon-192x192.png',
+  },
+  // Campo tipizzato di Next.js invece di <meta> manuali in <head>: genera da
+  // solo apple-mobile-web-app-capable/status-bar-style/title, evitando sia
+  // l'assenza dei tag Apple sia un doppione se in futuro si aggiungessero a
+  // mano anche i <meta> equivalenti.
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'ZeusX',
   },
 };
 
