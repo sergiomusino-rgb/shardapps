@@ -114,6 +114,11 @@ const SYNONYM_TO_FIELD = new Map<string, CanonicalField>();
   synonyms.forEach((synonym) => SYNONYM_TO_FIELD.set(synonym, field));
 });
 
+// Se un'intestazione contiene token di più campi (es. "Cod. Articolo" tocca
+// sia code che name), vince il campo con priorità più alta: un codice
+// articolo è quasi sempre inteso come identificativo (code), non come nome.
+const FIELD_PRIORITY: CanonicalField[] = ['code', 'name', 'category', 'unit', 'price', 'image_url', 'description'];
+
 // Normalizza un'intestazione per il confronto: rimuove accenti, spazi,
 // underscore e trattini, converte in minuscolo. Così "Prezzo (€)", "prezzo_unitario"
 // e "PREZZO" mappano tutti sullo stesso sinonimo.
@@ -126,13 +131,46 @@ function normalizeKey(raw: string): string {
     .replace(/[^a-z0-9]+/g, '');
 }
 
+// Spezza un'intestazione nelle sue parole (accenti rimossi, minuscolo), per
+// riconoscere intestazioni composte da più parole reali come "Descrizione
+// Prodotto" o "Prezzo Listino Ufficiale (€)": un gestionale/listino esterno
+// raramente usa un nome di colonna a parola singola come i nostri sinonimi.
+function tokenizeHeader(raw: string): string[] {
+  return raw
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+// Riconosce a quale campo canonico corrisponde un'intestazione: prima un
+// confronto esatto sull'intero testo normalizzato (veloce, copre anche i
+// sinonimi composti espliciti come "prezzounitario"), poi — se non trova
+// nulla — un confronto parola per parola con tie-break su FIELD_PRIORITY,
+// per le intestazioni multi-parola di listini/gestionali reali.
+function matchField(header: string): CanonicalField | null {
+  const exact = SYNONYM_TO_FIELD.get(normalizeKey(header));
+  if (exact) return exact;
+
+  const matchedFields = new Set<CanonicalField>();
+  for (const token of tokenizeHeader(header)) {
+    const field = SYNONYM_TO_FIELD.get(token);
+    if (field) matchedFields.add(field);
+  }
+  for (const field of FIELD_PRIORITY) {
+    if (matchedFields.has(field)) return field;
+  }
+  return null;
+}
+
 // Legge una riga grezza del foglio e la traduce nei campi canonici del
 // catalogo, indipendentemente da come sono nominate le colonne nel file
 // originale. Se più colonne mappano sullo stesso campo, vince la prima non vuota.
 function mapRowToCanonical(row: Record<string, unknown>): Partial<Record<CanonicalField, string>> {
   const result: Partial<Record<CanonicalField, string>> = {};
   for (const [key, rawValue] of Object.entries(row)) {
-    const field = SYNONYM_TO_FIELD.get(normalizeKey(key));
+    const field = matchField(key);
     if (!field || result[field]) continue;
     const value = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
     if (value) result[field] = value;
@@ -168,7 +206,66 @@ function parsePrice(raw: string): number | null {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function parseWorkbookRows(buffer: Buffer): Record<string, unknown>[] {
+// Conta quanti campi canonici DISTINTI riconosce una riga se trattata come
+// intestazione: usato per individuare dove inizia davvero la tabella.
+function countRecognizedFields(headerRow: unknown[]): number {
+  const fields = new Set<CanonicalField>();
+  for (const cell of headerRow) {
+    const field = matchField(cell === null || cell === undefined ? '' : String(cell));
+    if (field) fields.add(field);
+  }
+  return fields.size;
+}
+
+// Molti listini/gestionali esportano un blocco titolo (ragione sociale,
+// versione, riepilogo totali) PRIMA della vera tabella prodotti: assumere
+// sempre che la riga 1 sia l'intestazione lascerebbe l'intero file
+// irriconoscibile (0 colonne mappate su alcun sinonimo -> 0 prodotti
+// importati, senza che l'utente capisca perché). Cerca invece, nelle prime
+// righe, la prima che riconosce almeno 2 campi distinti: è quasi certamente
+// la riga di intestazione reale (le righe dati raramente contengono, per
+// caso, due o più parole come "prezzo"/"categoria"/"nome" nei loro valori).
+const HEADER_SCAN_LIMIT = 20;
+const MIN_RECOGNIZED_FIELDS_FOR_HEADER = 2;
+
+function findHeaderRowIndex(rows: unknown[][]): number {
+  const limit = Math.min(rows.length, HEADER_SCAN_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    if (countRecognizedFields(rows[i]) >= MIN_RECOGNIZED_FIELDS_FOR_HEADER) return i;
+  }
+  return -1;
+}
+
+// Converte la matrice grezza (righe come array di celle) in oggetti chiave/
+// valore usando `rows[headerIndex]` come intestazione, ignorando tutto ciò
+// che precede (blocco titolo/riepilogo) e scartando le righe dati che
+// risultano completamente vuote.
+function arrayRowsToObjects(rows: unknown[][], headerIndex: number): Record<string, unknown>[] {
+  const headers = rows[headerIndex].map((cell, i) => {
+    const text = cell === null || cell === undefined ? '' : String(cell).trim();
+    return text || `__COLONNA_${i + 1}`;
+  });
+
+  return rows
+    .slice(headerIndex + 1)
+    .map((row) => {
+      const obj: Record<string, unknown> = {};
+      headers.forEach((header, i) => {
+        obj[header] = row[i] === null || row[i] === undefined ? '' : row[i];
+      });
+      return obj;
+    })
+    .filter((obj) => Object.values(obj).some((value) => String(value ?? '').trim() !== ''));
+}
+
+interface ParsedWorkbook {
+  rows: Record<string, unknown>[];
+  // Riga (1-based) del file in cui si trova l'intestazione riconosciuta,
+  // usata per calcolare il numero di riga reale nei messaggi di errore/nota.
+  headerRowNumber: number;
+}
+
+function parseWorkbookRows(buffer: Buffer): ParsedWorkbook {
   // XLSX riconosce dal contenuto sia i formati binari Excel (.xlsx/.xls) sia
   // il testo CSV, quindi una sola API copre entrambi i formati richiesti.
   // codepage 65001 (UTF-8) esplicita: senza, un CSV UTF-8 senza BOM viene
@@ -177,15 +274,32 @@ function parseWorkbookRows(buffer: Buffer): Record<string, unknown>[] {
   // cataloghi italiani sia nelle intestazioni sia nei nomi prodotto.
   const workbook = XLSX.read(buffer, { type: 'buffer', codepage: 65001 });
   const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) return [];
+  if (!firstSheetName) return { rows: [], headerRowNumber: 1 };
   const sheet = workbook.Sheets[firstSheetName];
-  // raw:false forza il testo formattato della cella (es. "3,50", "0102")
-  // invece del valore già tipizzato da SheetJS: senza, un prezzo CSV in
-  // formato europeo come "3,50" viene interpretato come numero usando la
-  // virgola come separatore delle migliaia -> 350, ancora prima che
-  // parsePrice() possa intervenire. Con raw:false il parsing numerico resta
-  // interamente sotto il nostro controllo (parsePrice, sku come stringa).
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });
+
+  // header:1 legge la matrice grezza senza assumere alcuna riga come
+  // intestazione, per poter individuare dove inizia davvero la tabella
+  // (vedi findHeaderRowIndex). raw:false forza il testo formattato della
+  // cella (es. "3,50", "0102") invece del valore già tipizzato da SheetJS:
+  // senza, un prezzo CSV in formato europeo come "3,50" viene interpretato
+  // come numero usando la virgola come separatore delle migliaia -> 350,
+  // ancora prima che parsePrice() possa intervenire.
+  const arrayRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: false }) as unknown[][];
+  if (arrayRows.length === 0) return { rows: [], headerRowNumber: 1 };
+
+  const headerIndex = findHeaderRowIndex(arrayRows);
+  if (headerIndex === -1) {
+    // Nessuna riga tra le prime HEADER_SCAN_LIMIT sembra un'intestazione
+    // riconoscibile: fallback storico (riga 1 come intestazione) così il
+    // file viene comunque processato — validateRows segnalerà comunque le
+    // righe con contenuto ma nessun campo riconosciuto.
+    return {
+      rows: XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false }),
+      headerRowNumber: 1,
+    };
+  }
+
+  return { rows: arrayRowsToObjects(arrayRows, headerIndex), headerRowNumber: headerIndex + 1 };
 }
 
 interface ValidationResult {
@@ -200,20 +314,31 @@ const DEFAULT_NAME = 'Prodotto Senza Nome';
 const DEFAULT_CATEGORY = 'Generale';
 const DEFAULT_UNIT = 'pz';
 
-function validateRows(rawRows: Record<string, unknown>[], tenantId: string): ValidationResult {
+function validateRows(rawRows: Record<string, unknown>[], tenantId: string, headerRowNumber: number): ValidationResult {
   const notices: RowError[] = [];
   const bySku = new Map<string, { row: number; item: CatalogImportRow }>();
   let autoSkuCounter = 0;
+  let unrecognizedRowCount = 0;
 
   rawRows.forEach((raw, index) => {
-    // Riga 1 = header, quindi la prima riga dati è la 2.
-    const rowNumber = index + 2;
+    const rowNumber = headerRowNumber + 1 + index;
     const fields = mapRowToCanonical(raw);
 
-    const hasAnyValue = Object.values(fields).some((value) => !!value);
-    if (!hasAnyValue) {
+    const hasAnyMappedValue = Object.values(fields).some((value) => !!value);
+    const hasAnyRawValue = Object.values(raw).some((value) => value !== null && value !== undefined && String(value).trim() !== '');
+
+    if (!hasAnyRawValue) {
       // Riga completamente vuota (comune a fine file su export Excel): la
       // saltiamo silenziosamente, non è un errore da segnalare all'utente.
+      return;
+    }
+    if (!hasAnyMappedValue) {
+      // La riga contiene dati ma nessuna delle sue colonne è stata
+      // riconosciuta: a differenza di una riga vuota, qui c'è qualcosa che
+      // l'utente si aspetta di vedere importato — va segnalato esplicitamente
+      // invece di scomparire in silenzio come se fosse vuota.
+      unrecognizedRowCount += 1;
+      notices.push({ row: rowNumber, error: 'Riga con contenuto ma nessuna colonna riconosciuta: ignorata' });
       return;
     }
 
@@ -269,6 +394,19 @@ function validateRows(rawRows: Record<string, unknown>[], tenantId: string): Val
   });
 
   const validRows = Array.from(bySku.values()).map((entry) => entry.item);
+
+  // Se NESSUNA riga ha prodotto un campo riconosciuto, è quasi certamente un
+  // problema di intestazione (nomi di colonna troppo diversi dai sinonimi
+  // supportati) piuttosto che un file vuoto: lo segnaliamo in cima con un
+  // messaggio dedicato, invece di lasciare che l'utente veda solo "0
+  // prodotti importati" senza capirne il motivo.
+  if (validRows.length === 0 && unrecognizedRowCount > 0) {
+    notices.unshift({
+      row: headerRowNumber,
+      error: 'Nessuna colonna del file è stata riconosciuta: verifica che l\'intestazione contenga nomi come "nome"/"prodotto", "prezzo", "categoria" (anche in colonne composte, es. "Descrizione Prodotto"), oppure scarica il template CSV.',
+    });
+  }
+
   return { validRows, errors: notices };
 }
 
@@ -358,9 +496,12 @@ export async function POST(request: NextRequest) {
 
   // ── 1. Parsing del workbook ──────────────────────────────────────────────
   let rawRows: Record<string, unknown>[];
+  let headerRowNumber: number;
   try {
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
-    rawRows = parseWorkbookRows(buffer);
+    const parsed = parseWorkbookRows(buffer);
+    rawRows = parsed.rows;
+    headerRowNumber = parsed.headerRowNumber;
   } catch (err) {
     console.error('[catalog-import] Errore parsing file:', err);
     return NextResponse.json(
@@ -383,7 +524,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── 2. Validazione + pulizia righe ───────────────────────────────────────
-  const { validRows, errors } = validateRows(rawRows, tenantId);
+  const { validRows, errors } = validateRows(rawRows, tenantId, headerRowNumber);
 
   if (validRows.length === 0) {
     return NextResponse.json({
