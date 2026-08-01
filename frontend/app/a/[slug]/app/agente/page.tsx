@@ -242,15 +242,23 @@ export default function ComandiAgentPage() {
     }
     streamRef.current = stream;
 
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+    const preferredType = MediaRecorder.isTypeSupported('audio/webm')
       ? 'audio/webm'
       : MediaRecorder.isTypeSupported('audio/mp4')
         ? 'audio/mp4'
         : '';
-    mimeTypeRef.current = mimeType || 'audio/webm';
 
-    const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const mediaRecorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
     mediaRecorderRef.current = mediaRecorder;
+    // Su molti browser mobile né 'audio/webm' né 'audio/mp4' risultano
+    // supportati (preferredType vuoto): senza mimeType esplicito il browser
+    // sceglie comunque un codec di default, ma prima leggevamo sempre
+    // 'audio/webm' come fallback fisso — un'etichetta falsa che portava a
+    // inviare a Whisper un file con estensione .webm su bytes che non lo
+    // erano, facendo fallire la trascrizione ("Trascrizione audio non
+    // riuscita") solo sul telefono. mediaRecorder.mimeType riflette invece
+    // il codec REALMENTE scelto, anche quando non l'abbiamo specificato noi.
+    mimeTypeRef.current = mediaRecorder.mimeType || preferredType || 'audio/webm';
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) audioChunksRef.current.push(event.data);
