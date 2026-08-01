@@ -37,6 +37,17 @@ const COMMANDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 // una di queste tabelle/comandi non combacia esattamente, è un cambiamento —
 // voluto o un refuso — da rivedere prima del deploy.
 const BASELINE = {
+  profiles: {
+    // Dopo 20260808000014: sola lettura da client (propria riga o
+    // has_table_access per il pannello admin). profiles.role autorizza le
+    // rotte /api/admin/* (vedi takeover/route.ts) — nessuna scrittura diretta
+    // da anon/authenticated deve mai essere permessa, la creazione riga
+    // avviene via trigger on_auth_user_created (bypassa RLS).
+    SELECT: ['profiles_select', 'profiles_select_own'],
+    INSERT: [],
+    UPDATE: [],
+    DELETE: [],
+  },
   tenants: {
     // has_table_access('tenants') è l'accesso RBAC per gli admin/reseller
     // ZeusX, in OR con l'appartenenza/ruolo nel tenant per l'utente normale.
