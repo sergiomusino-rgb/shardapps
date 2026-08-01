@@ -66,6 +66,20 @@ const CATEGORY_IMAGES: Record<PlaceholderCategory, string[]> = {
   ],
 };
 
+// Termini di ruolo/persona che condividono lo stesso prefisso di una parola
+// chiave prodotto qui sotto (es. "magazzinieri" contiene "magazzin", la
+// stessa radice usata per il magazzino prodotti): controllati PRIMA e a
+// esclusione, altrimenti il match per sottostringa assegnerebbe foto
+// placeholder anonime a persone reali, violando la regola dichiarata sopra
+// ("mai a persone: pazienti, clienti, dipendenti").
+const PERSON_KEYWORDS = [
+  'magazzinier', // magazziniere/i — collide con 'magazzin' (prodotti)
+  'macchinist', // macchinista/i — collide con 'macchin' (veicoli)
+  'dipendent', 'personale', 'staff', 'collaborator',
+  'client', 'pazient', 'utente', 'utenti', 'agente', 'agenti',
+  'autista', 'autisti', 'camionista', 'camionisti', 'operaio', 'operai', 'fornitor',
+];
+
 // Nomi tabella (in minuscolo) → categoria. Match per sottostringa, come per
 // designTokens/iconResolver: copre sia il singolare che varianti comuni.
 const TABLE_NAME_CATEGORY: Array<{ keywords: string[]; category: PlaceholderCategory }> = [
@@ -82,6 +96,7 @@ const TABLE_NAME_CATEGORY: Array<{ keywords: string[]; category: PlaceholderCate
 /** Determina se una tabella è "visiva" (merita foto/griglia) in base al nome. */
 export function getPlaceholderCategoryForTable(tableName: string): PlaceholderCategory | null {
   const normalized = tableName.toLowerCase();
+  if (PERSON_KEYWORDS.some((kw) => normalized.includes(kw))) return null;
   for (const { keywords, category } of TABLE_NAME_CATEGORY) {
     if (keywords.some((kw) => normalized.includes(kw))) return category;
   }
