@@ -31,6 +31,7 @@ import {
   ShieldAlert,
   Trash2,
   UploadCloud,
+  UserCog,
   Volume2,
   X,
   XCircle,
@@ -40,6 +41,7 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
 import { setupTenantAction } from '@/app/actions/comandi-tenant';
 import { updateOrderStatusAction, getOrderAudioSignedUrlAction } from '@/app/actions/comandi-orders';
+import { listAgentsAction, createAgentAction, regenerateAgentPasswordAction, deleteAgentAction, type AgentRecord } from '@/app/actions/comandi-agents';
 import { useComandiRole } from '@/src/lib/useComandiRole';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
@@ -53,14 +55,18 @@ import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantM
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
 // il resto di Comandi, pur non gestendo lei stessa il contenuto delle tab
 // (i link puntano alla Dashboard con ?tab=...).
-export type Tab = 'catalog' | 'customers' | 'company' | 'orders';
+export type Tab = 'catalog' | 'customers' | 'company' | 'orders' | 'agents';
 
-// Tab visibili per ruolo: 'agent' vede solo il catalogo (in sola lettura, vedi
-// CatalogTab readOnly più sotto) — niente dati aziendali né incassi, come da
-// requisito RBAC del ruolo. Tutti gli altri ruoli (owner/admin/member) vedono
-// tutto, invariato.
-export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'company'];
-export const AGENT_TABS: Tab[] = ['catalog'];
+// Tab visibili per ruolo:
+// - 'agent': solo catalogo (sola lettura) e clienti — niente dati aziendali,
+//   incassi, o gestione di altri agenti, come da requisito RBAC del ruolo.
+// - 'owner'/'admin': tutto, inclusa 'agents' (creazione/gestione dei
+//   rappresentanti sul campo con accesso ridotto — un'azione amministrativa,
+//   non deve essere visibile a un account operativo generico 'member').
+// - 'member' (es. cassa): tutto tranne 'agents'.
+export const ALL_TABS: Tab[] = ['catalog', 'customers', 'orders', 'agents', 'company'];
+export const MEMBER_TABS: Tab[] = ['catalog', 'customers', 'orders', 'company'];
+export const AGENT_TABS: Tab[] = ['catalog', 'customers'];
 
 export interface ComandiInstanceDashboardProps {
   slug: string;
@@ -137,7 +143,8 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
   usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
   const { role } = useComandiRole(tenantId);
   const isAgent = role === 'agent';
-  const visibleTabs = isAgent ? AGENT_TABS : ALL_TABS;
+  const canManageAgents = role === 'owner' || role === 'admin';
+  const visibleTabs = isAgent ? AGENT_TABS : canManageAgents ? ALL_TABS : MEMBER_TABS;
 
   const [tab, setTab] = useState<Tab>('catalog');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -259,6 +266,7 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'customers' && !isAgent && <CustomersTab tenantId={tenantId} />}
           {tab === 'company' && !isAgent && <CompanyTab tenantId={tenantId} slug={slug} />}
           {tab === 'orders' && !isAgent && <OrdersTab tenantId={tenantId} />}
+          {tab === 'agents' && canManageAgents && <AgentsTab tenantId={tenantId} slug={slug} />}
         </main>
       </div>
 
@@ -2028,6 +2036,290 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab Agenti (owner/admin) ───────────────────────────────────────────────
+// Crea/gestisce account per rappresentanti sul campo (ruolo 'agent', accesso
+// limitato a Modalità Agente + Catalogo + Clienti, vedi AGENT_TABS). Ogni
+// agente è un vero account Supabase Auth con password generata dal server:
+// il QR personale precompila solo l'email nella pagina di login, non
+// sostituisce la password — niente meccanismo di autenticazione parallelo.
+
+interface AgentCredentials {
+  email: string;
+  password: string;
+}
+
+function AgentsTab({ tenantId, slug }: { tenantId: string; slug: string }) {
+  const { t } = useLanguage();
+  const [agents, setAgents] = useState<AgentRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newCredentials, setNewCredentials] = useState<AgentCredentials | null>(null);
+
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [regeneratedFor, setRegeneratedFor] = useState<{ userId: string; password: string } | null>(null);
+  const [qrForUserId, setQrForUserId] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const loadAgents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_agents_error_session'));
+        return;
+      }
+      const result = await listAgentsAction({ accessToken });
+      if (!result.success || !result.agents) {
+        setError(result.error || t('comandi_dashboard_agents_error_generic'));
+        return;
+      }
+      setAgents(result.agents);
+    } catch (err) {
+      console.error('[AgentsTab] Errore caricamento agenti:', err);
+      setError(t('comandi_dashboard_agents_error_generic'));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    loadAgents();
+  }, [loadAgents]);
+
+  const copy = (value: string, field: string) => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !newEmail.trim()) return;
+    setCreating(true);
+    setError(null);
+    setNewCredentials(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_agents_error_session'));
+        return;
+      }
+      const result = await createAgentAction({ displayName: newName.trim(), email: newEmail.trim(), accessToken });
+      if (!result.success || !result.email || !result.password) {
+        setError(result.error || t('comandi_dashboard_agents_error_generic'));
+        return;
+      }
+      setNewCredentials({ email: result.email, password: result.password });
+      setNewName('');
+      setNewEmail('');
+      await loadAgents();
+    } catch (err) {
+      console.error('[AgentsTab] Errore creazione agente:', err);
+      setError(t('comandi_dashboard_agents_error_generic'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRegeneratePassword = async (agentUserId: string) => {
+    if (!window.confirm(t('comandi_dashboard_agents_regenerate_confirm'))) return;
+    setBusyUserId(agentUserId);
+    setError(null);
+    setRegeneratedFor(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_agents_error_session'));
+        return;
+      }
+      const result = await regenerateAgentPasswordAction({ agentUserId, accessToken });
+      if (!result.success || !result.password) {
+        setError(result.error || t('comandi_dashboard_agents_error_generic'));
+        return;
+      }
+      setRegeneratedFor({ userId: agentUserId, password: result.password });
+    } catch (err) {
+      console.error('[AgentsTab] Errore rigenerazione password:', err);
+      setError(t('comandi_dashboard_agents_error_generic'));
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  const handleDelete = async (agentUserId: string) => {
+    if (!window.confirm(t('comandi_dashboard_agents_delete_confirm'))) return;
+    setBusyUserId(agentUserId);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setError(t('comandi_dashboard_agents_error_session'));
+        return;
+      }
+      const result = await deleteAgentAction({ agentUserId, accessToken });
+      if (!result.success) {
+        setError(result.error || t('comandi_dashboard_agents_error_generic'));
+        return;
+      }
+      setAgents((prev) => prev.filter((a) => a.userId !== agentUserId));
+    } catch (err) {
+      console.error('[AgentsTab] Errore rimozione agente:', err);
+      setError(t('comandi_dashboard_agents_error_generic'));
+    } finally {
+      setBusyUserId(null);
+    }
+  };
+
+  const loginUrlFor = (email: string) =>
+    `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}/login?email=${encodeURIComponent(email)}`;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {error && (
+        <div className="flex items-start gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+          <UserCog className="w-3.5 h-3.5" />
+          {t('comandi_dashboard_agents_title')}
+        </p>
+        <p className="text-xs text-gray-500 mb-4">{t('comandi_dashboard_agents_subtitle')}</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder={t('comandi_dashboard_agents_name_placeholder')}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+          />
+          <input
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
+            placeholder={t('comandi_dashboard_agents_email_placeholder')}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+          />
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating || !newName.trim() || !newEmail.trim()}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {t('comandi_dashboard_agents_add_button')}
+          </button>
+        </div>
+
+        {newCredentials && (
+          <div className="mt-4 rounded-lg border border-green-700/50 bg-green-950/20 p-3">
+            <p className="text-xs font-semibold text-green-300 mb-2">{t('comandi_dashboard_agents_credentials_title')}</p>
+            <div className="flex flex-col gap-1.5 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 w-20 shrink-0">{t('comandi_dashboard_agents_credentials_email')}</span>
+                <span className="font-mono text-gray-200">{newCredentials.email}</span>
+                <button type="button" onClick={() => copy(newCredentials.email, 'new-email')} className="text-gray-500 hover:text-white">
+                  {copiedField === 'new-email' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 w-20 shrink-0">{t('comandi_dashboard_agents_credentials_password')}</span>
+                <span className="font-mono text-gray-200">{newCredentials.password}</span>
+                <button type="button" onClick={() => copy(newCredentials.password, 'new-password')} className="text-gray-500 hover:text-white">
+                  {copiedField === 'new-password' ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">{t('comandi_dashboard_agents_credentials_hint')}</p>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-500">…</p>
+      ) : agents.length === 0 ? (
+        <p className="text-sm text-gray-500">{t('comandi_dashboard_agents_empty')}</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {agents.map((agent) => (
+            <div key={agent.userId} className="rounded-xl border border-gray-800 bg-gray-900/40 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{agent.displayName || agent.email}</p>
+                  <p className="text-xs text-gray-500 font-mono truncate">{agent.email}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setQrForUserId((prev) => (prev === agent.userId ? null : agent.userId))}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:bg-gray-800"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    {t('comandi_dashboard_agents_qr_button')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRegeneratePassword(agent.userId)}
+                    disabled={busyUserId === agent.userId}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:bg-gray-800 disabled:opacity-40"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    {t('comandi_dashboard_agents_regenerate_button')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(agent.userId)}
+                    disabled={busyUserId === agent.userId}
+                    className="p-1.5 rounded text-gray-500 hover:bg-red-500/15 hover:text-red-400 disabled:opacity-40"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {regeneratedFor?.userId === agent.userId && (
+                <div className="mt-3 rounded-lg border border-green-700/50 bg-green-950/20 p-3">
+                  <p className="text-xs font-semibold text-green-300 mb-1">{t('comandi_dashboard_agents_new_password_title')}</p>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-mono text-gray-200">{regeneratedFor.password}</span>
+                    <button type="button" onClick={() => copy(regeneratedFor.password, `regen-${agent.userId}`)} className="text-gray-500 hover:text-white">
+                      {copiedField === `regen-${agent.userId}` ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">{t('comandi_dashboard_agents_credentials_hint')}</p>
+                </div>
+              )}
+
+              {qrForUserId === agent.userId && (
+                <div className="mt-3 flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+                  <div className="shrink-0 rounded-xl bg-white p-2">
+                    <QRCodeSVG value={loginUrlFor(agent.email)} size={96} bgColor="#ffffff" fgColor="#000000" level="M" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-500 mb-1">{t('comandi_dashboard_agents_qr_hint')}</p>
+                    <p className="break-all font-mono text-xs text-gray-400">{loginUrlFor(agent.email)}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -15,7 +15,7 @@
 //   `${dashboardHref}?tab=...` (navigazione vera verso un'altra pagina).
 
 import Link from 'next/link';
-import { Building2, ClipboardList, LogOut, Mic, Package, Users, X } from 'lucide-react';
+import { Building2, ClipboardList, LogOut, Mic, Package, UserCog, Users, X } from 'lucide-react';
 import ComandiHeaderBrand from './ComandiHeaderBrand';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import type { Tab } from './ComandiInstanceDashboard';
@@ -24,6 +24,7 @@ const TAB_ICON: Record<Tab, React.ReactNode> = {
   catalog: <Package className="w-[18px] h-[18px]" />,
   customers: <Users className="w-[18px] h-[18px]" />,
   orders: <ClipboardList className="w-[18px] h-[18px]" />,
+  agents: <UserCog className="w-[18px] h-[18px]" />,
   company: <Building2 className="w-[18px] h-[18px]" />,
 };
 

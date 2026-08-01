@@ -14,11 +14,16 @@ import type { TenantMemberRole } from '@/types/comandi';
 
 export interface UseComandiRoleResult {
   role: TenantMemberRole | null;
+  // Nome da mostrare per l'utente corrente: tenant_members.display_name se
+  // impostato (tipicamente per gli agenti, vedi AgentsTab), altrimenti la sua
+  // email. Usato per mostrare "chi è collegato" nella console Agente.
+  displayName: string | null;
   loading: boolean;
 }
 
 export function useComandiRole(tenantId: string | undefined | null): UseComandiRoleResult {
   const [role, setRole] = useState<TenantMemberRole | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +31,7 @@ export function useComandiRole(tenantId: string | undefined | null): UseComandiR
 
     if (!tenantId) {
       setRole(null);
+      setDisplayName(null);
       setLoading(false);
       return;
     }
@@ -39,19 +45,22 @@ export function useComandiRole(tenantId: string | undefined | null): UseComandiR
 
       if (!user) {
         setRole(null);
+        setDisplayName(null);
         setLoading(false);
         return;
       }
 
       const { data } = await supabaseBrowser
         .from('tenant_members' as any)
-        .select('role')
+        .select('role, display_name')
         .eq('user_id', user.id)
         .eq('tenant_id', tenantId)
         .maybeSingle();
 
       if (!cancelled) {
-        setRole((data as { role: TenantMemberRole } | null)?.role ?? null);
+        const row = data as { role: TenantMemberRole; display_name: string | null } | null;
+        setRole(row?.role ?? null);
+        setDisplayName(row?.display_name || user.email || null);
         setLoading(false);
       }
     })();
@@ -61,5 +70,5 @@ export function useComandiRole(tenantId: string | undefined | null): UseComandiR
     };
   }, [tenantId]);
 
-  return { role, loading };
+  return { role, displayName, loading };
 }

@@ -146,6 +146,17 @@ function ComandiLoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [creatingCopy, setCreatingCopy] = useState(false);
+
+  // Il QR personale di un agente (vedi AgentsTab) punta qui con ?email=...
+  // per evitare che debba digitarla: la password resta comunque necessaria,
+  // niente bypass dell'autenticazione. Letto da window.location invece di
+  // useSearchParams per evitare il vincolo di Suspense boundary, come da
+  // convenzione già in uso altrove in questo modulo (vedi layout.tsx).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const prefilledEmail = new URLSearchParams(window.location.search).get('email');
+    if (prefilledEmail) setEmail(prefilledEmail);
+  }, []);
   const [copyResult, setCopyResult] = useState<{ slug: string; posEmail?: string; posPassword?: string } | null>(null);
   const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
 
@@ -276,7 +287,7 @@ function ComandiLoginForm() {
       <div className="max-w-md w-full">
         <div className="text-center mb-6">
           <span className="text-3xl font-black tracking-tighter text-white">
-            Comandi<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
+            Comand<span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">AI</span>
           </span>
           <p className="mt-2 text-sm text-slate-400">{appName || t('login_title_login')}</p>
         </div>

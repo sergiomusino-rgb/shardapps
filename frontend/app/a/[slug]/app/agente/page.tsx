@@ -24,6 +24,7 @@ import {
   RotateCcw,
   Square,
   User,
+  UserCog,
   X,
 } from 'lucide-react';
 import ComandiHeaderBrand from '@/components/comandi/ComandiHeaderBrand';
@@ -79,7 +80,7 @@ export default function ComandiAgentPage() {
   // Voci sidebar, come nella Dashboard. Un ruolo 'agent' vede solo Catalogo
   // (in sola lettura nella Dashboard), coerente con l'RBAC definito in
   // ComandiInstanceDashboard (AGENT_TABS).
-  const { role } = useComandiRole(appInfo.tenantId);
+  const { role, displayName: agentDisplayName } = useComandiRole(appInfo.tenantId);
   const navTabs: Tab[] = role === 'agent' ? AGENT_TABS : ALL_TABS;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -376,6 +377,20 @@ export default function ComandiAgentPage() {
           <ResultCard result={result} t={t} onNewOrder={handleNewOrder} />
         ) : (
           <>
+            {/* Agente collegato: sola lettura, deriva dalla sessione (vedi
+                AgentsTab) — non un campo libero, altrimenti orders.agent_id
+                (impostato server-side dal token di sessione in
+                confirmOrderAction) non corrisponderebbe più a quanto mostrato qui. */}
+            {agentDisplayName && (
+              <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  <UserCog className="w-3.5 h-3.5" />
+                  {t('comandi_agent_agent_label')}
+                </p>
+                <p className="text-sm text-white truncate">{agentDisplayName}</p>
+              </section>
+            )}
+
             {/* Selettore cliente */}
             <section className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
               <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
