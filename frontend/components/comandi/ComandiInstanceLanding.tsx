@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Mic, Package, Share2 } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
@@ -21,7 +22,33 @@ export interface ComandiInstanceLandingProps {
 // comunque raggiungibile tramite il menu nella console operativa.
 export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingProps) {
   const { t } = useLanguage();
-  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
+
+  // Icona e nome dell'app installabile: quelli caricati dal titolare in
+  // Azienda (tenants.logo_url / name), non il brand fisso "Comand AI" — chi
+  // installa dalla landing pubblica deve vedere l'identità della propria
+  // azienda, non quella del reseller. Fetch pubblico dedicato (nessuna
+  // sessione qui, la landing precede il login): la tabella tenants non è
+  // leggibile da anonimi (RLS). Fallback sui valori fissi finché il fetch
+  // non risolve o se l'azienda non ha ancora caricato un logo/nome.
+  const [companyName, setCompanyName] = useState('');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/a/${slug}/comandi-branding`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { name?: string | null; logoUrl?: string | null } | null) => {
+        if (cancelled || !data) return;
+        setCompanyName(data.name || '');
+        setCompanyLogoUrl(data.logoUrl || '');
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  const pwaAppName = companyName || COMANDI_PWA_APP_NAME;
+  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, companyLogoUrl || COMANDI_PWA_APPLE_TOUCH_ICON, pwaAppName);
 
   const features = [
     {
@@ -89,7 +116,7 @@ export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingP
       </main>
 
       <InstallAppBanner
-        appName={COMANDI_PWA_APP_NAME}
+        appName={pwaAppName}
         slug={slug}
         primaryColor={COMANDI_PWA_THEME_COLOR}
         textColor="#ffffff"

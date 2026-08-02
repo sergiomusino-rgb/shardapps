@@ -161,7 +161,30 @@ export function TrialNudgeBanner({ slug }: { slug: string }) {
 export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInstanceDashboardProps) {
   const { t } = useLanguage();
   const router = useRouter();
-  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME);
+
+  // Icona e nome dell'app installabile: quelli scelti dal titolare in Azienda
+  // (tenants.logo_url / name), non il brand fisso "Comand AI" — stesso
+  // criterio già usato dalla console Agente (app/a/[slug]/app/agente).
+  // Fallback sui valori fissi finché il fetch non risolve o se l'azienda non
+  // ha ancora caricato un logo/nome.
+  const [companyName, setCompanyName] = useState('');
+  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await (supabase as any).from('tenants').select('name, logo_url').eq('id', tenantId).single();
+      if (cancelled) return;
+      const tenant = data as { name?: string; logo_url?: string } | null;
+      setCompanyName(tenant?.name || '');
+      setCompanyLogoUrl(tenant?.logo_url || '');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId]);
+
+  const pwaAppName = companyName || COMANDI_PWA_APP_NAME;
+  usePwaSetup(slug, COMANDI_PWA_THEME_COLOR, companyLogoUrl || COMANDI_PWA_APPLE_TOUCH_ICON, pwaAppName);
   const { role } = useComandiRole(tenantId);
   const isAgent = role === 'agent';
   const canManageAgents = role === 'owner' || role === 'admin';
@@ -297,12 +320,12 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           {tab === 'my_orders' && <MyOrdersTab tenantId={tenantId} />}
           {tab === 'invoices' && !isAgent && <InvoicesTab />}
           {tab === 'agents' && canManageAgents && <AgentsTab tenantId={tenantId} slug={slug} />}
-          {tab === 'access' && <AccessTab tenantId={tenantId} />}
+          {tab === 'access' && <AccessTab tenantId={tenantId} appName={pwaAppName} />}
         </main>
       </div>
 
       <InstallAppBanner
-        appName={COMANDI_PWA_APP_NAME}
+        appName={pwaAppName}
         slug={slug}
         primaryColor={COMANDI_PWA_THEME_COLOR}
         textColor="#ffffff"
@@ -1848,25 +1871,12 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
 // utente gestisce solo le proprie credenziali, più condivisione/installazione
 // dell'app — per questo è l'unica voce, oltre a Catalogo e Clienti, data
 // anche al ruolo agente (vedi AGENT_TABS).
-function AccessTab({ tenantId }: { tenantId: string }) {
-  const [companyName, setCompanyName] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await (supabase as any).from('tenants').select('name').eq('id', tenantId).single();
-      if (!cancelled) setCompanyName((data as { name?: string } | null)?.name || '');
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
-
+function AccessTab({ tenantId, appName }: { tenantId: string; appName: string }) {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <MyAccountSection />
       <ShareAppSection tenantId={tenantId} />
-      <InstallAppCard appName={companyName || COMANDI_PWA_APP_NAME} />
+      <InstallAppCard appName={appName} />
     </div>
   );
 }
