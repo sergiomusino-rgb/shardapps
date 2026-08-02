@@ -6,7 +6,16 @@ services:
     plan: free
     branch: main
     rootDir: backend
-    buildCommand: npm install
+    # Il controllo RLS blocca il deploy se le policy sul database non
+    # combaciano col contratto atteso (vedi scripts/check_rls_policies.js e
+    # .github/workflows/rls-check.yml) — nato dall'audit del 2026-08-08,
+    # dove 4 vulnerabilita' critiche sono passate inosservate per mesi
+    # perche' create a mano su Supabase Dashboard, mai tracciate in una
+    # migrazione. Richiede che SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY (gia'
+    # configurate sotto) siano disponibili in fase di build, non solo a
+    # runtime — comportamento di default su Render per gli env var di un
+    # servizio.
+    buildCommand: npm install && node scripts/check_rls_policies.js
     startCommand: npm start
     envVars:
       - key: NODE_ENV

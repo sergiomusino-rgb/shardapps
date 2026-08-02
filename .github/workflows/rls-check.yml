@@ -1,0 +1,50 @@
+name: Controllo policy RLS
+
+# Nato dall'audit di sicurezza del 2026-08-08: 4 vulnerabilita' critiche
+# (auto-promozione a owner/admin, upgrade piano gratis, azzeramento
+# commissioni) sono sopravvissute per mesi perche' create a mano su Supabase
+# Dashboard, mai passate da una migrazione — nessun file cambiava, quindi
+# nessuna PR le avrebbe mai fatte notare. Un controllo legato solo a "quali
+# file sono cambiati in questa PR" non le avrebbe MAI intercettate: per
+# questo gira su ogni push su main E su uno schedule giornaliero, non solo
+# quando cambia backend/scripts/check_rls_policies.js o supabase/migrations/.
+#
+# Confronta le policy RLS REALMENTE attive sul database con il contratto
+# verificato in backend/scripts/check_rls_policies.js — vedi quel file per i
+# dettagli. Richiede due secret del repository (Settings → Secrets and
+# variables → Actions): SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY (stessi
+# valori di backend/.env).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 06:00 UTC ogni giorno: intercetta un drift anche se nessuno tocca il
+    # repository per giorni (es. una modifica fatta a mano su Dashboard).
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  check-rls-policies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installa le dipendenze del backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Confronta le policy RLS attive con il contratto atteso
+        working-directory: backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/check_rls_policies.js
