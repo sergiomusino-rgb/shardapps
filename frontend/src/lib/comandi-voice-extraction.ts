@@ -244,6 +244,21 @@ export async function extractStructuredOrder(
       });
       continue;
     }
+
+    // Prodotto riconosciuto ma esaurito: non deve finire in un ordine che
+    // il magazzino non può evadere. Segnalato all'agente come riga scartata
+    // (stesso meccanismo di "prodotto non trovato") invece di lasciarlo
+    // passare silenziosamente con la quantità richiesta dal cliente.
+    const matchedCatalogItem = parsedItem.product_id ? catalogById.get(parsedItem.product_id) : undefined;
+    if (matchedCatalogItem && matchedCatalogItem.stock_qty <= 0) {
+      hadInvalidMatch = true;
+      discardedItems.push({
+        original_spoken_text: parsedItem.original_spoken_text,
+        reason: `Prodotto non disponibile: "${matchedCatalogItem.name}" risulta esaurito a magazzino`,
+      });
+      continue;
+    }
+
     parsedItems.push(parsedItem);
   }
 
