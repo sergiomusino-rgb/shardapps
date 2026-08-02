@@ -113,6 +113,37 @@ const BASELINE = {
     UPDATE: ['Tenant members access own customers'],
     DELETE: ['Tenant members access own customers'],
   },
+  app_registry: {
+    // Dopo 20260808000015: niente scrittura diretta dal rivenditore su
+    // monthly_fee/zeusx_share (commissioni ZeusX) — solo lettura della
+    // propria riga, ogni scrittura passa da service role.
+    SELECT: ['Resellers view their own apps', 'Service role manages app_registry'],
+    INSERT: ['Service role manages app_registry'],
+    UPDATE: ['Service role manages app_registry'],
+    DELETE: ['Service role manages app_registry'],
+  },
+  transactions: {
+    SELECT: ['Resellers view their own transactions', 'Service role manages transactions'],
+    INSERT: ['Service role manages transactions'],
+    UPDATE: ['Service role manages transactions'],
+    DELETE: ['Service role manages transactions'],
+  },
+  credit_transactions: {
+    // service_role_all usa auth.role() = 'service_role' esplicito (non
+    // USING(true) senza clausola TO): corretto, non lo stesso refuso visto
+    // altrove.
+    SELECT: ['credit_transactions_select_own', 'credit_transactions_service_role_all'],
+    INSERT: ['credit_transactions_service_role_all'],
+    UPDATE: ['credit_transactions_service_role_all'],
+    DELETE: ['credit_transactions_service_role_all'],
+  },
+  app_users: {
+    // manage_tenant_owner richiede esplicitamente tm.role = 'owner': corretto.
+    SELECT: ['app_users_select_own', 'app_users_manage_tenant_owner'],
+    INSERT: ['app_users_manage_tenant_owner'],
+    UPDATE: ['app_users_manage_tenant_owner'],
+    DELETE: ['app_users_manage_tenant_owner'],
+  },
 };
 
 function sameSet(a, b) {
