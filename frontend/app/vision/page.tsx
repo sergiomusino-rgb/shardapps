@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import type { SplitProgress } from '@/src/lib/video-splitter';
 import {
   Clapperboard,
   ImageUp,
@@ -45,12 +46,29 @@ function getCreditCost(mode: Mode, duration: Duration): number {
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const ACCEPTED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
 const MAX_IMAGE_SIZE_MB = 20;
-const MAX_VIDEO_SIZE_MB = 100;
-const MAX_PROMPT_LENGTH = 1500;
-// Il campo è pensato per un'idea rapida, non per un prompt tecnico: il
-// Prompt Enhancer lato server (app/api/generate-video/route.ts) si occupa poi
-// di tradurla ed espanderla in un prompt cinematografico professionale.
-const MAX_PROMPT_WORDS = 30;
+// Il bucket 'vision-uploads' è configurato a 100MB (vedi supabase/migrations/
+// 20260802000002), ma Supabase Storage applica ANCHE un limite GLOBALE di
+// progetto, separato dal file_size_limit del singolo bucket e impostabile
+// solo dalla Dashboard (Settings → Storage), non da una migrazione SQL — sul
+// piano di questo progetto è fermo a 50MB. È quel limite, più restrittivo, a
+// valere davvero: un upload tra 50 e 100MB fallisce comunque con
+// StorageApiError "The object exceeded the maximum allowed size" anche se il
+// bucket lo consentirebbe. Se in futuro il piano viene aggiornato e il tetto
+// globale alzato, alzare qui MAX_VIDEO_SIZE_MB/SPLIT_TARGET_CHUNK_MB e
+// SPLIT_HARD_LIMIT_MB in src/lib/video-splitter.ts di conseguenza.
+const MAX_VIDEO_SIZE_MB = 50;
+// Un video sopra soglia viene spezzato invece di essere respinto: ogni pezzo
+// punta a questa dimensione target, sotto MAX_VIDEO_SIZE_MB per lasciare
+// margine alla variabilità di bitrate tra un segmento e l'altro (vedi
+// src/lib/video-splitter.ts).
+const SPLIT_TARGET_CHUNK_MB = 35;
+// Tetto generoso per chi vuole scrivere una descrizione dettagliata invece
+// di una semplice idea: il Prompt Enhancer lato server (app/api/generate-video
+// /route.ts) la condensa comunque in un prompt cinematografico professionale
+// prima di passarla al modello video, qualunque sia la lunghezza in ingresso.
+// Va tenuto allineato a MAX_PROMPT_LENGTH in quella route.
+const MAX_PROMPT_LENGTH = 20000;
+const MAX_PROMPT_WORDS = 2500;
 
 function capWords(text: string, maxWords: number): string {
   const words = text.split(/\s+/).filter(Boolean);
@@ -258,6 +276,16 @@ export default function VisionStudioPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
+  // ── Split lato client di video oversize (> MAX_VIDEO_SIZE_MB) ───────────
+  // Popolato solo per video-to-video quando il file sorgente supera il
+  // limite fisico del bucket: contiene gli URL (già caricati) di ciascun
+  // pezzo, nell'ordine originale. Quando è valorizzato, handleGenerate segue
+  // il percorso multi-parte (remix per pezzo + unione finale) invece della
+  // singola chiamata a generate-video (vedi handleGenerateSplit sotto).
+  const [splitParts, setSplitParts] = useState<string[] | null>(null);
+  const [splitting, setSplitting] = useState(false);
+  const [splitProgress, setSplitProgress] = useState<SplitProgress | null>(null);
+
   // ── Regia AI ────────────────────────────────────────────────────────────
   const [prompt, setPrompt] = useState('');
   const [duration, setDuration] = useState<Duration>('5');
@@ -271,6 +299,7 @@ export default function VisionStudioPage() {
   const [resultDurationSeconds, setResultDurationSeconds] = useState<number | null>(null);
   const [resultPersisted, setResultPersisted] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [generateProgress, setGenerateProgress] = useState<{ stage: 'remix' | 'merge'; current: number; total: number } | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [addedToSequence, setAddedToSequence] = useState(false);
 
@@ -281,15 +310,29 @@ export default function VisionStudioPage() {
   const [concatVideoUrl, setConcatVideoUrl] = useState<string | null>(null);
   const [concatDownloading, setConcatDownloading] = useState(false);
 
-  const cost = getCreditCost(mode, duration);
+  // Percorso multi-parte: un remix per pezzo (stesso costo del remix
+  // singolo) più il costo fisso di unione finale (vedi CONCAT_CREDIT_COST),
+  // invece del costo fisso singolo del percorso normale.
+  const cost = splitParts && splitParts.length > 0
+    ? getCreditCost('video-to-video', duration) * splitParts.length + CONCAT_CREDIT_COST
+    : getCreditCost(mode, duration);
   const hasEnoughCredits = credits === null ? true : credits >= cost;
   // Il prompt è opzionale: se l'utente non scrive nulla, il Prompt Enhancer
   // lato server applica un prompt di default ottimizzato (vedi generate-video/route.ts).
-  const canGenerate = Boolean(uploadedSourceUrl) && !uploading && !generating && hasEnoughCredits;
+  const canGenerate = Boolean(uploadedSourceUrl) && !uploading && !splitting && !generating && hasEnoughCredits;
 
   const sequenceTotalSeconds = sequence.reduce((sum, clip) => sum + clip.durationSeconds, 0);
   const hasEnoughCreditsForConcat = credits === null ? true : credits >= CONCAT_CREDIT_COST;
   const canConcat = sequence.length >= 2 && sequence.length <= MAX_SEQUENCE_CLIPS && !concatenating && hasEnoughCreditsForConcat;
+
+  // Percorso multi-parte: sostituisce il messaggio generico rotante con il
+  // progresso reale (pezzo N/M in remix, poi unione finale) — più preciso
+  // per un'operazione che può richiedere diversi minuti su più chiamate.
+  const generatingLabel = generateProgress
+    ? generateProgress.stage === 'remix'
+      ? t('vision_split_remix_progress').replace('{current}', String(generateProgress.current)).replace('{total}', String(generateProgress.total))
+      : t('vision_split_merge_progress')
+    : loadingMessages[mode][loadingMessageIndex % loadingMessages[mode].length];
 
   // ── Sessione utente + crediti in tempo reale ────────────────────────────
   useEffect(() => {
@@ -382,11 +425,59 @@ export default function VisionStudioPage() {
     setSourceKind(null);
     setUploadedSourceUrl(null);
     setUploadError(null);
+    setSplitParts(null);
+    setSplitting(false);
+    setSplitProgress(null);
     setResultVideoUrl(null);
     setGenerationError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     setMode(newMode);
   }, [mode, sourcePreview]);
+
+  // ── Split + upload di un video sorgente oversize ─────────────────────────
+  // Il bucket 'vision-uploads' rifiuta fisicamente i file oltre 100MB (vedi
+  // SPLIT_TARGET_CHUNK_MB sopra): niente da fare lato server, lo split deve
+  // avvenire nel browser PRIMA di qualunque upload. Ogni pezzo risultante
+  // viene caricato come se fosse un upload singolo (stesso path pattern),
+  // e i relativi URL restano in splitParts per handleGenerateSplit.
+  const splitAndUploadSource = useCallback(async (file: File) => {
+    if (!userId) return;
+
+    setUploadError(null);
+    setUploadedSourceUrl(null);
+    setSplitParts(null);
+    setSplitting(true);
+    setSplitProgress({ stage: 'loading', current: 0, total: 0 });
+
+    try {
+      const { splitVideoBySize } = await import('@/src/lib/video-splitter');
+      const chunks = await splitVideoBySize(file, SPLIT_TARGET_CHUNK_MB, setSplitProgress);
+
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const path = `${userId}/${crypto.randomUUID()}-part${i + 1}.mp4`;
+        const { error } = await supabaseBrowser.storage
+          .from('vision-uploads')
+          .upload(path, chunks[i], { contentType: 'video/mp4', upsert: false });
+        if (error) throw error;
+        const { data } = supabaseBrowser.storage.from('vision-uploads').getPublicUrl(path);
+        uploadedUrls.push(data.publicUrl);
+      }
+
+      setSplitParts(uploadedUrls);
+      // Alcuni controlli di UI (canGenerate, badge "pronto") leggono
+      // uploadedSourceUrl come segnale generico "sorgente pronta": la prima
+      // parte basta a quello scopo, handleGenerate userà splitParts per
+      // intero quando presente (vedi handleGenerateSplit).
+      setUploadedSourceUrl(uploadedUrls[0]);
+    } catch (err) {
+      console.error('[Vision] split/upload error:', err);
+      setUploadError(t('vision_error_split_failed'));
+    } finally {
+      setSplitting(false);
+      setSplitProgress(null);
+    }
+  }, [userId, t]);
 
   // ── Upload sorgente su Supabase Storage ──────────────────────────────────
   const uploadSource = useCallback(async (file: File, kind: SourceKind) => {
@@ -398,12 +489,19 @@ export default function VisionStudioPage() {
       return;
     }
     if (file.size > config.maxSizeMB * 1024 * 1024) {
+      // Le immagini non si spezzano (non avrebbe senso): solo i video
+      // oversize passano dal percorso split-e-carica-a-pezzi.
+      if (kind === 'video') {
+        splitAndUploadSource(file);
+        return;
+      }
       setUploadError(t('vision_error_file_too_large').replace('{size}', String(config.maxSizeMB)));
       return;
     }
 
     setUploadError(null);
     setUploadedSourceUrl(null);
+    setSplitParts(null);
     setUploading(true);
 
     const ext = file.name.split('.').pop() || (kind === 'image' ? 'jpg' : 'mp4');
@@ -423,7 +521,7 @@ export default function VisionStudioPage() {
     const { data } = supabaseBrowser.storage.from('vision-uploads').getPublicUrl(path);
     setUploadedSourceUrl(data.publicUrl);
     setUploading(false);
-  }, [userId, mode, modeConfigMap, t]);
+  }, [userId, mode, modeConfigMap, t, splitAndUploadSource]);
 
   const handleFileChosen = useCallback((file: File | undefined | null) => {
     if (!file) return;
@@ -457,11 +555,112 @@ export default function VisionStudioPage() {
     setSourceKind(null);
     setUploadedSourceUrl(null);
     setUploadError(null);
+    setSplitParts(null);
+    setSplitting(false);
+    setSplitProgress(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [sourcePreview]);
 
+  // ── Generazione video (percorso multi-parte, video oversize spezzato) ───
+  // Un remix video-to-video per pezzo (stesso prompt/lingua per tutti, per
+  // uno stile coerente lungo lo spot), poi un'unica chiamata a concat-videos
+  // per ricomporli in un unico spot continuo — stessa route già usata dalla
+  // Sequenza/Storyboard manuale più sotto in questa pagina. Si ferma al
+  // primo pezzo che fallisce: i pezzi già remixati restano pagati e nel
+  // bucket dell'utente, ma non c'è retry parziale automatico qui.
+  const handleGenerateSplit = useCallback(async () => {
+    if (!splitParts || splitParts.length === 0) return;
+
+    setGenerating(true);
+    setGenerationError(null);
+    setResultVideoUrl(null);
+    setResultDurationSeconds(null);
+    setResultPersisted(false);
+    setAddedToSequence(false);
+    setGenerateProgress({ stage: 'remix', current: 0, total: splitParts.length });
+
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setGenerationError({ success: false, error: t('vision_error_session_expired') });
+        return;
+      }
+
+      const remixedUrls: string[] = [];
+      for (let i = 0; i < splitParts.length; i++) {
+        setGenerateProgress({ stage: 'remix', current: i + 1, total: splitParts.length });
+
+        const res = await fetch('/api/generate-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            sourceUrl: splitParts[i],
+            prompt: prompt.trim(),
+            mode: 'video-to-video',
+            aspectRatio,
+            targetLanguage,
+          }),
+        });
+
+        const json = (await res.json().catch(() => ({
+          success: false,
+          error: t('vision_error_invalid_response'),
+        }))) as GenerateVideoResponse;
+
+        if (!res.ok || !json.success) {
+          setGenerationError(
+            json.success === false
+              ? { ...json, error: `${t('vision_split_remix_progress').replace('{current}', String(i + 1)).replace('{total}', String(splitParts.length))} — ${json.error}` }
+              : { success: false, error: t('vision_error_generation_failed') }
+          );
+          return;
+        }
+
+        remixedUrls.push(json.data.videoUrl);
+        setCredits(json.data.creditsRemaining);
+      }
+
+      setGenerateProgress({ stage: 'merge', current: 0, total: 1 });
+
+      const concatRes = await fetch('/api/concat-videos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ videoUrls: remixedUrls }),
+      });
+
+      const concatJson = (await concatRes.json().catch(() => ({
+        success: false,
+        error: t('vision_error_invalid_response'),
+      }))) as ConcatVideosResponse;
+
+      if (!concatRes.ok || !concatJson.success) {
+        setGenerationError({ success: false, error: concatJson.success === false ? concatJson.error : t('vision_error_concat_failed') });
+        return;
+      }
+
+      setResultVideoUrl(concatJson.data.videoUrl);
+      // concat-videos non riporta la durata del risultato: il clip unito non
+      // è aggiungibile a un'ULTERIORE sequenza (handleAddToSequence richiede
+      // resultDurationSeconds), resta comunque guardabile/scaricabile qui.
+      setResultDurationSeconds(null);
+      setResultPersisted(true);
+      setCredits(concatJson.data.creditsRemaining);
+    } catch (err) {
+      console.error('[Vision] split generate error:', err);
+      setGenerationError({ success: false, error: t('vision_error_connection') });
+    } finally {
+      setGenerating(false);
+      setGenerateProgress(null);
+    }
+  }, [splitParts, prompt, aspectRatio, targetLanguage, t]);
+
   // ── Generazione video ────────────────────────────────────────────────────
   const handleGenerate = useCallback(async () => {
+    if (splitParts && splitParts.length > 0) {
+      await handleGenerateSplit();
+      return;
+    }
     if (!uploadedSourceUrl) return;
 
     setGenerating(true);
@@ -516,7 +715,7 @@ export default function VisionStudioPage() {
     } finally {
       setGenerating(false);
     }
-  }, [uploadedSourceUrl, prompt, mode, duration, aspectRatio, targetLanguage, t]);
+  }, [splitParts, handleGenerateSplit, uploadedSourceUrl, prompt, mode, duration, aspectRatio, targetLanguage, t]);
 
   // ── Download diretto dell'MP4 (blob, funziona anche cross-origin) ──────
   const handleDownload = useCallback(async () => {
@@ -759,10 +958,16 @@ export default function VisionStudioPage() {
                   />
                 )}
 
-                {uploading && (
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 text-sm font-medium backdrop-blur-sm">
+                {(uploading || splitting) && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-950/70 px-4 text-center text-sm font-medium backdrop-blur-sm">
                     <Loader2 size={16} className="animate-spin text-indigo-400" />
-                    {t('vision_uploading_label')}
+                    {uploading
+                      ? t('vision_uploading_label')
+                      : splitProgress?.stage === 'loading'
+                        ? t('vision_split_loading_label')
+                        : t('vision_split_progress_label')
+                            .replace('{current}', String((splitProgress?.current ?? 0) + 1))
+                            .replace('{total}', String(splitProgress?.total ?? 0))}
                   </div>
                 )}
 
@@ -775,15 +980,25 @@ export default function VisionStudioPage() {
                   <X size={14} />
                 </button>
 
-                {uploadedSourceUrl && !uploading && (
+                {uploadedSourceUrl && !uploading && !splitting && (
                   <div className="absolute bottom-2 left-2 rounded-full bg-emerald-500/90 px-2.5 py-1 text-[11px] font-semibold text-white">
-                    {t('vision_ready_badge')}
+                    {splitParts && splitParts.length > 0
+                      ? t('vision_split_ready_badge').replace('{parts}', String(splitParts.length))
+                      : t('vision_ready_badge')}
                   </div>
                 )}
               </div>
             )}
 
             {uploadError && <ErrorInline message={uploadError} />}
+
+            {splitParts && splitParts.length > 0 && !splitting && (
+              <p className="mt-2 text-[11px] leading-relaxed text-amber-300/90">
+                {t('vision_split_info_note')
+                  .replace('{parts}', String(splitParts.length))
+                  .replace('{cost}', String(cost))}
+              </p>
+            )}
           </section>
 
           {/* Sezione 2: idea rapida + Prompt Enhancer AI */}
@@ -794,8 +1009,8 @@ export default function VisionStudioPage() {
               value={prompt}
               onChange={(e) => setPrompt(capWords(e.target.value.slice(0, MAX_PROMPT_LENGTH), MAX_PROMPT_WORDS))}
               placeholder={modeConfig.promptPlaceholder}
-              rows={3}
-              className="w-full resize-none rounded-xl border border-slate-700 bg-slate-800/60 p-3.5 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              rows={6}
+              className="w-full resize-y rounded-xl border border-slate-700 bg-slate-800/60 p-3.5 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />
             <div className="mt-1.5 flex items-center justify-between gap-2">
               <p className="flex items-center gap-1 text-[11px] text-slate-500">
@@ -897,7 +1112,7 @@ export default function VisionStudioPage() {
             {generating ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                {loadingMessages[mode][loadingMessageIndex % loadingMessages[mode].length]}
+                {generatingLabel}
               </>
             ) : !hasEnoughCredits ? (
               <>
@@ -978,7 +1193,7 @@ export default function VisionStudioPage() {
                 </div>
               </div>
               <p className="max-w-xs text-center text-sm font-medium text-slate-300">
-                {loadingMessages[mode][loadingMessageIndex % loadingMessages[mode].length]}
+                {generatingLabel}
               </p>
               <p className="text-xs text-slate-500">{t('vision_generating_hint')}</p>
             </div>

@@ -11,6 +11,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import {
   AlertCircle,
+  ArrowRight,
   Building2,
   Check,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   ChevronDown,
   CreditCard,
   Download,
+  Eye,
   FileSpreadsheet,
   KeyRound,
   Loader2,
@@ -61,7 +63,7 @@ import InstallAppBanner from '@/components/InstallAppBanner';
 import InstallAppCard from '@/components/comandi/InstallAppCard';
 import { useAppInfo } from '@/app/a/[slug]/AppInfoContext';
 import { daysRemaining } from '@/app/a/[slug]/app/subscription-status';
-import type { CatalogItem, Customer, Order, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
+import type { CatalogItem, Customer, Order, OrderItem, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
 
 // Esportati per riuso nella pagina Agente (app/a/[slug]/app/agente), che
 // mostra la stessa lista tab sotto l'header per coerenza di navigazione con
@@ -910,6 +912,8 @@ function WarehouseTab({ tenantId, readOnly = false }: { tenantId: string; readOn
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | StockStatus>('all');
   const [threshold, setThreshold] = useState(LOW_STOCK_DEFAULT_THRESHOLD);
+  const [newItem, setNewItem] = useState(EMPTY_NEW_ITEM);
+  const [isAdding, setIsAdding] = useState(false);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -945,6 +949,45 @@ function WarehouseTab({ tenantId, readOnly = false }: { tenantId: string; readOn
       console.error('[WarehouseTab] Errore aggiornamento quantità:', updateError);
       setError(t('comandi_dashboard_warehouse_error_generic'));
     }
+  };
+
+  // Inserimento/eliminazione prodotti: stessa tabella catalog_items del
+  // Catalogo (vedi CatalogTab più sopra) — qui disponibile anche dal
+  // Magazzino per non costringere l'operatore a cambiare scheda.
+  const handleAddItem = async () => {
+    if (!newItem.sku.trim() || !newItem.name.trim()) return;
+    setIsAdding(true);
+    setError(null);
+    try {
+      const { error: insertError } = await (supabase as any).from('catalog_items').insert({
+        tenant_id: tenantId,
+        sku: newItem.sku.trim(),
+        name: newItem.name.trim(),
+        unit_price: parseFloat(newItem.unit_price) || 0,
+        unit_of_measure: newItem.unit_of_measure.trim() || 'pz',
+        stock_qty: parseFloat(newItem.stock_qty) || 0,
+        is_active: true,
+      });
+      if (insertError) throw insertError;
+      setNewItem(EMPTY_NEW_ITEM);
+      await loadItems();
+    } catch (err) {
+      console.error('[WarehouseTab] Errore aggiunta prodotto:', err);
+      setError(t('comandi_dashboard_warehouse_error_generic'));
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (!window.confirm(t('comandi_dashboard_catalog_delete_confirm'))) return;
+    const { error: deleteError } = await supabase.from('catalog_items' as any).delete().eq('id', id);
+    if (deleteError) {
+      console.error('[WarehouseTab] Errore eliminazione prodotto:', deleteError);
+      setError(t('comandi_dashboard_warehouse_error_generic'));
+      return;
+    }
+    setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
   const counts = items.reduce(
@@ -1048,7 +1091,67 @@ function WarehouseTab({ tenantId, readOnly = false }: { tenantId: string; readOn
         </label>
       </div>
 
-      {/* Lista disponibilità */}
+      {/* Aggiungi prodotto: stessa azione del Catalogo, disponibile anche qui
+          per non far cambiare scheda all'operatore di magazzino. */}
+      {!readOnly && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
+            {t('comandi_dashboard_catalog_add_title')}
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <input
+              value={newItem.sku}
+              onChange={(e) => setNewItem((v) => ({ ...v, sku: e.target.value }))}
+              placeholder="SKU"
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 col-span-1"
+            />
+            <input
+              value={newItem.name}
+              onChange={(e) => setNewItem((v) => ({ ...v, name: e.target.value }))}
+              placeholder={t('comandi_dashboard_catalog_col_name')}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 col-span-2 sm:col-span-1"
+            />
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">€</span>
+              <input
+                type="number"
+                step="0.01"
+                value={newItem.unit_price}
+                onChange={(e) => setNewItem((v) => ({ ...v, unit_price: e.target.value }))}
+                placeholder={t('comandi_dashboard_catalog_col_price')}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-6 pr-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+            </div>
+            <input
+              value={newItem.unit_of_measure}
+              onChange={(e) => setNewItem((v) => ({ ...v, unit_of_measure: e.target.value }))}
+              placeholder={t('comandi_dashboard_catalog_col_unit')}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+            />
+            <input
+              type="number"
+              step="0.01"
+              value={newItem.stock_qty}
+              onChange={(e) => setNewItem((v) => ({ ...v, stock_qty: e.target.value }))}
+              placeholder={t('comandi_dashboard_catalog_col_stock')}
+              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleAddItem}
+            disabled={isAdding || !newItem.sku.trim() || !newItem.name.trim()}
+            className="mt-3 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            {t('comandi_dashboard_catalog_add_button')}
+          </button>
+        </div>
+      )}
+
+      {/* Lista disponibilità: tabella vera (non card a griglia) così la
+          colonna Quantità resta allineata riga per riga indipendentemente
+          dalla lunghezza di nome prodotto o unità di misura. */}
       {loading ? (
         <p className="text-sm text-gray-500">…</p>
       ) : filteredItems.length === 0 ? (
@@ -1058,56 +1161,94 @@ function WarehouseTab({ tenantId, readOnly = false }: { tenantId: string; readOn
             : t('comandi_dashboard_warehouse_empty_filtered')}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          {filteredItems.map((item) => {
-            const status = stockStatus(item.stock_qty, threshold);
-            return (
-              <div
-                key={item.id}
-                className="rounded-xl border border-gray-800 bg-gray-900/40 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 items-center"
-              >
-                <div
-                  className={`flex items-center gap-2 col-span-2 sm:col-span-1 rounded-full border px-3 py-1.5 text-xs font-bold w-fit ${STOCK_STATUS_BADGE[status]}`}
-                >
-                  <span className={`h-3 w-3 rounded-full shrink-0 ${STOCK_STATUS_DOT[status]}`} />
-                  {statusLabel(status)}
-                </div>
-                <span className="text-xs font-mono text-gray-500">{item.sku}</span>
-                <span className="text-sm text-white truncate col-span-2 sm:col-span-2">{item.name}</span>
-                <div className="flex items-center gap-1.5 justify-self-start sm:justify-self-end col-span-2 sm:col-span-2">
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => handleStockChange(item.id, item.stock_qty - 1)}
-                      className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                      disabled={item.stock_qty <= 0}
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={item.stock_qty}
-                    onChange={(e) => handleStockChange(item.id, parseFloat(e.target.value) || 0)}
-                    disabled={readOnly}
-                    className="w-20 text-center bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                  />
-                  <span className="text-xs text-gray-500">{item.unit_of_measure}</span>
-                  {!readOnly && (
-                    <button
-                      type="button"
-                      onClick={() => handleStockChange(item.id, item.stock_qty + 1)}
-                      className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div className="rounded-xl border border-gray-800 overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-900/60">
+                <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {t('comandi_dashboard_warehouse_col_status')}
+                </th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {t('comandi_dashboard_warehouse_col_sku')}
+                </th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {t('comandi_dashboard_catalog_col_name')}
+                </th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  {t('comandi_dashboard_warehouse_col_qty')}
+                </th>
+                {!readOnly && (
+                  <th className="w-[52px] whitespace-nowrap px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {t('comandi_dashboard_warehouse_col_actions')}
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map((item) => {
+                const status = stockStatus(item.stock_qty, threshold);
+                return (
+                  <tr key={item.id} className="border-t border-gray-800 hover:bg-gray-900/40">
+                    <td className="px-3 py-2.5">
+                      <div
+                        className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold w-fit ${STOCK_STATUS_BADGE[status]}`}
+                      >
+                        <span className={`h-3 w-3 rounded-full shrink-0 ${STOCK_STATUS_DOT[status]}`} />
+                        {statusLabel(status)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs font-mono text-gray-500 whitespace-nowrap">{item.sku}</td>
+                    <td className="px-3 py-2.5 text-sm text-white max-w-[260px] truncate">{item.name}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => handleStockChange(item.id, item.stock_qty - 1)}
+                            className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={item.stock_qty <= 0}
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={item.stock_qty}
+                          onChange={(e) => handleStockChange(item.id, parseFloat(e.target.value) || 0)}
+                          disabled={readOnly}
+                          className="w-20 text-center bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                        />
+                        <span className="w-10 text-left text-xs text-gray-500">{item.unit_of_measure}</span>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => handleStockChange(item.id, item.stock_qty + 1)}
+                            className="p-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    {!readOnly && (
+                      <td className="px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem(item.id)}
+                          className="p-1.5 rounded text-gray-500 hover:bg-red-500/15 hover:text-red-400"
+                          title={t('comandi_dashboard_catalog_delete_confirm')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -2015,8 +2156,20 @@ const ORDER_STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
   PENDING_CONFIRMATION: 'bg-amber-500/15 text-amber-300 border border-amber-700/50',
   CONFIRMED: 'bg-green-500/15 text-green-300 border border-green-700/50',
   PROCESSING: 'bg-blue-500/15 text-blue-300 border border-blue-700/50',
+  READY: 'bg-cyan-500/15 text-cyan-300 border border-cyan-700/50',
   COMPLETED: 'bg-gray-700/50 text-gray-300 border border-gray-600/50',
   CANCELLED: 'bg-red-500/15 text-red-300 border border-red-700/50',
+};
+
+// Prossimo stadio del flusso di evasione per ciascuno stato non terminale:
+// pilota sia il pulsante primario mostrato nel pannello di dettaglio
+// dell'ordine, sia la label/icona associata (vedi handleUpdateStatus in
+// OrdersTab). COMPLETED e CANCELLED sono stati terminali, nessun "avanti".
+const ORDER_NEXT_STAGE: Partial<Record<OrderStatus, { status: OrderStatus; labelKey: string }>> = {
+  PENDING_CONFIRMATION: { status: 'CONFIRMED', labelKey: 'comandi_dashboard_orders_action_approve' },
+  CONFIRMED: { status: 'PROCESSING', labelKey: 'comandi_dashboard_orders_action_start_processing' },
+  PROCESSING: { status: 'READY', labelKey: 'comandi_dashboard_orders_action_mark_ready' },
+  READY: { status: 'COMPLETED', labelKey: 'comandi_dashboard_orders_action_mark_completed' },
 };
 
 function OrdersTab({ tenantId }: { tenantId: string }) {
@@ -2028,9 +2181,15 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
   // appartenere a qualunque ruolo, non solo 'agent' (vedi listTenantMemberNamesAction).
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
 
-  // ── Conferma / annullamento ordine ───────────────────────────────────────
+  // ── Conferma / annullamento / avanzamento stato ordine ───────────────────
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // ── Dettaglio ordine (righe prodotto + azioni stato), aperto al click ────
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [orderItemsByOrder, setOrderItemsByOrder] = useState<Record<string, OrderItem[]>>({});
+  const [itemsLoadingOrderId, setItemsLoadingOrderId] = useState<string | null>(null);
+  const [itemsErrorOrderId, setItemsErrorOrderId] = useState<string | null>(null);
 
   // ── Memo audio dell'agente (signed URL on-demand) ────────────────────────
   const [audioOrderId, setAudioOrderId] = useState<string | null>(null);
@@ -2156,15 +2315,28 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
       if (!blob) return;
       const file = new File([blob], 'ordini.xlsx', { type: blob.type });
       const nav = navigator as Navigator & { canShare?: (data: { files: File[] }) => boolean };
+
       if (nav.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Ordini', text: t('comandi_dashboard_orders_export_whatsapp_share_text') });
-      } else {
-        downloadBlob(blob, 'ordini.xlsx');
-        window.open(`https://wa.me/?text=${encodeURIComponent(t('comandi_dashboard_orders_export_whatsapp_fallback_text'))}`, '_blank');
+        try {
+          await navigator.share({ files: [file], title: 'Ordini', text: t('comandi_dashboard_orders_export_whatsapp_share_text') });
+          return;
+        } catch (shareErr) {
+          // AbortError: l'utente ha chiuso il foglio di condivisione senza scegliere nulla, non è un errore da segnalare.
+          if (shareErr instanceof Error && shareErr.name === 'AbortError') return;
+          // Altri fallimenti (tipicamente NotAllowedError): alcuni browser, Safari in
+          // primis, invalidano l'"attivazione utente" richiesta da navigator.share()
+          // se tra il click e la chiamata è passato l'await di rete sopra (fetch
+          // dell'xlsx) — canShare() aveva risposto true un istante prima, ma la
+          // condivisione vera e propria viene comunque rifiutata. Si ripiega sullo
+          // stesso percorso già usato quando canShare non è supportato affatto: il
+          // file resta scaricato e utilizzabile, va solo allegato a mano.
+          console.warn('[OrdersTab] navigator.share fallito, fallback a download + WhatsApp Web:', shareErr);
+        }
       }
+
+      downloadBlob(blob, 'ordini.xlsx');
+      window.open(`https://wa.me/?text=${encodeURIComponent(t('comandi_dashboard_orders_export_whatsapp_fallback_text'))}`, '_blank');
     } catch (err) {
-      // AbortError: l'utente ha chiuso il foglio di condivisione senza scegliere nulla, non è un errore da segnalare.
-      if (err instanceof Error && err.name === 'AbortError') return;
       console.error('[OrdersTab] Errore condivisione WhatsApp:', err);
       setExportError(t('comandi_dashboard_orders_export_error_generic'));
     } finally {
@@ -2203,7 +2375,10 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
     }
   };
 
-  const handleUpdateStatus = async (orderId: string, status: 'CONFIRMED' | 'CANCELLED') => {
+  const handleUpdateStatus = async (
+    orderId: string,
+    status: 'CONFIRMED' | 'PROCESSING' | 'READY' | 'COMPLETED' | 'CANCELLED'
+  ) => {
     setActionError(null);
     setUpdatingOrderId(orderId);
     try {
@@ -2228,6 +2403,36 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
       setActionError(t('comandi_dashboard_orders_action_error_generic'));
     } finally {
       setUpdatingOrderId(null);
+    }
+  };
+
+  // Apre/chiude il pannello di dettaglio dell'ordine (righe prodotto, note,
+  // memo audio, azioni di avanzamento stato). Le righe prodotto sono
+  // caricate on-demand alla prima apertura e tenute in cache per id ordine,
+  // così riaprire lo stesso ordine non rifà la query.
+  const handleToggleExpand = async (order: Order) => {
+    if (expandedOrderId === order.id) {
+      setExpandedOrderId(null);
+      return;
+    }
+    setExpandedOrderId(order.id);
+    if (orderItemsByOrder[order.id]) return;
+
+    setItemsLoadingOrderId(order.id);
+    setItemsErrorOrderId(null);
+    try {
+      const { data, error } = await supabase
+        .from('order_items' as any)
+        .select('*')
+        .eq('order_id', order.id)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setOrderItemsByOrder((prev) => ({ ...prev, [order.id]: (data || []) as unknown as OrderItem[] }));
+    } catch (err) {
+      console.error('[OrdersTab] Errore caricamento righe ordine:', err);
+      setItemsErrorOrderId(order.id);
+    } finally {
+      setItemsLoadingOrderId(null);
     }
   };
 
@@ -2434,45 +2639,135 @@ function OrdersTab({ tenantId }: { tenantId: string }) {
                             )}
                           </button>
                         )}
-                        {order.status === 'PENDING_CONFIRMATION' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStatus(order.id, 'CONFIRMED')}
-                              disabled={updatingOrderId === order.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                              {updatingOrderId === order.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                              )}
-                              {t('comandi_dashboard_orders_action_approve')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateStatus(order.id, 'CANCELLED')}
-                              disabled={updatingOrderId === order.id}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-red-700/50 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              {t('comandi_dashboard_orders_action_cancel')}
-                            </button>
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpand(order)}
+                          title={t('comandi_dashboard_orders_action_view')}
+                          className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
+                            expandedOrderId === order.id
+                              ? 'border-amber-500 bg-amber-500/15 text-amber-300'
+                              : 'border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+                          }`}
+                        >
+                          {expandedOrderId === order.id ? (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                       </div>
                     </td>
                   </tr>
-                  {audioOrderId === order.id && (
+                  {expandedOrderId === order.id && (
                     <tr className="border-b border-gray-800/60 last:border-b-0 bg-gray-950/40">
-                      <td colSpan={8} className="px-4 py-3">
-                        {audioError ? (
-                          <p className="text-xs text-red-400">{audioError}</p>
-                        ) : audioUrl ? (
-                          <audio controls autoPlay src={audioUrl} className="w-full max-w-md h-9" />
-                        ) : (
-                          <p className="text-xs text-gray-500">{t('comandi_dashboard_orders_audio_loading')}</p>
-                        )}
+                      <td colSpan={8} className="px-4 py-4">
+                        <div className="flex flex-col gap-4">
+                          {(order.delivery_date || order.notes) && (
+                            <div className="flex flex-col gap-1 text-xs text-gray-400">
+                              {order.delivery_date && (
+                                <p>
+                                  <span className="text-gray-500">{t('comandi_dashboard_orders_detail_delivery_label')}: </span>
+                                  {new Date(order.delivery_date).toLocaleDateString()}
+                                </p>
+                              )}
+                              {order.notes && (
+                                <p>
+                                  <span className="text-gray-500">{t('comandi_dashboard_orders_detail_notes_label')}: </span>
+                                  {order.notes}
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                              {t('comandi_dashboard_orders_detail_items_title')}
+                            </p>
+                            {itemsLoadingOrderId === order.id ? (
+                              <p className="text-xs text-gray-500">…</p>
+                            ) : itemsErrorOrderId === order.id ? (
+                              <p className="text-xs text-red-400">{t('comandi_dashboard_orders_action_error_generic')}</p>
+                            ) : (orderItemsByOrder[order.id]?.length ?? 0) === 0 ? (
+                              <p className="text-xs text-gray-500">{t('comandi_dashboard_orders_detail_items_empty')}</p>
+                            ) : (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-left text-gray-500 border-b border-gray-800">
+                                    <th className="py-1.5 pr-3 font-medium">{t('comandi_dashboard_catalog_col_name')}</th>
+                                    <th className="py-1.5 pr-3 font-medium text-right">{t('comandi_dashboard_warehouse_col_qty')}</th>
+                                    <th className="py-1.5 pr-3 font-medium text-right">{t('comandi_dashboard_catalog_col_price')}</th>
+                                    <th className="py-1.5 font-medium text-right">{t('comandi_dashboard_orders_col_total')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {orderItemsByOrder[order.id].map((item) => (
+                                    <tr key={item.id} className="border-b border-gray-800/40 last:border-b-0">
+                                      <td className="py-1.5 pr-3 text-gray-200">{item.product_name}</td>
+                                      <td className="py-1.5 pr-3 text-right text-gray-300">
+                                        {item.quantity} {item.unit}
+                                      </td>
+                                      <td className="py-1.5 pr-3 text-right text-gray-300">{formatCurrency(Number(item.unit_price))}</td>
+                                      <td className="py-1.5 text-right text-white font-medium">{formatCurrency(Number(item.subtotal))}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+
+                          {order.audio_url && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                                {t('comandi_dashboard_orders_action_listen')}
+                              </p>
+                              {audioOrderId !== order.id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAudio(order)}
+                                  className="flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300"
+                                >
+                                  <Volume2 className="w-3.5 h-3.5" />
+                                  {t('comandi_dashboard_orders_action_listen')}
+                                </button>
+                              ) : audioError ? (
+                                <p className="text-xs text-red-400">{audioError}</p>
+                              ) : audioUrl ? (
+                                <audio controls autoPlay src={audioUrl} className="w-full max-w-md h-9" />
+                              ) : (
+                                <p className="text-xs text-gray-500">{t('comandi_dashboard_orders_audio_loading')}</p>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-800">
+                            {ORDER_NEXT_STAGE[order.status] && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(order.id, ORDER_NEXT_STAGE[order.status]!.status as 'CONFIRMED' | 'PROCESSING' | 'READY' | 'COMPLETED')}
+                                disabled={updatingOrderId === order.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {updatingOrderId === order.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                )}
+                                {t(ORDER_NEXT_STAGE[order.status]!.labelKey)}
+                              </button>
+                            )}
+                            {order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(order.id, 'CANCELLED')}
+                                disabled={updatingOrderId === order.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-700 text-gray-300 hover:border-red-700/50 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                {t('comandi_dashboard_orders_action_cancel')}
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   )}

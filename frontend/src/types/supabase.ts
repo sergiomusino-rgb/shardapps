@@ -1953,6 +1953,7 @@ export type Database = {
         | "PENDING_CONFIRMATION"
         | "CONFIRMED"
         | "PROCESSING"
+        | "READY"
         | "COMPLETED"
         | "CANCELLED"
     }
@@ -2089,6 +2090,7 @@ export const Constants = {
         "PENDING_CONFIRMATION",
         "CONFIRMED",
         "PROCESSING",
+        "READY",
         "COMPLETED",
         "CANCELLED",
       ],

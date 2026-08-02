@@ -15,7 +15,7 @@ interface InstallAppCardProps {
 // secondo momento, anche se ha già chiuso il banner iniziale.
 export default function InstallAppCard({ appName }: InstallAppCardProps) {
   const { t } = useLanguage();
-  const { canInstall, isIos, isStandalone, promptInstall } = useInstallPrompt();
+  const { canInstall, isIos, isIosNonSafari, isStandalone, promptInstall } = useInstallPrompt();
 
   // Già installata (aperta come standalone): la card non ha più senso qui.
   if (isStandalone) return null;
@@ -26,7 +26,9 @@ export default function InstallAppCard({ appName }: InstallAppCardProps) {
         <Download className="w-3.5 h-3.5" />
         {t('comandi_dashboard_install_card_title').replace('{appName}', appName)}
       </p>
-      {isIos ? (
+      {isIosNonSafari ? (
+        <p className="text-sm text-gray-400">{t('comandi_dashboard_install_card_ios_other_browser')}</p>
+      ) : isIos ? (
         <p className="flex items-center gap-1 flex-wrap text-sm text-gray-400">
           {t('comandi_dashboard_install_card_ios_instructions')}
           <Share className="w-3.5 h-3.5 inline" />

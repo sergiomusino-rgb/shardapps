@@ -25,7 +25,7 @@ export default function InstallAppBanner({
   surfaceColor,
   borderColor,
 }: InstallAppBannerProps) {
-  const { canInstall, isIos, isStandalone, promptInstall } = useInstallPrompt();
+  const { canInstall, isIos, isIosNonSafari, isStandalone, promptInstall } = useInstallPrompt();
   // true finché non verifichiamo localStorage (al mount), per non far
   // lampeggiare il banner un istante prima di scoprire che era già chiuso.
   const [dismissed, setDismissed] = useState(true);
@@ -83,7 +83,11 @@ export default function InstallAppBanner({
         <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: textColor }}>
           Installa {appName} sul tuo smartphone
         </p>
-        {isIos ? (
+        {isIosNonSafari ? (
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: textColor, opacity: 0.75 }}>
+            Apri questo indirizzo in <strong>Safari</strong> per installare l&apos;app: da questo browser l&apos;installazione non è disponibile su iPhone/iPad.
+          </p>
+        ) : isIos ? (
           <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: textColor, opacity: 0.75, display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
             Tocca <Share size={13} style={{ display: 'inline' }} /> Condividi, poi <SquarePlus size={13} style={{ display: 'inline' }} /> &quot;Aggiungi a Home&quot;
           </p>

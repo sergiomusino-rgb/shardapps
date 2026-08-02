@@ -35,6 +35,14 @@ if (typeof window !== 'undefined' && !globalForInstallPrompt.__zeusxInstallPromp
 export function useInstallPrompt() {
   const [, forceRerender] = useState(0);
   const [isIos, setIsIos] = useState(false);
+  // Su iOS l'installazione come vera PWA standalone (icona Home che apre
+  // l'app senza barra degli indirizzi) è possibile SOLO da Safari: Apple non
+  // la espone agli altri browser (Chrome/CriOS, Firefox/FxiOS, Edge/EdgiOS,
+  // app Google/GSA, ecc.), che pure girano sullo stesso motore WebKit. Da
+  // questi browser "Aggiungi alla schermata Home" crea solo un segnalibro
+  // che riapre il browser stesso, non un'app installata — da qui il caso
+  // "non si installa" quando l'utente sta usando Chrome o l'app Google.
+  const [isIosNonSafari, setIsIosNonSafari] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
@@ -42,7 +50,13 @@ export function useInstallPrompt() {
       window.matchMedia('(display-mode: standalone)').matches ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
     setIsStandalone(standalone);
-    setIsIos(/iphone|ipad|ipod/i.test(window.navigator.userAgent));
+    const ua = window.navigator.userAgent;
+    const onIos = /iphone|ipad|ipod/i.test(ua);
+    setIsIos(onIos);
+    // Token identificativi che i browser non-Safari su iOS devono includere
+    // nello user agent (imposto da Apple/dai rispettivi vendor), dato che
+    // tutti includono comunque "Safari/..." come token di compatibilità.
+    setIsIosNonSafari(onIos && /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|mercury|GSA\//i.test(ua));
 
     const notify = () => forceRerender((n) => n + 1);
     subscribers.add(notify);
@@ -59,5 +73,5 @@ export function useInstallPrompt() {
     subscribers.forEach((notify) => notify());
   }, []);
 
-  return { canInstall: !!sharedDeferredPrompt, isIos, isStandalone, promptInstall };
+  return { canInstall: !!sharedDeferredPrompt, isIos, isIosNonSafari, isStandalone, promptInstall };
 }

@@ -6,6 +6,7 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { usePwaSetup } from '@/hooks/usePwaSetup';
 import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_NAME } from '@/src/lib/comandi-pwa';
 import InstallAppBanner from '@/components/InstallAppBanner';
+import LanguageSelector from '@/components/LanguageSelector';
 
 export interface ComandiInstanceLandingProps {
   slug: string;
@@ -41,7 +42,11 @@ export default function ComandiInstanceLanding({ slug }: ComandiInstanceLandingP
   ];
 
   return (
-    <div className="bg-slate-950 text-white min-h-screen w-full font-sans">
+    <div className="bg-slate-950 text-white min-h-screen w-full font-sans relative overflow-x-hidden">
+      <div className="absolute top-6 right-6 z-30">
+        <LanguageSelector />
+      </div>
+
       <main className="flex flex-col items-center px-6 pb-24">
         <section className="max-w-4xl w-full text-center flex flex-col items-center gap-6 pt-16">
           <h1 className="text-5xl md:text-7xl font-black tracking-tighter leading-tight">

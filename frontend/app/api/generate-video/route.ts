@@ -72,16 +72,20 @@ function getCreditCost(mode: Mode, duration: Duration | null): number {
   return duration === '10' ? 10 : 5;
 }
 
-const MAX_PROMPT_LENGTH = 1500;
+// Tetto generoso (fino a ~2500 parole): allineato a MAX_PROMPT_LENGTH/
+// MAX_PROMPT_WORDS in vision/page.tsx.
+const MAX_PROMPT_LENGTH = 20000;
 
 // ─── Prompt Enhancer ────────────────────────────────────────────────────────
-// L'utente scrive solo un'idea breve in italiano (max 20-30 parole, vedi
-// vision/page.tsx): qui viene tradotta ed espansa in un prompt professionale
-// in inglese, con dettagli cinematografici (illuminazione, risoluzione,
-// movimento di camera) prima di essere passata a Fal.ai. Non deve mai lanciare
-// un'eccezione: se l'AI router non è configurato o fallisce, si ripiega su
-// un'espansione locale a template piuttosto che bloccare la generazione o
-// far scattare inutilmente il rimborso pensato per gli errori di Fal.ai.
+// L'utente scrive un'idea, breve o dettagliata (vedi vision/page.tsx): qui
+// viene tradotta e condensata in un prompt professionale in inglese, con
+// dettagli cinematografici (illuminazione, risoluzione, movimento di camera)
+// prima di essere passata a Fal.ai — qualunque sia la lunghezza in ingresso,
+// l'output resta un prompt sintetico (vedi "under 80 words" in
+// buildEnhancerSystemPrompt sotto). Non deve mai lanciare un'eccezione: se
+// l'AI router non è configurato o fallisce, si ripiega su un'espansione
+// locale a template piuttosto che bloccare la generazione o far scattare
+// inutilmente il rimborso pensato per gli errori di Fal.ai.
 
 // Prompt di default per modalità + lingua di destinazione: nessuna chiamata
 // LLM quando l'utente lascia il campo vuoto (vedi enhancePrompt), quindi
@@ -110,8 +114,8 @@ function buildEnhancerSystemPrompt(mode: Mode, targetLanguage: TargetLanguage): 
   const languageName = LANGUAGE_NAMES[targetLanguage];
   const base =
     mode === 'image-to-video'
-      ? 'You are a prompt engineer for an AI image-to-video generation model. The user gives you a short idea describing a scene or animation for a still photo. Rewrite it as a single professional prompt optimized for cinematic video generation: describe a smooth, fitting camera movement, studio-quality lighting, photorealistic 4k detail (or a coherent cartoon/anime style if the idea implies one), and natural, fluid motion.'
-      : 'You are a prompt engineer for an AI video restyling model. The user gives you a short idea describing the new visual style to apply to an existing video (the original motion must stay untouched). Rewrite it as a single professional prompt optimized for video restyling: describe the target art style coherently and consistently, studio-quality lighting, photorealistic 4k detail (or a coherent cartoon/anime look if implied), and explicitly preserve the original camera movement and motion.';
+      ? 'You are a prompt engineer for an AI image-to-video generation model. The user gives you an idea (anywhere from a few words to a detailed description) for a scene or animation for a still photo. Rewrite it as a single professional prompt optimized for cinematic video generation: describe a smooth, fitting camera movement, studio-quality lighting, photorealistic 4k detail (or a coherent cartoon/anime style if the idea implies one), and natural, fluid motion.'
+      : 'You are a prompt engineer for an AI video restyling model. The user gives you an idea (anywhere from a few words to a detailed description) for the new visual style to apply to an existing video (the original motion must stay untouched). Rewrite it as a single professional prompt optimized for video restyling: describe the target art style coherently and consistently, studio-quality lighting, photorealistic 4k detail (or a coherent cartoon/anime look if implied), and explicitly preserve the original camera movement and motion.';
 
   return `${base} Write the final prompt in ${languageName}, naturally adapted for a ${languageName}-speaking audience/market (not a literal word-for-word translation) — imagery, tone and cultural references should feel native to that market. Reply with ONLY the rewritten prompt as plain text in ${languageName}, under 80 words, no quotes, labels, or explanation.`;
 }

@@ -16,6 +16,7 @@ export type OrderStatus =
   | 'PENDING_CONFIRMATION'
   | 'CONFIRMED'
   | 'PROCESSING'
+  | 'READY'
   | 'COMPLETED'
   | 'CANCELLED';
 

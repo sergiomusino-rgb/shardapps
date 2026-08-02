@@ -172,11 +172,12 @@ export async function confirmOrderAction(input: ConfirmOrderInput): Promise<Conf
   }
 }
 
-// ─── Aggiornamento stato ordine (conferma/annullamento dal titolare) ──────────
-// Usata dalla vista "Storico Ordini" del titolare per approvare o annullare
-// gli ordini raccolti dagli agenti (status PENDING_CONFIRMATION).
+// ─── Aggiornamento stato ordine (dal titolare) ─────────────────────────────
+// Usata dalla vista "Storico Ordini" del titolare per far avanzare un
+// ordine lungo tutto il flusso di evasione (Approvato -> In preparazione ->
+// Pronto -> Evaso) oppure annullarlo in qualunque stadio non terminale.
 
-const UPDATABLE_ORDER_STATUSES = ['CONFIRMED', 'CANCELLED'] as const;
+const UPDATABLE_ORDER_STATUSES = ['CONFIRMED', 'PROCESSING', 'READY', 'COMPLETED', 'CANCELLED'] as const;
 
 const UpdateOrderStatusInputSchema = z.object({
   orderId: z.uuid(),

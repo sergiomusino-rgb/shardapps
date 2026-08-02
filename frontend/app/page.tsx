@@ -1,51 +1,65 @@
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
 import LanguageSelector from '@/components/LanguageSelector';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { Bot, Video, Share2, Smartphone, CreditCard, ShieldCheck } from 'lucide-react';
 
-const LEFT_FEATURES = [
-  {
-    icon: Bot,
-    color: 'cyan',
-    title: 'Comandi AI',
-    desc: 'Assistente conversazionale integrato in ogni app: gestisci dati in linguaggio naturale.',
-  },
-  {
-    icon: Video,
-    color: 'purple',
-    title: 'ZeusX Vision',
-    desc: 'Crea video dinamici generati dall’AI a partire dalle tue immagini prodotto.',
-  },
-  {
-    icon: Share2,
-    color: 'emerald',
-    title: 'Reselling & Split',
-    desc: 'Rivendi gestionali ai tuoi clienti e ricevi la tua quota automaticamente via Stripe.',
-  },
-] as const;
+interface LandingFeature {
+  icon: typeof Bot;
+  color: string;
+  title: string;
+  desc: string;
+}
 
-const RIGHT_FEATURES = [
-  {
-    icon: Smartphone,
-    color: 'blue',
-    title: 'PWA Istantanea',
-    desc: 'App pronte da installare su smartphone e desktop, senza store e senza attese.',
-  },
-  {
-    icon: CreditCard,
-    color: 'indigo',
-    title: 'Stripe Merchant of Record',
-    desc: 'Pagamenti, fatturazione e split gestiti direttamente da Stripe.',
-  },
-  {
-    icon: ShieldCheck,
-    color: 'cyan',
-    title: 'Data Isolation Totale',
-    desc: 'Ogni cliente ha il suo spazio dati completamente isolato e sicuro.',
-  },
-] as const;
+type TFunction = (key: string) => string;
+
+function getLeftFeatures(t: TFunction): LandingFeature[] {
+  return [
+    {
+      icon: Bot,
+      color: 'cyan',
+      title: t('landing_feature_comandi_title'),
+      desc: t('landing_feature_comandi_desc'),
+    },
+    {
+      icon: Video,
+      color: 'purple',
+      title: t('landing_feature_vision_title'),
+      desc: t('landing_feature_vision_desc'),
+    },
+    {
+      icon: Share2,
+      color: 'emerald',
+      title: t('landing_feature_reselling_title'),
+      desc: t('landing_feature_reselling_desc'),
+    },
+  ];
+}
+
+function getRightFeatures(t: TFunction): LandingFeature[] {
+  return [
+    {
+      icon: Smartphone,
+      color: 'blue',
+      title: t('landing_feature_pwa_title'),
+      desc: t('landing_feature_pwa_desc'),
+    },
+    {
+      icon: CreditCard,
+      color: 'indigo',
+      title: t('landing_feature_stripe_title'),
+      desc: t('landing_feature_stripe_desc'),
+    },
+    {
+      icon: ShieldCheck,
+      color: 'cyan',
+      title: t('landing_feature_isolation_title'),
+      desc: t('landing_feature_isolation_desc'),
+    },
+  ];
+}
 
 const COLOR_MAP: Record<string, string> = {
   cyan: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.3)]',
@@ -55,7 +69,7 @@ const COLOR_MAP: Record<string, string> = {
   indigo: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.3)]',
 };
 
-function FeatureCard({ f }: { f: (typeof LEFT_FEATURES)[number] | (typeof RIGHT_FEATURES)[number] }) {
+function FeatureCard({ f }: { f: LandingFeature }) {
   return (
     <div className="rounded-2xl border border-slate-800/80 bg-slate-900/50 backdrop-blur-xl p-4">
       <div className={`w-10 h-10 rounded-xl border flex items-center justify-center mb-2 ${COLOR_MAP[f.color]}`}>
@@ -69,6 +83,8 @@ function FeatureCard({ f }: { f: (typeof LEFT_FEATURES)[number] | (typeof RIGHT_
 
 export default function Home() {
   const { t } = useLanguage();
+  const leftFeatures = useMemo(() => getLeftFeatures(t), [t]);
+  const rightFeatures = useMemo(() => getRightFeatures(t), [t]);
 
   return (
     <div className="h-screen overflow-y-auto w-full font-sans relative text-white">
@@ -104,7 +120,7 @@ export default function Home() {
 
             {/* COLONNA SINISTRA */}
             <div className="hidden lg:block space-y-3">
-              {LEFT_FEATURES.map((f) => (
+              {leftFeatures.map((f) => (
                 <FeatureCard key={f.title} f={f} />
               ))}
             </div>
@@ -113,11 +129,11 @@ export default function Home() {
             <section className="px-2 text-center flex flex-col items-center gap-4">
 
               <h2 className="text-4xl md:text-7xl font-black tracking-tight max-w-4xl leading-tight">
-                AL SERVIZIO DEL TUO BUSINESS
+                {t('landing_hero_title')}
               </h2>
 
               <p className="text-xl md:text-2xl text-slate-300 max-w-2xl font-semibold leading-relaxed">
-                L&apos;Olimpo dei Gestionali: Genera, Personalizza, Rivendi. Scaglia il Tuo Software sul Mercato e Guadagna in Automatico
+                {t('landing_subtitle')}
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 mt-10 w-full sm:w-auto">
@@ -131,14 +147,14 @@ export default function Home() {
 
               <div className="mt-4 px-4 py-2 rounded-full border border-slate-800 bg-slate-900/50 backdrop-blur">
                 <p className="text-sm text-slate-300">
-                  ⭐ Leader con oltre <span className="text-indigo-400 font-bold">10.000 creazioni</span>
+                  ⭐ {t('landing_badge_prefix')} <span className="text-indigo-400 font-bold">{t('landing_badge_bold')}</span>
                 </p>
               </div>
             </section>
 
             {/* COLONNA DESTRA */}
             <div className="hidden lg:block space-y-3">
-              {RIGHT_FEATURES.map((f) => (
+              {rightFeatures.map((f) => (
                 <FeatureCard key={f.title} f={f} />
               ))}
             </div>
