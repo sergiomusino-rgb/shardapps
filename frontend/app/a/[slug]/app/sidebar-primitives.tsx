@@ -104,20 +104,23 @@ export function SidebarLogo({ logoUrl, companyName }: { logoUrl: string; company
   );
 }
 
+// Stesso logo/layout del footer sidebar di ZeusX (components/layout/
+// Sidebar.tsx) e di Comand AI (components/comandi/ComandiSidebar.tsx):
+// stesso file (/favicon.png), stessa forma (cerchio, non rettangolo
+// arrotondato), stessa disposizione verticale — un solo aspetto per il
+// branding "ZeusX by MUSINO" in ogni app, generata o no.
 export function SidebarBrandFooter() {
   return (
-    <div className="flex items-center justify-center gap-1.5 px-5 py-3">
+    <div className="flex flex-col items-center gap-2 px-5 py-3">
       <Image
-        src="/zeusxapps.jpeg"
+        src="/favicon.png"
         alt="ZeusX"
         width={56}
         height={56}
-        className="h-14 w-14 shrink-0 rounded object-contain"
+        className="h-14 w-14 shrink-0 rounded-full object-cover"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
-      <p className="m-0 text-[11px] font-semibold text-tenant-sidebar-text/50">
-        ZeusX <span className="font-normal">by</span> <span className="text-tenant-sidebar-text/70">MUSINO</span>
-      </p>
+      <p className="m-0 text-xs font-semibold text-tenant-sidebar-text/50">by MUSINO</p>
     </div>
   );
 }
