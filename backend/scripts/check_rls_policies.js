@@ -144,6 +144,142 @@ const BASELINE = {
     UPDATE: ['app_users_manage_tenant_owner'],
     DELETE: ['app_users_manage_tenant_owner'],
   },
+
+  // ─── Resto dello schema, verificato per intero il 2026-08-08 ─────────────
+  _system_entities: {
+    // roles=['service_role'] esplicito nonostante USING/CHECK true: corretto.
+    SELECT: ['service_role_full_access'],
+    INSERT: ['service_role_full_access'],
+    UPDATE: ['service_role_full_access'],
+    DELETE: ['service_role_full_access'],
+  },
+  app_collaborators: {
+    // FOR ALL, richiede esplicitamente role = 'admin': corretto.
+    SELECT: ['admin_manage_collaborators'],
+    INSERT: ['admin_manage_collaborators'],
+    UPDATE: ['admin_manage_collaborators'],
+    DELETE: ['admin_manage_collaborators'],
+  },
+  app_credentials: {
+    SELECT: ['app_credentials_deny_anon_authenticated'],
+    INSERT: ['app_credentials_deny_anon_authenticated'],
+    UPDATE: ['app_credentials_deny_anon_authenticated'],
+    DELETE: ['app_credentials_deny_anon_authenticated'],
+  },
+  app_definitions: {
+    // Scrittura gated da has_feature_access('edit_app'/'delete_app') oltre
+    // alla membership: sistema di permessi granulare, non "any tenant member".
+    SELECT: ['app_definitions_select', 'app_definitions_select_public'],
+    INSERT: ['app_definitions_insert'],
+    UPDATE: ['app_definitions_update'],
+    DELETE: ['app_definitions_delete'],
+  },
+  app_push_subscriptions: {
+    SELECT: ['app_push_subscriptions_deny_anon_authenticated'],
+    INSERT: ['app_push_subscriptions_deny_anon_authenticated'],
+    UPDATE: ['app_push_subscriptions_deny_anon_authenticated'],
+    DELETE: ['app_push_subscriptions_deny_anon_authenticated'],
+  },
+  app_records: {
+    // Stesso sistema has_feature_access di app_definitions.
+    SELECT: ['app_records_select'],
+    INSERT: ['app_records_insert'],
+    UPDATE: ['app_records_update'],
+    DELETE: ['app_records_delete'],
+  },
+  blueprints: {
+    // SELECT pubblica per design (catalogo blueprint di settore): non un refuso.
+    SELECT: ['Everyone view blueprints', 'blueprints_select'],
+    INSERT: ['blueprints_insert'],
+    UPDATE: ['blueprints_update'],
+    DELETE: ['blueprints_delete'],
+  },
+  chats: {
+    SELECT: ['chats_deny_anon_authenticated'],
+    INSERT: ['chats_deny_anon_authenticated'],
+    UPDATE: ['chats_deny_anon_authenticated'],
+    DELETE: ['chats_deny_anon_authenticated'],
+  },
+  company_settings: {
+    // upsert_tenant_admin NON controlla il ruolo nonostante il nome (qualunque
+    // tenant_member può scrivere): accettato, sono solo dati di branding/
+    // fatturazione non finanziari (nome azienda, logo, indirizzo) — a
+    // differenza di tenants/app_registry non c'è una colonna prezzo/
+    // commissione/ruolo da proteggere. Da stringere se in futuro vengono
+    // aggiunti campi sensibili.
+    SELECT: ['company_settings_select_public', 'company_settings_upsert_tenant_admin'],
+    INSERT: ['company_settings_upsert_tenant_admin'],
+    UPDATE: ['company_settings_upsert_tenant_admin'],
+    DELETE: ['company_settings_upsert_tenant_admin'],
+  },
+  fatture: {
+    // tenant_id = auth.uid() è il modello legacy a singolo owner (pre-
+    // Comandi): documentato come "non applicabile" in comandi-invoices.ts,
+    // che passa sempre da service role con verifica esplicita di membership/
+    // ruolo. Corretto per le app a schema generato (dove tenant_id
+    // storicamente coincide con l'owner), inutilizzato dal lato client per
+    // Comandi.
+    SELECT: ['Tenant can view own fatture'],
+    INSERT: ['Tenant can insert own fatture'],
+    UPDATE: ['Tenant can update own fatture'],
+    DELETE: ['Tenant can delete own fatture'],
+  },
+  righe_fattura: {
+    SELECT: ['Tenant can view righe of own fatture'],
+    INSERT: ['Tenant can insert righe for own fatture'],
+    UPDATE: ['Tenant can update righe of own fatture'],
+    DELETE: ['Tenant can delete righe of own fatture'],
+  },
+  messages: {
+    SELECT: ['messages_deny_anon_authenticated'],
+    INSERT: ['messages_deny_anon_authenticated'],
+    UPDATE: ['messages_deny_anon_authenticated'],
+    DELETE: ['messages_deny_anon_authenticated'],
+  },
+  permissions_config: {
+    // Scrittura gated da has_feature_access('manage_permissions'): corretto.
+    SELECT: ['permissions_config_select'],
+    INSERT: ['permissions_config_insert'],
+    UPDATE: ['permissions_config_update'],
+    DELETE: ['permissions_config_delete'],
+  },
+  processed_checkout_sessions: {
+    SELECT: ['Service role manages processed_checkout_sessions'],
+    INSERT: ['Service role manages processed_checkout_sessions'],
+    UPDATE: ['Service role manages processed_checkout_sessions'],
+    DELETE: ['Service role manages processed_checkout_sessions'],
+  },
+  projects: {
+    SELECT: ['Gli utenti possono vedere solo i propri progetti'],
+    INSERT: ['Gli utenti possono creare progetti'],
+    UPDATE: ['Gli utenti possono aggiornare i propri progetti'],
+    DELETE: ['Gli utenti possono eliminare i propri progetti'],
+  },
+  rate_limit_counters: {
+    SELECT: ['rate_limit_counters_deny_anon_authenticated'],
+    INSERT: ['rate_limit_counters_deny_anon_authenticated'],
+    UPDATE: ['rate_limit_counters_deny_anon_authenticated'],
+    DELETE: ['rate_limit_counters_deny_anon_authenticated'],
+  },
+  user_permissions: {
+    // Scrittura gated da has_table_access('profiles'): corretto.
+    SELECT: ['user_permissions_select'],
+    INSERT: ['user_permissions_insert'],
+    UPDATE: ['user_permissions_update'],
+    DELETE: ['user_permissions_delete'],
+  },
+  // Tabelle legacy/orfane con RLS attivo e ZERO policy (tutto negato per
+  // anon/authenticated, solo service_role): elencate qui esplicitamente
+  // cosi' se in futuro qualcuno aggiunge una policy permissiva senza
+  // accorgersene di riaprire l'accesso, il controllo lo segnala.
+  user_preferences: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  access_tokens: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  prodotti: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  ordini: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  magazzino: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  chat_messages: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  clienti: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
+  test_tabella: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
 };
 
 function sameSet(a, b) {
@@ -154,6 +290,19 @@ function sameSet(a, b) {
 }
 
 async function main() {
+  // Una tabella con RLS mai abilitato (ALTER TABLE ... ENABLE ROW LEVEL
+  // SECURITY mai eseguito) non ha bisogno di nessuna policy per essere
+  // completamente aperta a chiunque abbia un grant sulla tabella — un
+  // controllo sulle sole policy (sotto) non la vedrebbe mai.
+  const { data: rlsStatus, error: rlsError } = await supabase.rpc('list_table_rls_status');
+  if (rlsError) {
+    console.error('❌ Impossibile leggere lo stato RLS delle tabelle:', rlsError.message);
+    console.error('   Verifica di aver applicato la migrazione 20260808000016_rls_status_function.sql');
+    process.exitCode = 2;
+    return;
+  }
+  const tablesWithoutRls = (rlsStatus || []).filter((t) => !t.rls_enabled);
+
   const { data: rows, error } = await supabase.rpc('list_rls_policies');
   if (error) {
     console.error('❌ Impossibile leggere le policy RLS:', error.message);
@@ -179,6 +328,15 @@ async function main() {
   let hasWarning = false;
 
   console.log('🔍 Controllo policy RLS attive (schema public)\n');
+
+  // 0. Tabelle con RLS mai abilitato: sempre un fallimento critico, a
+  // prescindere da qualunque policy scritta.
+  if (tablesWithoutRls.length > 0) {
+    hasFailure = true;
+    for (const t of tablesWithoutRls) {
+      console.log(`❌ ${t.table_name}: RLS NON abilitato — tabella completamente aperta a chi ha un grant su di essa.`);
+    }
+  }
 
   // 1. Tabelle con un contratto noto e verificato: confronto esatto.
   for (const [table, expectedByCmd] of Object.entries(BASELINE)) {
