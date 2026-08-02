@@ -290,9 +290,16 @@ export default function ComandiAgentPage() {
     if (isProcessing) return;
     if (isRecording) {
       stopRecording();
-    } else {
-      void startRecording();
+      return;
     }
+    // Un ordine senza cliente associato non è recuperabile/fatturabile a
+    // posteriori: si blocca qui, prima ancora di avviare la registrazione,
+    // invece di scoprirlo dopo aver già dettato l'ordine.
+    if (!customerName.trim()) {
+      setRecordError(t('comandi_agent_error_customer_required'));
+      return;
+    }
+    void startRecording();
   };
 
   const handleNewOrder = useCallback(() => {
@@ -458,7 +465,7 @@ export default function ComandiAgentPage() {
                 <button
                   type="button"
                   onClick={handleToggleRecording}
-                  disabled={!isSupported || isProcessing}
+                  disabled={!isSupported || isProcessing || (!isRecording && !customerName.trim())}
                   aria-pressed={isRecording}
                   aria-label={isRecording ? t('comandi_agent_record_stop_aria') : t('comandi_agent_record_start_aria')}
                   className={`relative z-10 flex items-center justify-center w-24 h-24 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -482,6 +489,8 @@ export default function ComandiAgentPage() {
                   </p>
                 ) : isRecording ? (
                   <p className="text-lg font-mono font-semibold text-white tabular-nums">{formatDuration(elapsedSeconds)}</p>
+                ) : !customerName.trim() ? (
+                  <p className="text-sm text-gray-500">{t('comandi_agent_error_customer_required')}</p>
                 ) : (
                   <p className="text-sm text-gray-400">{t('comandi_agent_record_idle_prompt')}</p>
                 )}

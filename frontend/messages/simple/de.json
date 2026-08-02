@@ -364,6 +364,7 @@
   "comandi_agent_notes_placeholder": "Z. B. morgens liefern",
   "comandi_agent_error_unsupported": "Ihr Browser unterstützt keine Audioaufnahme. Versuchen Sie es mit Chrome.",
   "comandi_agent_error_mic_denied": "Mikrofonzugriff verweigert. Aktivieren Sie den Mikrofonzugriff, um die Bestellung aufzunehmen.",
+  "comandi_agent_error_customer_required": "Gib den Kundennamen ein, bevor du die Bestellung aufnimmst.",
   "comandi_agent_error_empty_recording": "Aufnahme zu kurz oder leer. Bitte erneut versuchen.",
   "comandi_agent_error_session": "Sitzung abgelaufen: Seite neu laden und erneut anmelden.",
   "comandi_agent_error_network": "Kommunikationsfehler mit dem Server. Bitte erneut versuchen.",

@@ -363,6 +363,7 @@
   "comandi_agent_notes_placeholder": "Ej. entregar por la mañana",
   "comandi_agent_error_unsupported": "Tu navegador no soporta la grabación de audio. Prueba con Chrome.",
   "comandi_agent_error_mic_denied": "Permiso de micrófono denegado. Habilita el acceso al micrófono para grabar el pedido.",
+  "comandi_agent_error_customer_required": "Introduce el nombre del cliente antes de grabar el pedido.",
   "comandi_agent_error_empty_recording": "Grabación demasiado corta o vacía. Inténtalo de nuevo.",
   "comandi_agent_error_session": "Sesión caducada: recarga la página y vuelve a iniciar sesión.",
   "comandi_agent_error_network": "Error de comunicación con el servidor. Inténtalo de nuevo.",

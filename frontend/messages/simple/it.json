@@ -366,6 +366,7 @@
   "comandi_agent_notes_placeholder": "Es. consegnare al mattino",
   "comandi_agent_error_unsupported": "Il tuo browser non supporta la registrazione audio. Prova con Chrome.",
   "comandi_agent_error_mic_denied": "Permesso microfono negato. Abilita l'accesso al microfono per registrare l'ordine.",
+  "comandi_agent_error_customer_required": "Inserisci il nome del cliente prima di registrare l'ordine.",
   "comandi_agent_error_empty_recording": "Registrazione troppo breve o vuota. Riprova.",
   "comandi_agent_error_session": "Sessione scaduta: ricarica la pagina ed effettua di nuovo il login.",
   "comandi_agent_error_network": "Errore di comunicazione con il server. Riprova.",

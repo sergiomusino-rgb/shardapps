@@ -364,6 +364,7 @@
   "comandi_agent_notes_placeholder": "Ex. livrer le matin",
   "comandi_agent_error_unsupported": "Votre navigateur ne prend pas en charge l'enregistrement audio. Essayez avec Chrome.",
   "comandi_agent_error_mic_denied": "Permission du microphone refusée. Activez l'accès au microphone pour enregistrer la commande.",
+  "comandi_agent_error_customer_required": "Saisissez le nom du client avant d'enregistrer la commande.",
   "comandi_agent_error_empty_recording": "Enregistrement trop court ou vide. Réessayez.",
   "comandi_agent_error_session": "Session expirée : rechargez la page et reconnectez-vous.",
   "comandi_agent_error_network": "Erreur de communication avec le serveur. Réessayez.",

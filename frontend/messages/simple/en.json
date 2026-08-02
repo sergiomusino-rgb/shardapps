@@ -366,6 +366,7 @@
   "comandi_agent_notes_placeholder": "E.g. deliver in the morning",
   "comandi_agent_error_unsupported": "Your browser doesn't support audio recording. Try Chrome.",
   "comandi_agent_error_mic_denied": "Microphone permission denied. Enable microphone access to record the order.",
+  "comandi_agent_error_customer_required": "Enter the customer's name before recording the order.",
   "comandi_agent_error_empty_recording": "Recording too short or empty. Try again.",
   "comandi_agent_error_session": "Session expired: reload the page and log in again.",
   "comandi_agent_error_network": "Error communicating with the server. Try again.",
