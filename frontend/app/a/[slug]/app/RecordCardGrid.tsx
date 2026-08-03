@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import { TableDef, fieldName, findDisplayPriceField } from './table-definitions';
+import { TableDef, fieldName, pickIdentityFields } from './table-definitions';
 import { getPlaceholderImageUrl, type PlaceholderCategory } from '@/lib/recordPlaceholderImages';
 
 interface AppRecord {
@@ -52,13 +52,7 @@ function formatValue(val: unknown, type: string): string {
 // Unsplash contestuale — badge, titolo e prezzo in evidenza, in linea con lo
 // stile "vetrina invitante" richiesto invece delle "semplici caselle".
 export default function RecordCardGrid({ table, records, category, colors, onEdit, onDelete }: RecordCardGridProps) {
-  const imageField = table.fields.find((f) => f.type === 'image');
-  const priceField = findDisplayPriceField(table.fields);
-  const badgeField = table.fields.find((f) => f.type === 'select');
-  const titleField = table.fields.find((f) => f.type === 'text' && f !== badgeField) || table.fields[0];
-  const subtitleFields = table.fields
-    .filter((f) => f !== titleField && f !== badgeField && f !== priceField && f !== imageField)
-    .slice(0, 2);
+  const { imageField, titleField, badgeField, priceField, subtitleFields } = pickIdentityFields(table.fields);
 
   if (records.length === 0) {
     return (

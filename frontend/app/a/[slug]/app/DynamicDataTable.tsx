@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TableDef, fieldName, extractDynamicKeys, getDisplayFields, getRecordValue } from './table-definitions';
-import { getPlaceholderCategoryForTable } from '@/lib/recordPlaceholderImages';
+import { TableDef, fieldName, extractDynamicKeys, getDisplayFields, getRecordValue, pickIdentityFields } from './table-definitions';
+import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
 import RecordCardGrid from './RecordCardGrid';
 import { renderCellValue } from './cellRenderers';
 
@@ -61,6 +61,24 @@ export default function DynamicDataTable({
   const placeholderCategory = useMemo(() => getPlaceholderCategoryForTable(table.name), [table.name]);
   const hasImageField = useMemo(() => table.fields.some((f) => f.type === 'image'), [table.fields]);
   const canShowGrid = Boolean(placeholderCategory) || hasImageField;
+
+  // Anche nella vista a tabella piatta, se la tabella ha una foto (propria o
+  // di categoria nota) mostra una colonna "identità" con miniatura + titolo +
+  // sottotitolo al posto delle colonne separate immagine/titolo — stessi
+  // campi scelti dalla vista a card (pickIdentityFields), per coerenza tra
+  // le due viste.
+  const { imageField, titleField, subtitleFields } = useMemo(
+    () => pickIdentityFields(table.fields),
+    [table.fields]
+  );
+  const identitySubtitleField = subtitleFields[0];
+  const identityActive = canShowGrid && Boolean(titleField);
+  const flatColumns = useMemo(
+    () => (identityActive
+      ? table.fields.filter((f) => f !== imageField && f !== titleField && f !== identitySubtitleField)
+      : table.fields),
+    [table.fields, identityActive, imageField, titleField, identitySubtitleField]
+  );
   const [viewMode, setViewMode] = useState<'grid' | 'table'>(canShowGrid ? 'grid' : 'table');
   // DynamicDataTable non viene rimontato al cambio tabella (nessuna `key`
   // sul chiamante): senza questo effetto la vista resterebbe quella della
@@ -192,8 +210,14 @@ export default function DynamicDataTable({
             <table className="w-full border-collapse">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-tenant-card-alt">
+                  {/* Colonna identità: miniatura + titolo (+ sottotitolo) */}
+                  {identityActive && (
+                    <th className="whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary">
+                      {titleField!.label}
+                    </th>
+                  )}
                   {/* Colonne fisse */}
-                  {table.fields.map((field) => (
+                  {flatColumns.map((field) => (
                     <th
                       key={fieldName(field)}
                       className="whitespace-nowrap border-b-2 border-tenant-border px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-tenant-text-secondary"
@@ -221,7 +245,7 @@ export default function DynamicDataTable({
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
+                      colSpan={flatColumns.length + (identityActive ? 1 : 0) + (showDynamicCols ? dynamicKeys.length : 0) + 1}
                       className="p-10 text-center text-tenant-text-secondary"
                     >
                       Caricamento records...
@@ -230,7 +254,7 @@ export default function DynamicDataTable({
                 ) : filteredRecords.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={table.fields.length + (showDynamicCols ? dynamicKeys.length : 0) + 1}
+                      colSpan={flatColumns.length + (identityActive ? 1 : 0) + (showDynamicCols ? dynamicKeys.length : 0) + 1}
                       className="p-10 text-center text-tenant-text-secondary"
                     >
                       {searchQuery ? 'Nessun risultato per la ricerca' : 'Nessun record presente'}
@@ -242,8 +266,31 @@ export default function DynamicDataTable({
                       key={record.id || idx}
                       className="border-b border-tenant-border transition-colors hover:bg-tenant-card-alt"
                     >
+                      {/* Colonna identità: miniatura + titolo (+ sottotitolo) */}
+                      {identityActive && (
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={(imageField && (record[fieldName(imageField)] as string)) || getPlaceholderImageUrl(placeholderCategory, String(record.id))}
+                              alt=""
+                              loading="lazy"
+                              className="h-11 w-11 shrink-0 rounded-lg object-cover"
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-tenant-text">
+                                {String(record[fieldName(titleField!)] ?? '')}
+                              </div>
+                              {identitySubtitleField && (
+                                <div className="truncate text-xs text-tenant-text-secondary">
+                                  {renderCellValue(record, fieldName(identitySubtitleField), identitySubtitleField.type)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      )}
                       {/* Valori campi fissi */}
-                      {table.fields.map((field) => (
+                      {flatColumns.map((field) => (
                         <td
                           key={fieldName(field)}
                           className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap px-4 py-3 text-sm text-tenant-text"

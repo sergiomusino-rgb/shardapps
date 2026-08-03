@@ -84,6 +84,30 @@ export function findDisplayPriceField<T extends { name?: string; id?: string; ty
 }
 
 /**
+ * Individua i campi "identità" di una tabella (immagine, titolo, badge,
+ * prezzo, sottotitoli): stessa selezione usata dalla vista a card
+ * (RecordCardGrid) e dalla colonna miniatura+nome della vista a tabella
+ * piatta (DynamicDataTable), così una riga si presenta allo stesso modo
+ * in entrambe le viste.
+ */
+export function pickIdentityFields<T extends FieldDef>(fields: T[]): {
+  imageField: T | undefined;
+  titleField: T | undefined;
+  badgeField: T | undefined;
+  priceField: T | undefined;
+  subtitleFields: T[];
+} {
+  const imageField = fields.find((f) => f.type === 'image');
+  const badgeField = fields.find((f) => f.type === 'select');
+  const priceField = findDisplayPriceField(fields);
+  const titleField = fields.find((f) => f.type === 'text' && f !== badgeField && f !== imageField) || fields[0];
+  const subtitleFields = fields
+    .filter((f) => f !== titleField && f !== badgeField && f !== priceField && f !== imageField)
+    .slice(0, 2);
+  return { imageField, titleField, badgeField, priceField, subtitleFields };
+}
+
+/**
  * Helper: estrae le chiavi uniche da dati_personalizzati su tutti i record
  */
 export function extractDynamicKeys(
