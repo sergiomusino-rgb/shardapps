@@ -27,7 +27,7 @@ import {
   import { useRouter, usePathname } from 'next/navigation';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
   import InstallAppBanner from '@/components/InstallAppBanner';
-  import { getDatiAziendaliTable, ensureImageField } from './table-definitions';
+  import { getDatiAziendaliTable, ensureImageField, stripReservedIdField } from './table-definitions';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
   import { tenantThemeVars } from './tenant-theme';
@@ -1310,8 +1310,10 @@ export function ViewerProFinal() {
       || [];
     // Ogni nuovo record deve poter avere una foto propria fin da subito,
     // per qualunque tabella — non solo per quelle a cui l'utente ha
-    // aggiunto a mano un campo Immagine da "Modifica Tabella".
-    return raw.map(ensureImageField);
+    // aggiunto a mano un campo Immagine da "Modifica Tabella". Rimuove anche
+    // un eventuale campo "id" di schema (collide con l'id reale del record,
+    // mostrerebbe solo una stringa numerica interna senza senso).
+    return raw.map(stripReservedIdField).map(ensureImageField);
   }, [innerConfig, config]);
 
   const activeTable = useMemo(

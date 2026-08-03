@@ -84,6 +84,20 @@ export function findDisplayPriceField<T extends { name?: string; id?: string; ty
 }
 
 /**
+ * Rimuove un eventuale campo di schema chiamato letteralmente "id" (es. da
+ * un blueprint AI mal generato): collide concettualmente con l'id reale del
+ * record (colonna primaria, gestita a parte — vedi normalizzazione in
+ * page.tsx) e mostrerebbe all'utente finale solo una stringa numerica
+ * interna, senza alcun significato. Campo riservato: mai visibile né
+ * modificabile dall'utente.
+ */
+export function stripReservedIdField(table: TableDef): TableDef {
+  const filtered = table.fields.filter((f) => fieldName(f).toLowerCase() !== 'id');
+  if (filtered.length === table.fields.length) return table;
+  return { ...table, fields: filtered };
+}
+
+/**
  * Garantisce che una tabella abbia un campo Immagine, senza richiedere che
  * l'utente lo aggiunga a mano da "Modifica Tabella": ogni nuovo record deve
  * poter avere una foto propria fin da subito, non solo le tabelle
