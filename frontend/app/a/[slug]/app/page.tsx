@@ -1547,9 +1547,15 @@ export function ViewerProFinal() {
       // Il backend salva i campi dentro la colonna JSONB "data" (es. { id, data: { ragione_sociale, ... } }).
       // Appiattiamo qui la struttura in modo che DynamicDataTable/DynamicRecordModal
       // possano leggere i campi direttamente da record[fieldName] come si aspettano.
+      // L'id reale del record deve sempre vincere su un eventuale campo
+      // omonimo dentro ai dati (es. una tabella con un campo chiamato "id"):
+      // lo spread va PRIMA, altrimenti sovrascrive l'id vero con quello dei
+      // dati e le richieste PUT/DELETE successive partono con un id vuoto,
+      // finendo su /records/ (slash finale) invece di /records/{id} — quella
+      // rotta supporta solo GET/POST, da cui un fuorviante "Errore server: 405".
       const normalized = rawRecords.map((r) => ({
-        id: r.id,
         ...(r.data || r),
+        id: r.id,
       }));
       setRecords(normalized);
     } catch (err) {
@@ -1835,6 +1841,13 @@ export function ViewerProFinal() {
 
   const handleUpdateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable || !modalRecord || modalRecord === 'new') return;
+    if (!modalRecord.id) {
+      // Senza id la richiesta finirebbe su /records/ (slash finale) invece
+      // di /records/{id}: quella rotta supporta solo GET/POST, quindi un
+      // fuorviante 405 invece di un errore chiaro sul vero problema.
+      alert('Impossibile salvare: record senza id valido. Ricarica la pagina e riprova.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/client/apps/${session.appInfo.id}/records/${modalRecord.id}`, {
@@ -1859,6 +1872,10 @@ export function ViewerProFinal() {
 
   const handleDeleteRecord = useCallback(async (recordId: string) => {
     if (!session || !activeTable) return;
+    if (!recordId) {
+      alert('Impossibile eliminare: record senza id valido. Ricarica la pagina e riprova.');
+      return;
+    }
     if (!confirm('Sei sicuro di voler eliminare questo record?')) return;
     try {
       const res = await fetch(`/api/client/apps/${session.appInfo.id}/records/${recordId}`, {
