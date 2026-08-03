@@ -84,6 +84,24 @@ export function findDisplayPriceField<T extends { name?: string; id?: string; ty
 }
 
 /**
+ * Garantisce che una tabella abbia un campo Immagine, senza richiedere che
+ * l'utente lo aggiunga a mano da "Modifica Tabella": ogni nuovo record deve
+ * poter avere una foto propria fin da subito, non solo le tabelle
+ * configurate esplicitamente. Non tocca tabelle che hanno già un campo
+ * immagine (es. nome diverso da 'immagine', scelto dal blueprint AI).
+ */
+export function ensureImageField(table: TableDef): TableDef {
+  if (table.fields.some((f) => f.type === 'image')) return table;
+  return {
+    ...table,
+    fields: [
+      ...table.fields,
+      { name: 'immagine', id: 'immagine', label: 'Immagine', type: 'image' },
+    ],
+  };
+}
+
+/**
  * Individua i campi "identità" di una tabella (immagine, titolo, badge,
  * prezzo, sottotitoli): stessa selezione usata dalla vista a card
  * (RecordCardGrid) e dalla colonna miniatura+nome della vista a tabella

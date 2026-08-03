@@ -27,7 +27,7 @@ import {
   import { useRouter, usePathname } from 'next/navigation';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
   import InstallAppBanner from '@/components/InstallAppBanner';
-  import { getDatiAziendaliTable } from './table-definitions';
+  import { getDatiAziendaliTable, ensureImageField } from './table-definitions';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
   import { tenantThemeVars } from './tenant-theme';
@@ -1294,8 +1294,8 @@ export function ViewerProFinal() {
   // (fallback su adminPanel.entities) questo rendeva `activeTable` una reference
   // sempre diversa, che l'effetto di fetch qui sotto vedeva come "cambiata" ad
   // ogni giro, generando un loop di fetch e lo sfarfallio/tremore delle tabelle.
-  const tables = useMemo(() => (
-    nonEmpty(innerConfig?.schema?.tables)
+  const tables = useMemo(() => {
+    const raw = nonEmpty(innerConfig?.schema?.tables)
       || nonEmpty(config?.schema?.tables)
       || nonEmpty(innerConfig?.blueprint?.schema?.tables)
       || nonEmpty(config?.blueprint?.schema?.tables)
@@ -1307,8 +1307,12 @@ export function ViewerProFinal() {
       || adaptedEntitiesOrUndefined(config?.adminPanel?.entities)
       || adaptedEntitiesOrUndefined(innerConfig?.blueprint?.adminPanel?.entities)
       || adaptedEntitiesOrUndefined(config?.blueprint?.adminPanel?.entities)
-      || []
-  ), [innerConfig, config]);
+      || [];
+    // Ogni nuovo record deve poter avere una foto propria fin da subito,
+    // per qualunque tabella — non solo per quelle a cui l'utente ha
+    // aggiunto a mano un campo Immagine da "Modifica Tabella".
+    return raw.map(ensureImageField);
+  }, [innerConfig, config]);
 
   const activeTable = useMemo(
     () => tables.find((t) => t.name === activeView) || null,

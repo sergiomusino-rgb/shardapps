@@ -61,6 +61,15 @@ export default function DynamicDataTable({
   const placeholderCategory = useMemo(() => getPlaceholderCategoryForTable(table.name), [table.name]);
   const hasImageField = useMemo(() => table.fields.some((f) => f.type === 'image'), [table.fields]);
   const canShowGrid = Boolean(placeholderCategory) || hasImageField;
+  // Ogni tabella ha ormai sempre un campo Immagine (ensureImageField in
+  // table-definitions.ts, aggiunto automaticamente anche a tabelle come
+  // Ordini/Appuntamenti che non sono "vetrina"): hasImageField da solo non
+  // basta più a decidere la vista di default, altrimenti anche quelle
+  // partirebbero a griglia fotografica. Solo le categorie vetrina note
+  // (veicoli, immobili, prodotti, piatti, ...) partono a griglia; le altre
+  // partono a tabella piatta ma con la colonna miniatura (vedi identityActive
+  // sotto) e possono comunque passare a griglia dal toggle.
+  const defaultsToGrid = Boolean(placeholderCategory);
 
   // Anche nella vista a tabella piatta, se la tabella ha una foto (propria o
   // di categoria nota) mostra una colonna "identità" con miniatura + titolo +
@@ -79,13 +88,13 @@ export default function DynamicDataTable({
       : table.fields),
     [table.fields, identityActive, imageField, titleField, identitySubtitleField]
   );
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>(canShowGrid ? 'grid' : 'table');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(defaultsToGrid ? 'grid' : 'table');
   // DynamicDataTable non viene rimontato al cambio tabella (nessuna `key`
   // sul chiamante): senza questo effetto la vista resterebbe quella della
   // tabella precedentemente selezionata.
   React.useEffect(() => {
-    setViewMode(canShowGrid ? 'grid' : 'table');
-  }, [table.name, canShowGrid]);
+    setViewMode(defaultsToGrid ? 'grid' : 'table');
+  }, [table.name, defaultsToGrid]);
 
   // Estrae tutte le chiavi dinamiche dai record correnti
   const dynamicKeys = useMemo(() => extractDynamicKeys(records), [records]);
