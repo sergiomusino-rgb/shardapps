@@ -1289,22 +1289,32 @@ export function ViewerProFinal() {
   // e mantieni tutti i fallback per compatibilità. Ultimo fallback: motore
   // Sito/PWA (Creator v2), le cui tabelle "di lavoro" vivono in
   // adminPanel.entities invece che in schema.tables.
-  const tables = nonEmpty(innerConfig?.schema?.tables)
-    || nonEmpty(config?.schema?.tables)
-    || nonEmpty(innerConfig?.blueprint?.schema?.tables)
-    || nonEmpty(config?.blueprint?.schema?.tables)
-    || nonEmpty(innerConfig?.blueprint?.tables)
-    || nonEmpty(config?.blueprint?.tables)
-    || nonEmpty(innerConfig?.tables)
-    || nonEmpty(config?.tables)
-    || adaptedEntitiesOrUndefined(innerConfig?.adminPanel?.entities)
-    || adaptedEntitiesOrUndefined(config?.adminPanel?.entities)
-    || adaptedEntitiesOrUndefined(innerConfig?.blueprint?.adminPanel?.entities)
-    || adaptedEntitiesOrUndefined(config?.blueprint?.adminPanel?.entities)
-    || [];
+  // Memoizzati: senza useMemo, adaptAdminEntitiesToTables() ricrea array/oggetti
+  // nuovi ad ogni render (anche a parità di contenuto). Per le app Creator v2
+  // (fallback su adminPanel.entities) questo rendeva `activeTable` una reference
+  // sempre diversa, che l'effetto di fetch qui sotto vedeva come "cambiata" ad
+  // ogni giro, generando un loop di fetch e lo sfarfallio/tremore delle tabelle.
+  const tables = useMemo(() => (
+    nonEmpty(innerConfig?.schema?.tables)
+      || nonEmpty(config?.schema?.tables)
+      || nonEmpty(innerConfig?.blueprint?.schema?.tables)
+      || nonEmpty(config?.blueprint?.schema?.tables)
+      || nonEmpty(innerConfig?.blueprint?.tables)
+      || nonEmpty(config?.blueprint?.tables)
+      || nonEmpty(innerConfig?.tables)
+      || nonEmpty(config?.tables)
+      || adaptedEntitiesOrUndefined(innerConfig?.adminPanel?.entities)
+      || adaptedEntitiesOrUndefined(config?.adminPanel?.entities)
+      || adaptedEntitiesOrUndefined(innerConfig?.blueprint?.adminPanel?.entities)
+      || adaptedEntitiesOrUndefined(config?.blueprint?.adminPanel?.entities)
+      || []
+  ), [innerConfig, config]);
 
-  const activeTable = tables.find((t) => t.name === activeView) || null;
-  const datiAziendaliTable = getDatiAziendaliTable(tables);
+  const activeTable = useMemo(
+    () => tables.find((t) => t.name === activeView) || null,
+    [tables, activeView],
+  );
+  const datiAziendaliTable = useMemo(() => getDatiAziendaliTable(tables), [tables]);
 
   const companyName = config?.branding?.company_name
     || innerConfig?.businessConfig?.name
