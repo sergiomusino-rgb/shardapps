@@ -162,7 +162,11 @@ export default function ViewerSidebar({ isMobile, open, onClose, ...content }: V
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-        <SidebarContent {...content} />
+        <SidebarContent
+          {...content}
+          onNavigate={(view) => { content.onNavigate(view); onClose(); }}
+          onOpenSettings={() => { content.onOpenSettings(); onClose(); }}
+        />
       </Sheet>
     );
   }
