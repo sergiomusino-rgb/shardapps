@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { Trash2, Plus, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
+import { Trash2, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 interface App {
@@ -177,19 +176,6 @@ export default function ProjectsPage() {
       <div style={{ maxWidth: '1200px', margin: '0 auto', marginBottom: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h1 style={{ color: '#ffffff', fontSize: '32px', fontWeight: 700, margin: 0 }}>{t('projects_title')}</h1>
-          <Link
-            href="/dashboard/generator"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '12px 24px', borderRadius: '12px', border: 'none',
-              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-              color: '#fff', fontSize: '15px', fontWeight: 600,
-              cursor: 'pointer', textDecoration: 'none',
-            }}
-          >
-            <Plus size={18} />
-            {t('projects_new_app')}
-          </Link>
         </div>
         <p style={{ color: '#94a3b8', fontSize: '15px', margin: 0 }}>
           {t('projects_subtitle')}

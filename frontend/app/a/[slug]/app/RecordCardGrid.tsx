@@ -23,7 +23,11 @@ interface ThemeVars {
 interface RecordCardGridProps {
   table: TableDef;
   records: AppRecord[];
-  category: PlaceholderCategory;
+  /** null per tabelle personalizzate con campo Immagine ma nome non
+   * riconosciuto (getPlaceholderCategoryForTable): niente foto stock
+   * contestuale, si ripiega su un placeholder neutro (vedi
+   * getPlaceholderImageUrl) quando il record non ha una foto propria. */
+  category: PlaceholderCategory | null;
   colors: ThemeVars;
   onEdit: (record: AppRecord) => void;
   onDelete: (recordId: string) => void;

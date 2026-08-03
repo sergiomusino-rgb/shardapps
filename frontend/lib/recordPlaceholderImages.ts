@@ -113,8 +113,31 @@ function stableHash(input: string): number {
   return Math.abs(hash);
 }
 
-/** URL Unsplash HD deterministico per un record, dato l'id e la categoria. */
-export function getPlaceholderImageUrl(category: PlaceholderCategory, recordId: string): string {
+// Placeholder neutro (nessuna foto stock) per tabelle personalizzate con un
+// campo Immagine ma il cui nome non corrisponde a nessuna categoria nota
+// (getPlaceholderCategoryForTable → null): un'icona generica invece di
+// indovinare una foto stock potenzialmente fuori contesto. SVG inline, zero
+// richieste di rete.
+const GENERIC_PLACEHOLDER =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450" viewBox="0 0 600 450">' +
+    '<rect width="600" height="450" fill="#e2e8f0"/>' +
+    '<g fill="none" stroke="#94a3b8" stroke-width="10" stroke-linejoin="round" stroke-linecap="round">' +
+    '<rect x="150" y="125" width="300" height="200" rx="14"/>' +
+    '<circle cx="225" cy="185" r="18"/>' +
+    '<path d="M150 290 L235 220 L300 265 L360 210 L450 290"/>' +
+    '</g>' +
+    '</svg>'
+  );
+
+/**
+ * URL immagine per un record senza foto propria: HD Unsplash deterministico
+ * (stesso id → sempre la stessa foto) per una categoria nota, altrimenti un
+ * placeholder neutro generico.
+ */
+export function getPlaceholderImageUrl(category: PlaceholderCategory | null, recordId: string): string {
+  if (!category) return GENERIC_PLACEHOLDER;
   const photos = CATEGORY_IMAGES[category];
   const photo = photos[stableHash(recordId) % photos.length];
   return `https://images.unsplash.com/photo-${photo}?auto=format&fit=crop&w=600&q=80`;

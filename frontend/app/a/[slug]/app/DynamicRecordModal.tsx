@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import ImageFieldInput from './ImageFieldInput';
 
 interface AppRecord {
   id: string;
@@ -179,6 +180,11 @@ export default function DynamicRecordModal({
                     </select>
                     <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
                   </div>
+                ) : field.type === 'image' ? (
+                  <ImageFieldInput
+                    value={String(formData[fn] ?? '')}
+                    onChange={(url) => handleChange(fn, url)}
+                  />
                 ) : field.type === 'checkbox' ? (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input

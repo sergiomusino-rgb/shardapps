@@ -43,6 +43,7 @@ const FIELD_TYPES = [
   { value: 'email', label: 'Email' },
   { value: 'tel', label: 'Telefono' },
   { value: 'checkbox', label: 'Checkbox' },
+  { value: 'image', label: 'Immagine' },
 ];
 
 export default function EditTableModal({

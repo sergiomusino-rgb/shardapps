@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import ImageFieldInput from './ImageFieldInput';
 
 interface ColumnDef {
   name: string;
@@ -96,6 +97,11 @@ export default function CustomRecordModal({
                 </select>
                 <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-tenant-text-secondary" />
               </div>
+            ) : col.type === 'image' ? (
+              <ImageFieldInput
+                value={String(formData[col.name] ?? '')}
+                onChange={(url) => handleChange(col.name, url)}
+              />
             ) : col.type === 'checkbox' ? (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input

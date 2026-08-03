@@ -52,14 +52,22 @@ export default function DynamicDataTable({
   // Tabelle "vetrina" (veicoli, immobili, prodotti, piatti) partono in vista
   // a griglia fotografica invece della tabella piatta — coerente con la
   // richiesta di rendere le liste più invitanti, con immagini di esempio.
+  // Stessa vista offerta anche a qualunque altra tabella (custom o no) a cui
+  // l'utente abbia aggiunto un campo di tipo 'image': in quel caso non c'è
+  // una categoria nota per le foto stock di riserva (category resta null,
+  // RecordCardGrid ripiega su un placeholder neutro quando manca la foto
+  // reale del record), ma la griglia resta comunque la vista più sensata per
+  // un elenco con immagini proprie.
   const placeholderCategory = useMemo(() => getPlaceholderCategoryForTable(table.name), [table.name]);
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>(placeholderCategory ? 'grid' : 'table');
+  const hasImageField = useMemo(() => table.fields.some((f) => f.type === 'image'), [table.fields]);
+  const canShowGrid = Boolean(placeholderCategory) || hasImageField;
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>(canShowGrid ? 'grid' : 'table');
   // DynamicDataTable non viene rimontato al cambio tabella (nessuna `key`
   // sul chiamante): senza questo effetto la vista resterebbe quella della
   // tabella precedentemente selezionata.
   React.useEffect(() => {
-    setViewMode(placeholderCategory ? 'grid' : 'table');
-  }, [table.name, placeholderCategory]);
+    setViewMode(canShowGrid ? 'grid' : 'table');
+  }, [table.name, canShowGrid]);
 
   // Estrae tutte le chiavi dinamiche dai record correnti
   const dynamicKeys = useMemo(() => extractDynamicKeys(records), [records]);
@@ -101,7 +109,7 @@ export default function DynamicDataTable({
           {table.color && <div className="h-3 w-3 rounded-full" style={{ background: table.color }} />}
         </div>
         <div className="flex gap-2">
-          {placeholderCategory && (
+          {canShowGrid && (
             <div className="flex overflow-hidden rounded-xl border border-tenant-border">
               <button
                 type="button"
@@ -166,8 +174,10 @@ export default function DynamicDataTable({
         )}
       </div>
 
-      {/* Griglia fotografica per tabelle vetrina (veicoli/immobili/prodotti/piatti) */}
-      {viewMode === 'grid' && placeholderCategory ? (
+      {/* Griglia fotografica: tabelle vetrina (veicoli/immobili/prodotti/piatti)
+          o qualunque tabella con un campo di tipo 'image' (category può essere
+          null in quel caso, vedi canShowGrid sopra). */}
+      {viewMode === 'grid' && canShowGrid ? (
         <RecordCardGrid
           table={table}
           records={filteredRecords}
