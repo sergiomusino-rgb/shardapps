@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  Search, Plus, Pencil, Trash2, X, ChevronDown, LayoutGrid, List
+  Search, Plus, Pencil, Trash2, X, ChevronDown, LayoutGrid, List, Sparkles, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -28,6 +28,9 @@ interface DynamicDataTableProps {
   onEdit: (record: AppRecord) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  /** Genera 5 record di esempio per popolare una tabella vuota. Assente = pulsante nascosto. */
+  onGenerateMock?: () => void;
+  generatingMock?: boolean;
   colors: ThemeColors;
   radius: string;
   shadow: string;
@@ -45,7 +48,7 @@ interface ThemeColors {
 
 export default function DynamicDataTable({
   table, records, loading, searchQuery, onSearchChange,
-  onEdit, onDelete, onAddNew, colors,
+  onEdit, onDelete, onAddNew, onGenerateMock, generatingMock, colors,
 }: DynamicDataTableProps) {
   const [showDynamicCols, setShowDynamicCols] = useState(false);
 
@@ -161,6 +164,12 @@ export default function DynamicDataTable({
                 <List size={16} />
               </button>
             </div>
+          )}
+          {onGenerateMock && records.length === 0 && (
+            <Button variant="outline" onClick={onGenerateMock} disabled={generatingMock}>
+              {generatingMock ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              {generatingMock ? 'Generazione...' : 'Genera 5 di esempio'}
+            </Button>
           )}
           <Button onClick={onAddNew}>
             <Plus size={16} /> Nuovo

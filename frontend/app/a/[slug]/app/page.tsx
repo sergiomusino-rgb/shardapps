@@ -28,6 +28,7 @@ import {
   import { usePwaSetup } from '@/hooks/usePwaSetup';
   import InstallAppBanner from '@/components/InstallAppBanner';
   import { getDatiAziendaliTable, ensureImageField, stripReservedIdField } from './table-definitions';
+  import { generateMockRecord } from './mockDataGenerator';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
   import { tenantThemeVars } from './tenant-theme';
@@ -1209,6 +1210,7 @@ export function ViewerProFinal() {
   const [searchQuery, setSearchQuery] = useState('');
   const [modalRecord, setModalRecord] = useState<AppRecord | null | 'new'>(null);
   const [saving, setSaving] = useState(false);
+  const [generatingMock, setGeneratingMock] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // Motore Sito/PWA (Creator v2): rispecchia l'ultimo salvataggio riuscito di
   // businessConfig senza un refetch completo della sessione (sito pubblico e
@@ -1841,6 +1843,38 @@ export function ViewerProFinal() {
     }
   }, [session, activeTable, loadRecords]);
 
+  // Popola una tabella vuota con 5 record plausibili (nomi, indirizzi,
+  // prezzi... generati per euristica sul nome/tipo campo, vedi
+  // mockDataGenerator.ts) invece di lasciarla con caselle vuote — stesso
+  // endpoint di creazione già usato da handleCreateRecord, chiamato 5 volte
+  // in sequenza. Le foto restano vuote: ricadono già sul placeholder
+  // fotografico automatico per categoria.
+  const handleGenerateMockRecords = useCallback(async () => {
+    if (!session || !activeTable) return;
+    setGeneratingMock(true);
+    try {
+      for (let i = 0; i < 5; i++) {
+        const mockData = generateMockRecord(activeTable, i);
+        const res = await fetch(`/api/client/apps/${session.appInfo.id}/records`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${getAuthToken(session)}`,
+          },
+          body: JSON.stringify({ table: activeTable.name, data: mockData }),
+        });
+        const responseData = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(responseData.error || `Errore server: ${res.status}`);
+      }
+      await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+    } catch (err) {
+      console.error('[GenerateMockRecords] Error:', err);
+      alert(err instanceof Error ? err.message : 'Errore durante la generazione dei dati di esempio');
+    } finally {
+      setGeneratingMock(false);
+    }
+  }, [session, activeTable, loadRecords]);
+
   const handleUpdateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable || !modalRecord || modalRecord === 'new') return;
     if (!modalRecord.id) {
@@ -2191,6 +2225,8 @@ export function ViewerProFinal() {
                 onEdit={(r) => setModalRecord(r)}
                 onDelete={handleDeleteRecord}
                 onAddNew={() => setModalRecord('new')}
+                onGenerateMock={handleGenerateMockRecords}
+                generatingMock={generatingMock}
                 colors={colors}
                 radius={layoutCfg.radius}
                 shadow={layoutCfg.shadow}
