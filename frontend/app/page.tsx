@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import LanguageSelector from '@/components/LanguageSelector';
+import FullscreenToggle from '@/components/FullscreenToggle';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { Bot, Video, Share2, Smartphone, CreditCard, ShieldCheck } from 'lucide-react';
 
@@ -100,8 +101,9 @@ export default function Home() {
         <div className="absolute inset-0 bg-[#03060D]/70" />
       </div>
 
-      {/* Selettore lingua (test infrastruttura i18n zero-impatto) */}
-      <div className="fixed top-6 right-6 z-30">
+      {/* Selettore lingua (test infrastruttura i18n zero-impatto) + schermo intero */}
+      <div className="fixed top-6 right-6 z-30 flex items-center gap-2">
+        <FullscreenToggle color="#ffffff" hoverBackground="rgba(255,255,255,0.12)" />
         <LanguageSelector />
       </div>
 
