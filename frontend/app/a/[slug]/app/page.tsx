@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { SYSTEM_TABLES, getTableByName, createEmptyRecord } from './table-definitions';
 import DynamicDataTable from './DynamicDataTable';
 import DynamicRecordModal from './DynamicRecordModal';
 import CreateCustomTableModal from './CreateCustomTableModal';
@@ -9,11 +8,9 @@ import EditTableModal from './EditTableModal';
 import CustomTableRenderer, { type CustomTableDef, type CustomRecord, type ColumnDef } from './CustomTableRenderer';
 import CustomRecordModal from './CustomRecordModal';
 import {
-  LayoutDashboard, Search, Plus, Pencil, Trash2, LogOut,
-  X, ChevronDown, TrendingUp,
-  AlertTriangle, Calendar, CheckCircle, Clock, XCircle,
-  Download, Upload, Download as InstallIcon, MessageSquare, Mail, MessageCircle,
-  FileText, FileSpreadsheet, File as FileIcon, Database, CreditCard,
+  LayoutDashboard, Plus, LogOut,
+  Clock, XCircle,
+  Download, Upload, Database, CreditCard,
 } from 'lucide-react';
   import { QRCodeCanvas } from 'qrcode.react';
   import { useLanguage } from '@/src/lib/LanguageContext';
@@ -197,46 +194,36 @@ interface UserPrefs {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
-
 const LAYOUT_CONFIG = {
   corporate:  { sidebarWidth: 'w-72', padding: 'p-8', radius: 'rounded-2xl', shadow: 'shadow-2xl' },
   modern:     { sidebarWidth: 'w-64', padding: 'p-6', radius: 'rounded-xl',  shadow: 'shadow-xl' },
   compact:    { sidebarWidth: 'w-56', padding: 'p-4', radius: 'rounded-lg',  shadow: 'shadow-lg' },
 };
 
-const SIDEBAR_WIDTHS = {
-  corporate: '288px',
-  modern: '256px',
-  compact: '224px',
-};
-
 // ─── Theme Helpers ────────────────────────────────────────────────────────────
 
-function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
-  const isDark = theme === 'dark';
-  return {
-    bg: isDark ? '#0a0e1a' : '#f8fafc',
-    text: isDark ? '#ffffff' : '#0f172a',
-    textSecondary: isDark ? '#94a3b8' : '#64748b',
-    cardBg: isDark ? '#1e293b' : '#ffffff',
-    cardBgAlt: isDark ? '#162032' : '#f1f5f9',
-    border: isDark ? '#334155' : '#e2e8f0',
-    sidebarBg: isDark ? '#0f172a' : '#1e293b',
-    sidebarText: '#e2e8f0',
-    sidebarHover: isDark ? '#1e293b' : '#334155',
-    inputBg: isDark ? '#0f172a' : '#f1f5f9',
-    inputBorder: isDark ? '#334155' : '#cbd5e1',
-    primary: primaryColor,
-    primaryHover: primaryColor + 'dd',
-    danger: '#ef4444',
-    success: '#22c55e',
-    warning: '#f59e0b',
-  };
+/** Forma della palette passata come prop `colors` a DynamicDataTable, DynamicRecordModal, ecc. */
+interface ThemeVars {
+  bg: string;
+  text: string;
+  textSecondary: string;
+  cardBg: string;
+  cardBgAlt: string;
+  border: string;
+  sidebarBg: string;
+  sidebarText: string;
+  sidebarHover: string;
+  inputBg: string;
+  inputBorder: string;
+  primary: string;
+  primaryHover: string;
+  danger: string;
+  success: string;
+  warning: string;
 }
 
 // Adatta i design token di settore (design.md, da lib/designTokens.ts) alla
-// stessa forma di getThemeVars, così tutti i componenti che già ricevono
+// stessa forma di ThemeVars, così tutti i componenti che già ricevono
 // `colors` come prop (DynamicDataTable, DynamicRecordModal, CustomTableRenderer,
 // CreateCustomTableModal, EditTableModal, CustomRecordModal,
 // SettingsModal, ecc.) ottengono la palette del settore senza alcuna modifica
@@ -820,7 +807,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onLogout: () => void;
   onChangePassword: (oldPw: string, newPw: string) => Promise<void>;
-  colors: ReturnType<typeof getThemeVars>;
+  colors: ThemeVars;
   slug: string;
   authMode?: 'legacy' | 'supabase';
   subscriptionStatus?: SubscriptionStatus | null;
@@ -1113,7 +1100,7 @@ interface LoginScreenProps {
   onLogin: (password: string) => Promise<void>;
 }
 
-function LoginScreen({ slug, appName, logoUrl, primaryColor, onLogin }: LoginScreenProps) {
+function LoginScreen({ appName, logoUrl, primaryColor, onLogin }: LoginScreenProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1272,7 +1259,9 @@ export function ViewerProFinal() {
     } catch { /* ignore */ }
   }, [session, slug, sessionKey]);
   
-  const [customTablesLoading, setCustomTablesLoading] = useState(false);
+  // Solo il setter serve qui: nessuna vista mostra ancora uno stato di
+  // caricamento dedicato per le tabelle personalizzate.
+  const [, setCustomTablesLoading] = useState(false);
   const [customRecords, setCustomRecords] = useState<CustomRecord[]>([]);
   const [customRecordsLoading, setCustomRecordsLoading] = useState(false);
   const [showCreateCustomTable, setShowCreateCustomTable] = useState(false);
@@ -1549,6 +1538,32 @@ export function ViewerProFinal() {
 
   // ─── Load records when table changes ─────────────────────────────────────
 
+  // Fetch + normalizzazione senza toccare `records`/`recordsLoading`: usata
+  // sia da loadRecords (tabella attiva) sia dall'effetto sotto che precarica
+  // clienti/prodotti/ordini per popolare i menu a tendina dei campi di
+  // relazione (DynamicRecordModal → getTargetRecords).
+  const fetchTableRecords = useCallback(async (tableName: string, password: string, appId: string): Promise<AppRecord[]> => {
+    const res = await fetch(`/api/client/apps/${appId}/records?table=${tableName}`, {
+      headers: { Authorization: `Bearer ${password}` },
+    });
+    if (!res.ok) throw new Error('Failed to load records');
+    const data = await res.json();
+    const rawRecords: RawActivityRecord[] = Array.isArray(data) ? data : data.records || data.data || [];
+    // Il backend salva i campi dentro la colonna JSONB "data" (es. { id, data: { ragione_sociale, ... } }).
+    // Appiattiamo qui la struttura in modo che DynamicDataTable/DynamicRecordModal
+    // possano leggere i campi direttamente da record[fieldName] come si aspettano.
+    // L'id reale del record deve sempre vincere su un eventuale campo
+    // omonimo dentro ai dati (es. una tabella con un campo chiamato "id"):
+    // lo spread va PRIMA, altrimenti sovrascrive l'id vero con quello dei
+    // dati e le richieste PUT/DELETE successive partono con un id vuoto,
+    // finendo su /records/ (slash finale) invece di /records/{id} — quella
+    // rotta supporta solo GET/POST, da cui un fuorviante "Errore server: 405".
+    return rawRecords.map((r) => ({
+      ...(r.data || r),
+      id: r.id,
+    }));
+  }, []);
+
   const loadRecords = useCallback(async (tableName: string, password: string, appId: string) => {
     // Le app demo dello Showcase (dashboard/showcase) non hanno righe reali
     // nel backend (vedi getDemoApp in lib/demoApps.ts): saltiamo la chiamata
@@ -1560,25 +1575,7 @@ export function ViewerProFinal() {
     }
     setRecordsLoading(true);
     try {
-      const res = await fetch(`/api/client/apps/${appId}/records?table=${tableName}`, {
-        headers: { Authorization: `Bearer ${password}` },
-      });
-      if (!res.ok) throw new Error('Failed to load records');
-      const data = await res.json();
-      const rawRecords: RawActivityRecord[] = Array.isArray(data) ? data : data.records || data.data || [];
-      // Il backend salva i campi dentro la colonna JSONB "data" (es. { id, data: { ragione_sociale, ... } }).
-      // Appiattiamo qui la struttura in modo che DynamicDataTable/DynamicRecordModal
-      // possano leggere i campi direttamente da record[fieldName] come si aspettano.
-      // L'id reale del record deve sempre vincere su un eventuale campo
-      // omonimo dentro ai dati (es. una tabella con un campo chiamato "id"):
-      // lo spread va PRIMA, altrimenti sovrascrive l'id vero con quello dei
-      // dati e le richieste PUT/DELETE successive partono con un id vuoto,
-      // finendo su /records/ (slash finale) invece di /records/{id} — quella
-      // rotta supporta solo GET/POST, da cui un fuorviante "Errore server: 405".
-      const normalized = rawRecords.map((r) => ({
-        ...(r.data || r),
-        id: r.id,
-      }));
+      const normalized = await fetchTableRecords(tableName, password, appId);
       setRecords(normalized);
     } catch (err) {
       console.error('Error loading records:', err);
@@ -1586,7 +1583,7 @@ export function ViewerProFinal() {
     } finally {
       setRecordsLoading(false);
     }
-  }, []);
+  }, [fetchTableRecords]);
 
 
   useEffect(() => {
@@ -1602,6 +1599,37 @@ export function ViewerProFinal() {
     }
     setSearchQuery('');
   }, [activeTable, session, loadRecords]);
+
+  // ─── Carica i record delle tabelle di relazione (clienti/prodotti/ordini) ─
+  // DynamicRecordModal usa queste liste per popolare i menu a tendina dei
+  // campi di relazione (getTargetRecords, "cliente collegato" ecc.): senza
+  // questo effetto i tre setter non venivano mai chiamati e quei menu
+  // restavano sempre vuoti, indipendentemente dai dati presenti nell'app.
+  useEffect(() => {
+    // Stessa motivazione degli effetti di fetch sopra: sincronizza queste
+    // liste con sessione/tabelle disponibili.
+    if (!session || session.appInfo.id.startsWith('demo-')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setClientiRecords([]);
+      setProdottiRecords([]);
+      setOrdiniRecords([]);
+      return;
+    }
+    const targets: [string, (records: AppRecord[]) => void][] = [
+      ['clienti', setClientiRecords],
+      ['prodotti', setProdottiRecords],
+      ['ordini', setOrdiniRecords],
+    ];
+    for (const [name, setter] of targets) {
+      if (!tables.some((t) => t.name === name)) {
+        setter([]);
+        continue;
+      }
+      fetchTableRecords(name, getAuthToken(session), session.appInfo.id)
+        .then(setter)
+        .catch(() => setter([]));
+    }
+  }, [session, tables, fetchTableRecords]);
 
   // ─── Load custom tables from backend ────────────────────────────────────
 
@@ -2395,7 +2423,7 @@ export function ViewerProFinal() {
 
 interface ImportExportPanelProps {
   view: string;
-  colors: ReturnType<typeof getThemeVars>;
+  colors: ThemeVars;
   radius: string;
   shadow: string;
   appId?: string;
