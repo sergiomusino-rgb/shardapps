@@ -65,6 +65,12 @@ function getSupabase() {
 
 function getPeriodISO(sub, field) {
   const val = sub[field];
+  // Difesa in profondità: se in futuro Stripe sposta di nuovo questi campi
+  // (o li omette in un tipo di evento non ancora coperto da un fallback
+  // esplicito), un valore mancante non deve far crashare l'intero handler
+  // del webhook con RangeError — meglio null (upsert lo scrive com'è) che
+  // un 500 che fa perdere Stripe la consegna dell'intero evento.
+  if (val == null) return null;
   return new Date(val * 1000).toISOString();
 }
 
@@ -375,7 +381,10 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object;
-        const subscriptionId = invoice.subscription;
+        // Dalla ristrutturazione Invoice di Stripe (metà 2025), invoice.subscription
+        // non esiste più: l'id sta sotto invoice.parent.subscription_details.subscription.
+        // Il fallback sul campo legacy resta per compatibilità con payload più vecchi.
+        const subscriptionId = invoice.parent?.subscription_details?.subscription || invoice.subscription;
         if (!subscriptionId) break;
 
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -386,12 +395,15 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           break;
         }
 
+        // Stesso spostamento: current_period_start/end sono ora sul subscription
+        // item, non più sulla subscription stessa (vedi anche routes/stripe.js).
+        const periodSource = subscription.items?.data?.[0] || subscription;
         await upsertSubscription(supabase, tenantId, {
           stripe_customer_id: invoice.customer,
           stripe_subscription_id: subscriptionId,
           status: subscription.status,
-          current_period_start: getPeriodISO(subscription, 'current_period_start'),
-          current_period_end: getPeriodISO(subscription, 'current_period_end'),
+          current_period_start: getPeriodISO(periodSource, 'current_period_start'),
+          current_period_end: getPeriodISO(periodSource, 'current_period_end'),
         });
 
         console.log(`Rinnovo pagato per tenant ${tenantId}`);
@@ -440,12 +452,18 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
         if (!tenantId) break;
 
+        // current_period_start/end non sono più sulla subscription ma sul
+        // subscription item (vedi commento in invoice.payment_succeeded sopra):
+        // senza questo fallback getPeriodISO riceve undefined e
+        // toISOString() lancia RangeError, facendo fallire l'intero webhook
+        // con 500 (bug osservato su evento reale il 2026-08-04).
+        const periodSource = subscription.items?.data?.[0] || subscription;
         await upsertSubscription(supabase, tenantId, {
           stripe_customer_id: subscription.customer,
           stripe_subscription_id: subscriptionId,
           status: subscription.status,
-          current_period_start: getPeriodISO(subscription, 'current_period_start'),
-          current_period_end: getPeriodISO(subscription, 'current_period_end'),
+          current_period_start: getPeriodISO(periodSource, 'current_period_start'),
+          current_period_end: getPeriodISO(periodSource, 'current_period_end'),
         });
 
         console.log(`Subscription aggiornata per tenant ${tenantId}`);
