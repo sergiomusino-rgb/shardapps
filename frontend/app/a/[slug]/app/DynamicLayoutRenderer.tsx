@@ -260,7 +260,7 @@ export default function DynamicLayoutRenderer({
   };
 
   const pageTitle = activeView === 'dashboard'
-    ? companyName
+    ? 'Dashboard'
     : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName);
 
   return (
@@ -914,7 +914,7 @@ function EcommerceLayoutContent({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div>
         <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: '#18181B', fontSize: '28px', fontWeight: 700, margin: 0 }}>
-          {activeView === 'dashboard' ? companyName : activeTable?.labelPlural || 'Prodotti'}
+          {activeView === 'dashboard' ? 'Dashboard' : activeTable?.labelPlural || 'Prodotti'}
         </h1>
       </div>
 
@@ -1419,7 +1419,7 @@ function RecipeLayoutContent({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div>
         <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: '#18181B', fontSize: '28px', fontWeight: 700, margin: 0 }}>
-          {activeView === 'dashboard' ? companyName : activeTable?.labelPlural || 'Ricette'}
+          {activeView === 'dashboard' ? 'Dashboard' : activeTable?.labelPlural || 'Ricette'}
         </h1>
       </div>
 
@@ -1521,7 +1521,7 @@ function RestaurantLayoutContent({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <div>
         <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: '#18181B', fontSize: '28px', fontWeight: 700, margin: 0 }}>
-          {activeView === 'dashboard' ? companyName : activeTable?.labelPlural || 'Menu'}
+          {activeView === 'dashboard' ? 'Dashboard' : activeTable?.labelPlural || 'Menu'}
         </h1>
       </div>
 

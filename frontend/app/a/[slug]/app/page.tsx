@@ -2263,7 +2263,7 @@ export function ViewerProFinal() {
       {/* Main Content */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <AppTopBar
-          title={activeView === 'dashboard' ? companyName : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName)}
+          title={activeView === 'dashboard' ? 'Dashboard' : activeTable?.labelPlural || activeCustomTable?.labelPlural || (activeView.startsWith('import_') || activeView.startsWith('export_') ? getViewLabel(activeView) : companyName)}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
           showMenuToggle={isMobile}
         />

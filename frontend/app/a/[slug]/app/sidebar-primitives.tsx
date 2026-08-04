@@ -92,7 +92,8 @@ export function CollapsibleSection({
 
 export function SidebarLogo({ logoUrl, companyName }: { logoUrl: string; companyName: string }) {
   return (
-    <div className="flex items-center justify-center border-b border-tenant-sidebar-text/10 px-5 py-6">
+    <div className="flex flex-col items-center justify-center gap-2 border-b border-tenant-sidebar-text/10 px-5 py-6 text-center">
+      <span className="max-w-full truncate text-base font-bold text-tenant-sidebar-text">{companyName}</span>
       {logoUrl ? (
         <img src={logoUrl} alt={companyName} className="h-16 w-16 rounded-2xl object-cover" />
       ) : (
