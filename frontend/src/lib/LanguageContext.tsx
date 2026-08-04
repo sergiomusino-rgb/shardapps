@@ -27,7 +27,7 @@ import deDict from '../../messages/simple/de.json';
 import esDict from '../../messages/simple/es.json';
 
 // Lingue supportate
-export const SUPPORTED_LOCALES = ['it', 'en', 'fr', 'de', 'es'] as const;
+export const SUPPORTED_LOCALES = ['en', 'it', 'es', 'fr', 'de'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'it';
