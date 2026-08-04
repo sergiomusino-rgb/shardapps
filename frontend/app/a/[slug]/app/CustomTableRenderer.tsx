@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
-interface ColumnDef {
+export interface ColumnDef {
   name: string;
   label: string;
   type: string;
@@ -16,7 +16,7 @@ interface ColumnDef {
   options: string[];
 }
 
-interface CustomTableDef {
+export interface CustomTableDef {
   id: string;
   name: string;
   label: string;
@@ -27,7 +27,7 @@ interface CustomTableDef {
   _record_id: string;
 }
 
-interface CustomRecord {
+export interface CustomRecord {
   id: string;
   data?: Record<string, unknown>;
   [key: string]: unknown;

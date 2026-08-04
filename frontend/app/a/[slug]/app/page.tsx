@@ -6,7 +6,7 @@ import DynamicDataTable from './DynamicDataTable';
 import DynamicRecordModal from './DynamicRecordModal';
 import CreateCustomTableModal from './CreateCustomTableModal';
 import EditTableModal from './EditTableModal';
-import CustomTableRenderer from './CustomTableRenderer';
+import CustomTableRenderer, { type CustomTableDef, type CustomRecord, type ColumnDef } from './CustomTableRenderer';
 import CustomRecordModal from './CustomRecordModal';
 import {
   LayoutDashboard, Search, Plus, Pencil, Trash2, LogOut,
@@ -377,6 +377,14 @@ interface AgendaItem {
   statusValue: string | null;
 }
 
+/** Forma grezza di un record come lo restituisce l'API records (prima di essere appiattito). */
+interface RawActivityRecord {
+  id: string;
+  created_at?: string;
+  updated_at?: string;
+  data?: Record<string, unknown>;
+}
+
 function formatRelativeTime(iso: string | null): string {
   if (!iso) return '';
   const date = new Date(iso);
@@ -428,7 +436,7 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd }: Dashbo
             });
             if (res.ok) {
               const data = await res.json();
-              const recs: any[] = Array.isArray(data) ? data : data.records || data.data || [];
+              const recs: RawActivityRecord[] = Array.isArray(data) ? data : data.records || data.data || [];
               counts[table.name] = recs.length;
               total += recs.length;
 
@@ -452,7 +460,8 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd }: Dashbo
                   statusValue: statusField ? (r.data?.[fieldName(statusField)] ? String(r.data[fieldName(statusField)]) : null) : null,
                 });
 
-                const dateValue = dateField ? r.data?.[fieldName(dateField)] : null;
+                const dateValueRaw = dateField ? r.data?.[fieldName(dateField)] : null;
+                const dateValue = dateValueRaw != null ? String(dateValueRaw) : null;
                 if (dateValue && !isNaN(new Date(dateValue).getTime())) {
                   agenda.push({
                     tableName: table.name,
@@ -764,9 +773,9 @@ function ColorPicker({ value, onChange }: ColorPickerProps) {
 }
 
 function hexToHsl(hex: string) {
-  let r = parseInt(hex.slice(1, 3), 16) / 255;
-  let g = parseInt(hex.slice(3, 5), 16) / 255;
-  let b = parseInt(hex.slice(5, 7), 16) / 255;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
 
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
@@ -1066,7 +1075,7 @@ function SettingsModal({
       <div className={sectionCard}>
         <div className={sectionTitle}>QR Code Accesso</div>
         <p className="mb-4 text-[13px] text-tenant-text-secondary">
-          Scansiona questo codice QR per accedere all'app da qualsiasi dispositivo
+          Scansiona questo codice QR per accedere all&apos;app da qualsiasi dispositivo
         </p>
         <div className="mb-3 flex justify-center rounded-xl bg-white p-4">
           <QRCodeCanvas
@@ -1226,7 +1235,7 @@ export function ViewerProFinal() {
   const [prodottiRecords, setProdottiRecords] = useState<AppRecord[]>([]);
   const [ordiniRecords, setOrdiniRecords] = useState<AppRecord[]>([]);
   // Tabelle personalizzate create dall'utente
-  const [customTables, setCustomTables] = useState<any[]>([]);
+  const [customTables, setCustomTables] = useState<CustomTableDef[]>([]);
   // Re-login helper to refresh session after table edit
   const refreshSession = useCallback(async () => {
     if (!session) return;
@@ -1264,12 +1273,12 @@ export function ViewerProFinal() {
   }, [session, slug, sessionKey]);
   
   const [customTablesLoading, setCustomTablesLoading] = useState(false);
-  const [customRecords, setCustomRecords] = useState<any[]>([]);
+  const [customRecords, setCustomRecords] = useState<CustomRecord[]>([]);
   const [customRecordsLoading, setCustomRecordsLoading] = useState(false);
   const [showCreateCustomTable, setShowCreateCustomTable] = useState(false);
   const [creatingCustomTable, setCreatingCustomTable] = useState(false);
   const [resettingSchema, setResettingSchema] = useState(false);
-  const [customModalRecord, setCustomModalRecord] = useState<any | null | 'new'>(null);
+  const [customModalRecord, setCustomModalRecord] = useState<CustomRecord | null | 'new'>(null);
   const [customSaving, setCustomSaving] = useState(false);
   // Edit table modal
   const [editTable, setEditTable] = useState<TableDef | null>(null);
@@ -1409,6 +1418,11 @@ export function ViewerProFinal() {
       const saved = localStorage.getItem(prefsKey);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<UserPrefs>;
+        // Sincronizza lo stato React con localStorage (sistema esterno) al
+        // mount: pattern canonico da effetto, non un "derived state" — non
+        // c'è un modo per leggere localStorage durante il render iniziale
+        // senza rischiare un mismatch di idratazione SSR/CSR.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setPrefs((prev) => ({ ...prev, ...parsed }));
       }
     } catch { /* ignore */ }
@@ -1424,6 +1438,10 @@ export function ViewerProFinal() {
     try {
       const saved = localStorage.getItem(prefsKey);
       if (!saved) {
+        // Stessa motivazione dell'effetto sopra: prima lettura da
+        // localStorage, guardata da defaultsSeededRef così scatta una sola
+        // volta — non è un valore derivabile durante il render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setPrefs((prev) => ({
           ...prev,
           primaryColor: designTokens.colors.primary,
@@ -1547,7 +1565,7 @@ export function ViewerProFinal() {
       });
       if (!res.ok) throw new Error('Failed to load records');
       const data = await res.json();
-      const rawRecords: any[] = Array.isArray(data) ? data : data.records || data.data || [];
+      const rawRecords: RawActivityRecord[] = Array.isArray(data) ? data : data.records || data.data || [];
       // Il backend salva i campi dentro la colonna JSONB "data" (es. { id, data: { ragione_sociale, ... } }).
       // Appiattiamo qui la struttura in modo che DynamicDataTable/DynamicRecordModal
       // possano leggere i campi direttamente da record[fieldName] come si aspettano.
@@ -1572,7 +1590,12 @@ export function ViewerProFinal() {
 
 
   useEffect(() => {
+    // Sincronizza i record mostrati con la tabella/sessione attiva
+    // (sistema esterno = backend): il pattern "fetch quando cambia una
+    // dipendenza" è quello documentato da React per gli effetti — qui non
+    // c'è libreria di data-fetching (SWR/React Query) su cui appoggiarsi.
     if (activeTable && session) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
     } else {
       setRecords([]);
@@ -1607,7 +1630,10 @@ export function ViewerProFinal() {
 
   // Load custom tables on session change
   useEffect(() => {
+    // Stessa motivazione dell'effetto di loadRecords sopra: fetch dal
+    // backend quando cambia la sessione.
     if (session) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadCustomTables();
     } else {
       setCustomTables([]);
@@ -1617,7 +1643,7 @@ export function ViewerProFinal() {
   // ─── Load custom records when activeView is a custom table ──────────────
 
   const activeCustomTable = useMemo(() => {
-    return customTables.find((t: any) => `custom_${t.name}` === activeView) || null;
+    return customTables.find((t) => `custom_${t.name}` === activeView) || null;
   }, [customTables, activeView]);
 
   const loadCustomRecords = useCallback(async (tableName: string) => {
@@ -1639,7 +1665,10 @@ export function ViewerProFinal() {
   }, [session]);
 
   useEffect(() => {
+    // Stessa motivazione dell'effetto di loadRecords sopra: fetch dal
+    // backend quando cambia la tabella personalizzata attiva.
     if (activeCustomTable && session) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadCustomRecords(activeCustomTable.name);
     } else {
       setCustomRecords([]);
@@ -1649,7 +1678,7 @@ export function ViewerProFinal() {
 
   // ─── Custom table CRUD handlers ─────────────────────────────────────────
 
-  const handleCreateCustomTable = useCallback(async (tableData: any) => {
+  const handleCreateCustomTable = useCallback(async (tableData: { name: string; label: string; labelPlural: string; columns: ColumnDef[] }) => {
     if (!session) return;
     setCreatingCustomTable(true);
     try {
@@ -1956,7 +1985,14 @@ export function ViewerProFinal() {
 
   // ─── Edit table handler ─────────────────────────────────────────────────
 
-  const handleEditTableSave = useCallback(async (data: { name?: string; label?: string; labelPlural?: string; fields: any[] }) => {
+  const handleEditTableSave = useCallback(async (data: {
+    name?: string; label?: string; labelPlural?: string;
+    // Forma volutamente più permissiva di FieldDef (type: string invece
+    // dell'unione stretta): è la stessa usata da EditTableModal, che accetta
+    // qualunque stringa dal <select> del tipo campo prima della validazione
+    // lato backend.
+    fields: { name: string; label: string; type: string; required?: boolean; options?: string[]; fixed?: boolean }[];
+  }) => {
     if (!session || !editTable) return;
     setEditTableSaving(true);
     try {
