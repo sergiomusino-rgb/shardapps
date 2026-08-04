@@ -110,8 +110,8 @@ export default function Home() {
       <div className="h-full flex flex-col justify-between">
 
         {/* HEADER */}
-        <header className="pt-10 pb-4 flex justify-center shrink-0">
-          <h1 className="text-6xl md:text-8xl font-black tracking-tighter text-white">
+        <header className="pt-16 pb-4 flex justify-center shrink-0">
+          <h1 className="text-7xl md:text-9xl font-black tracking-tighter text-white">
             ZEUS<span className="text-indigo-500">X</span>
           </h1>
         </header>
