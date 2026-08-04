@@ -9,6 +9,9 @@ import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getTenantColors } from '../tenantBranding';
 import { PDF_LAYOUTS, downloadInvoicePdf, type PdfLayoutMeta, type PdfInvoiceInput } from '../pdfTemplates';
+import { useAppInfo } from '../../AppInfoContext';
+import PaymentCTA from '@/components/PaymentCTA';
+import { getPaymentSettings } from '@/src/lib/payment-settings';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
@@ -54,6 +57,8 @@ export default function FatturaViewPage() {
   const router = useRouter();
   const slug = params.slug as string;
   const fatturaId = params.id as string;
+  const { config } = useAppInfo();
+  const paymentSettings = getPaymentSettings(config);
 
   const [{ colors: tenantColors, style: tenantStyle }] = useState(() => getTenantColors(slug));
 
@@ -263,6 +268,18 @@ export default function FatturaViewPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Pagamento online (modulo opzionale Plug & Play): nessun pulsante
+            se il tenant non ha attivato/configurato il proprio Stripe
+            Payment Link, o se il documento risulta già saldato/annullato. */}
+        {fattura.stato !== 'pagata' && fattura.stato !== 'annullata' && (
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Pagamento</CardTitle></CardHeader>
+            <CardContent className="pt-0">
+              <PaymentCTA paymentSettings={paymentSettings} amountLabel={formatCurrency(totaleGenerale)} />
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader><CardTitle>Scarica PDF</CardTitle></CardHeader>

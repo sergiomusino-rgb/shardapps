@@ -1646,6 +1646,12 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
   const [logoUrl, setLogoUrl] = useState('');
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  // Modulo pagamenti online opzionale Plug & Play (stesso concetto di
+  // apps.config.paymentSettings per le app generate, qui su colonne dirette
+  // di tenants — vedi 20260809000000_tenants_payment_settings.sql).
+  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
+  const [stripePaymentLink, setStripePaymentLink] = useState('');
+  const [stripePublicKey, setStripePublicKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1653,21 +1659,28 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
 
   useEffect(() => {
     (async () => {
-      // Cast necessario: 'logo_url' (migrazione 20260808000010) non è
-      // ancora presente nel tipo Database generato.
+      // Cast necessario: 'logo_url'/'payments_enabled'/'stripe_payment_link'/
+      // 'stripe_public_key' (migrazioni 20260808000010 e 20260809000000) non
+      // sono ancora presenti nel tipo Database generato.
       const { data } = await (supabase as any)
         .from('tenants')
-        .select('name, vat_number, address, city, phone, logo_url')
+        .select('name, vat_number, address, city, phone, logo_url, payments_enabled, stripe_payment_link, stripe_public_key')
         .eq('id', tenantId)
         .single();
       if (data) {
-        const tenant = data as { name?: string; vat_number?: string; address?: string; city?: string; phone?: string; logo_url?: string };
+        const tenant = data as {
+          name?: string; vat_number?: string; address?: string; city?: string; phone?: string; logo_url?: string;
+          payments_enabled?: boolean; stripe_payment_link?: string; stripe_public_key?: string;
+        };
         setBusinessName(tenant.name || '');
         setVatNumber(tenant.vat_number || '');
         setAddress(tenant.address || '');
         setCity(tenant.city || '');
         setPhone(tenant.phone || '');
         setLogoUrl(tenant.logo_url || '');
+        setPaymentsEnabled(!!tenant.payments_enabled);
+        setStripePaymentLink(tenant.stripe_payment_link || '');
+        setStripePublicKey(tenant.stripe_public_key || '');
       }
       setLoading(false);
     })();
@@ -1733,6 +1746,9 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
         phone: phone.trim() || undefined,
         logoUrl: logoUrl || undefined,
         seedDemoCatalog: false,
+        paymentsEnabled,
+        stripePaymentLink: stripePaymentLink.trim(),
+        stripePublicKey: stripePublicKey.trim(),
         accessToken: session.access_token,
       });
       if (!result.success) {
@@ -1850,6 +1866,63 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
           onChange={(e) => setPhone(e.target.value)}
           className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
         />
+      </div>
+
+      {/* Pagamenti Online (modulo opzionale Plug & Play): stesso concetto
+          già introdotto per le app generate (PaymentSettings.tsx), qui
+          salvato insieme al resto dei dati aziendali col pulsante unico del
+          form invece di un salvataggio a sé — coerente con questa scheda. */}
+      <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <CreditCard className="w-4 h-4 text-amber-500 shrink-0" />
+            <div>
+              <div className="text-sm font-semibold text-white">{t('comandi_dashboard_payments_toggle_label')}</div>
+              <p className="mt-0.5 text-xs text-gray-500">{t('comandi_dashboard_payments_toggle_desc')}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={paymentsEnabled}
+            onClick={() => setPaymentsEnabled((prev) => !prev)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${paymentsEnabled ? 'bg-amber-600' : 'bg-gray-700'}`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${paymentsEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`}
+            />
+          </button>
+        </div>
+
+        {paymentsEnabled && (
+          <div className="mt-4 flex flex-col gap-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                {t('comandi_dashboard_payments_link_label')}
+              </label>
+              <input
+                type="url"
+                value={stripePaymentLink}
+                onChange={(e) => setStripePaymentLink(e.target.value)}
+                placeholder="https://buy.stripe.com/xxxxxxxx"
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+              />
+              <p className="mt-1 text-xs text-gray-500">{t('comandi_dashboard_payments_link_help')}</p>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500">
+                {t('comandi_dashboard_payments_pubkey_label')}
+              </label>
+              <input
+                value={stripePublicKey}
+                onChange={(e) => setStripePublicKey(e.target.value)}
+                placeholder="pk_live_..."
+                className="w-full rounded-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white"
+              />
+              <p className="mt-1 text-xs text-gray-500">{t('comandi_dashboard_payments_pubkey_help')}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <button

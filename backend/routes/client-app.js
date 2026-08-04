@@ -522,6 +522,84 @@ router.put('/client/apps/:appId/business-config', clientAuthMiddleware, async (r
   }
 });
 
+// Whitelist + validazione dei campi di paymentSettings (modulo pagamenti
+// opzionale Plug & Play): stessa difesa di sanitizeBusinessConfigPatch qui
+// sopra, non fidarsi del body. Nessuna secret key qui: solo un Payment Link
+// pubblico e, se serve in futuro a un checkout embedded, la publishable key
+// (pk_...) — mai la secret key di Stripe, che resta esclusivamente nel
+// dashboard Stripe del tenant finale e non transita mai da ZeusX.
+function sanitizePaymentSettingsPatch(body) {
+  const patch = {};
+  if (typeof body.enabled === 'boolean') {
+    patch.enabled = body.enabled;
+  }
+  if (body.stripeLink !== undefined) {
+    const link = String(body.stripeLink || '').trim();
+    if (link && !/^https:\/\/(buy\.stripe\.com|checkout\.stripe\.com)\//.test(link)) {
+      throw Object.assign(new Error('Il link deve essere un Payment Link Stripe valido (https://buy.stripe.com/...)'), { status: 400 });
+    }
+    patch.stripeLink = link;
+  }
+  if (body.stripePublicKey !== undefined) {
+    const key = String(body.stripePublicKey || '').trim();
+    if (key && !/^pk_(test|live)_/.test(key)) {
+      throw Object.assign(new Error('La chiave pubblica Stripe deve iniziare con pk_test_ o pk_live_'), { status: 400 });
+    }
+    patch.stripePublicKey = key;
+  }
+  return patch;
+}
+
+// PUT /client/apps/:appId/payment-settings - Attiva/configura i pagamenti
+// online opzionali del tenant finale (config.paymentSettings). Modulo
+// "Plug & Play": ogni app collega il proprio Payment Link Stripe, ZeusX non
+// vede né gestisce mai le transazioni. Stesso pattern read-merge-write di
+// business-config qui sopra, così sito pubblico e gestionale restano
+// sincronizzati sullo stesso apps.config.
+router.put('/client/apps/:appId/payment-settings', clientAuthMiddleware, async (req, res) => {
+  let patch;
+  try {
+    patch = sanitizePaymentSettingsPatch(req.body || {});
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: 'Nessun campo valido da aggiornare' });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data: app, error: appError } = await supabase
+      .from('apps')
+      .select('config')
+      .eq('id', req.appId)
+      .single();
+
+    if (appError || !app) {
+      return res.status(404).json({ error: 'App non trovata' });
+    }
+
+    const config = app.config || {};
+    const paymentSettings = { ...(config.paymentSettings || {}), ...patch };
+    const updatedConfig = { ...config, paymentSettings };
+
+    const { error: updateError } = await supabase
+      .from('apps')
+      .update({ config: updatedConfig, updated_at: new Date().toISOString() })
+      .eq('id', req.appId);
+
+    if (updateError) {
+      console.error('PUT payment-settings error:', updateError);
+      return res.status(500).json({ error: updateError.message });
+    }
+
+    res.json({ success: true, paymentSettings });
+  } catch (err) {
+    console.error('PUT payment-settings exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
 // Ricava l'elenco tabelle/entità dell'app, a prescindere dal motore che le ha
 // generate (vecchio motore tabellare blueprint-schema.ts o Creator v2
 // site-schema.ts): stessa normalizzazione già usata lato frontend in

@@ -18,6 +18,21 @@ const SetupTenantInputSchema = z.object({
   phone: z.string().trim().optional(),
   logoUrl: z.string().trim().optional(),
   seedDemoCatalog: z.boolean().optional().default(false),
+  // Modulo pagamenti online opzionale Plug & Play (stesso concetto di
+  // apps.config.paymentSettings per le app generate, qui su colonne dirette
+  // di tenants — vedi 20260809000000_tenants_payment_settings.sql). Nessuna
+  // secret key: solo Payment Link pubblico ed eventuale publishable key.
+  paymentsEnabled: z.boolean().optional(),
+  stripePaymentLink: z.string().trim()
+    .refine((v) => v === '' || /^https:\/\/(buy\.stripe\.com|checkout\.stripe\.com)\//.test(v), {
+      message: 'Il link deve essere un Payment Link Stripe valido (https://buy.stripe.com/...)',
+    })
+    .optional(),
+  stripePublicKey: z.string().trim()
+    .refine((v) => v === '' || /^pk_(test|live)_/.test(v), {
+      message: 'La chiave pubblica Stripe deve iniziare con pk_test_ o pk_live_',
+    })
+    .optional(),
   // Stesso principio delle altre Server Action del modulo Comandi
   // (extractVoiceOrderAction/confirmOrderAction): l'app non usa
   // createBrowserClient di @supabase/ssr, la sessione vive solo in
@@ -70,7 +85,10 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     if (!validation.success) {
       return { success: false, error: validation.error.issues[0]?.message || 'Dati non validi' };
     }
-    const { businessName, vatNumber, address, city, phone, logoUrl, seedDemoCatalog, accessToken } = validation.data;
+    const {
+      businessName, vatNumber, address, city, phone, logoUrl, seedDemoCatalog,
+      paymentsEnabled, stripePaymentLink, stripePublicKey, accessToken,
+    } = validation.data;
 
     const supabaseAuth = createClient<Database>(supabaseUrl, supabaseAnonKey);
     const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
@@ -94,6 +112,9 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
       city: city || null,
       phone: phone || null,
       ...(logoUrl !== undefined ? { logo_url: logoUrl || null } : {}),
+      ...(paymentsEnabled !== undefined ? { payments_enabled: paymentsEnabled } : {}),
+      ...(stripePaymentLink !== undefined ? { stripe_payment_link: stripePaymentLink || null } : {}),
+      ...(stripePublicKey !== undefined ? { stripe_public_key: stripePublicKey || null } : {}),
     };
 
     // Un tenant può già esistere per questo utente creato da altri flussi

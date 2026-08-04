@@ -49,6 +49,8 @@ type TableDef = TableDefType;
 import type { AdminEntity, BusinessConfig } from '@/src/lib/site-schema';
 import BusinessConfigForm from './BusinessConfigSettings';
 import GestionaleChatAssistant from './GestionaleChatAssistant';
+import PaymentSettings from './PaymentSettings';
+import { getPaymentSettings, type PaymentSettings as PaymentSettingsType } from '@/src/lib/payment-settings';
 
 // Helper per ottenere il nome del campo (supporta sia name che id)
 function fieldName(f: FieldDef): string {
@@ -824,12 +826,18 @@ interface SettingsModalProps {
   savingBusinessConfig?: boolean;
   businessConfigError?: string | null;
   businessConfigSaved?: boolean;
+  // Modulo pagamenti opzionale Plug & Play: appId + token bastano, il
+  // componente gestisce da sé fetch/salvataggio (vedi PaymentSettings.tsx).
+  appId: string;
+  authToken: string;
+  paymentSettings: PaymentSettingsType;
 }
 
 function SettingsModal({
   prefs, onPrefsChange, onClose, onLogout, onChangePassword, colors, slug, authMode,
   subscriptionStatus, trialEndsAt, subscriptionPrice, onResetSchema, resettingSchema, customTableCount,
   businessConfig, onSaveBusinessConfig, savingBusinessConfig, businessConfigError, businessConfigSaved,
+  appId, authToken, paymentSettings,
 }: SettingsModalProps) {
   const isSupabaseAuth = authMode === 'supabase';
   const [oldPassword, setOldPassword] = useState('');
@@ -967,6 +975,12 @@ function SettingsModal({
           />
         </div>
       )}
+
+      {/* Pagamenti Online (modulo opzionale Plug & Play): ZeusX non vede né
+          gestisce le transazioni, solo il Payment Link del tenant. */}
+      <div className={sectionCard}>
+        <PaymentSettings appId={appId} authToken={authToken} initial={paymentSettings} />
+      </div>
 
       {/* Password Section */}
       <div className={sectionCard}>
@@ -1346,6 +1360,11 @@ export function ViewerProFinal() {
     || config?.blueprint?.businessConfig
     || null;
   const effectiveBusinessConfig = businessConfigOverride || rawBusinessConfig;
+
+  // Modulo pagamenti opzionale Plug & Play (apps.config.paymentSettings):
+  // nessun fallback su innerConfig/blueprint, è una chiave nuova e piatta,
+  // non legata al motore Sito/PWA come businessConfig sopra.
+  const paymentSettings = getPaymentSettings(config);
 
   const handleSaveBusinessConfig = async (next: BusinessConfig) => {
     if (!session) return;
@@ -2189,6 +2208,9 @@ export function ViewerProFinal() {
             savingBusinessConfig={savingBusinessConfig}
             businessConfigError={businessConfigError}
             businessConfigSaved={businessConfigSaved}
+            appId={session.appInfo.id}
+            authToken={getAuthToken(session)}
+            paymentSettings={paymentSettings}
           />
         )}
 
@@ -2364,6 +2386,9 @@ export function ViewerProFinal() {
           savingBusinessConfig={savingBusinessConfig}
           businessConfigError={businessConfigError}
           businessConfigSaved={businessConfigSaved}
+          appId={session.appInfo.id}
+          authToken={getAuthToken(session)}
+          paymentSettings={paymentSettings}
         />
       )}
 
