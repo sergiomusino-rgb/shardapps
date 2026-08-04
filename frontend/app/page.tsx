@@ -130,7 +130,7 @@ export default function Home() {
             {/* HERO CENTRALE */}
             <section className="px-2 text-center flex flex-col items-center gap-4">
 
-              <h2 className="text-4xl md:text-7xl font-black tracking-tight max-w-4xl leading-tight">
+              <h2 className="text-3xl md:text-5xl font-black tracking-tight max-w-4xl leading-tight">
                 {t('landing_hero_title')}
               </h2>
 
