@@ -95,7 +95,7 @@ export default function CreatorPage() {
       {/* Wizard o Editor */}
       {!schema ? (
         <div className="flex flex-1 items-center justify-center py-10">
-          <ProjectWizard onGenerate={handleGenerate} isGenerating={isGenerating} />
+          <ProjectWizard onGenerate={handleGenerate} isGenerating={isGenerating} lang={locale} />
         </div>
       ) : (
         <div className="h-[calc(100vh-180px)] min-h-[560px]">

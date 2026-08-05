@@ -8,8 +8,9 @@
 // riusabile ovunque serva avviare una generazione.
 
 import { useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Mic, MicOff, Sparkles } from 'lucide-react';
 import { PROJECT_TYPES, type ProjectType } from '@/src/lib/site-schema';
+import { useVoiceInput } from '@/src/lib/useVoiceInput';
 
 export interface ProjectWizardLabels {
   title: string;
@@ -36,15 +37,20 @@ export default function ProjectWizard({
   isGenerating = false,
   labels,
   defaultProjectType = 'landing',
+  lang = 'it',
 }: {
   onGenerate: (projectType: ProjectType, prompt: string) => void;
   isGenerating?: boolean;
   labels?: Partial<ProjectWizardLabels>;
   defaultProjectType?: ProjectType;
+  lang?: string;
 }) {
   const [projectType, setProjectType] = useState<ProjectType>(defaultProjectType);
   const [prompt, setPrompt] = useState('');
   const t = { ...DEFAULT_LABELS, ...labels };
+
+  // Comandi AI: dettatura vocale del prompt, stesso pattern di Generator AI.
+  const { isListening, isSupported: isVoiceSupported, toggleListening } = useVoiceInput(lang, setPrompt);
 
   const canGenerate = prompt.trim().length > 0 && !isGenerating;
 
@@ -97,18 +103,35 @@ export default function ProjectWizard({
           <label htmlFor="zeusx-project-prompt" className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3 block">
             {t.promptLabel}
           </label>
-          <textarea
-            id="zeusx-project-prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={t.promptPlaceholder}
-            maxLength={4000}
-            disabled={isGenerating}
-            className="w-full h-40 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-indigo-500 focus:outline-none resize-none p-4 disabled:opacity-60"
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSubmit();
-            }}
-          />
+          <div className="relative">
+            <textarea
+              id="zeusx-project-prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={t.promptPlaceholder}
+              maxLength={4000}
+              disabled={isGenerating}
+              className="w-full h-40 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-indigo-500 focus:outline-none resize-none p-4 pr-12 disabled:opacity-60"
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSubmit();
+              }}
+            />
+            {isVoiceSupported && (
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={isGenerating}
+                className={`absolute right-3 top-3 p-2 rounded-lg transition-colors disabled:opacity-40 ${
+                  isListening
+                    ? 'bg-red-500/20 text-red-400 animate-pulse'
+                    : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white'
+                }`}
+                title={isListening ? 'Stop listening' : 'Speak to enter text'}
+              >
+                {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+            )}
+          </div>
           <div className="mt-1 text-right text-xs text-gray-500">{prompt.length}/4000</div>
         </div>
 

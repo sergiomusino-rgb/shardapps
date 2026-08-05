@@ -13,10 +13,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Send, Loader2, Sparkles, AlertCircle,
-  Rocket, CheckCircle2, Copy, X, ExternalLink,
+  Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff,
 } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import SitePreview from './SitePreview';
+import { useVoiceInput } from '@/src/lib/useVoiceInput';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 interface ChatMessage {
@@ -164,6 +165,10 @@ export default function AppEditorView({
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Comandi AI: dettatura vocale del messaggio in chat, stesso pattern di
+  // Generator AI e del prompt iniziale in ProjectWizard.
+  const { isListening, isSupported: isVoiceSupported, toggleListening } = useVoiceInput(lang, setInput);
 
   // Traccia l'app pubblicata in questa sessione di editing: se valorizzato,
   // il pulsante diventa "Salva Modifiche" e aggiorna in-place invece di
@@ -360,20 +365,37 @@ export default function AppEditorView({
           </div>
 
           <div className="flex items-end gap-2 border-t border-gray-800 p-3">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder={t.inputPlaceholder}
-              rows={2}
-              disabled={isSending}
-              className="flex-1 resize-none rounded-lg border border-gray-700 bg-gray-800 p-2.5 text-xs text-white placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none disabled:opacity-60"
-            />
+            <div className="relative flex-1">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={t.inputPlaceholder}
+                rows={2}
+                disabled={isSending}
+                className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800 p-2.5 pr-9 text-xs text-white placeholder:text-gray-500 focus:border-indigo-500 focus:outline-none disabled:opacity-60"
+              />
+              {isVoiceSupported && (
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  disabled={isSending}
+                  className={`absolute right-1.5 top-1.5 rounded-md p-1.5 transition-colors disabled:opacity-40 ${
+                    isListening
+                      ? 'bg-red-500/20 text-red-400 animate-pulse'
+                      : 'text-gray-500 hover:bg-gray-700 hover:text-white'
+                  }`}
+                  title={isListening ? 'Stop listening' : 'Speak to enter text'}
+                >
+                  {isListening ? <MicOff size={14} /> : <Mic size={14} />}
+                </button>
+              )}
+            </div>
             <button
               onClick={handleSend}
               disabled={!input.trim() || isSending}
