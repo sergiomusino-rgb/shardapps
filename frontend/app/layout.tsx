@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ZeusX - Generazione Gestionali AI",
+  title: "ShardApps - Generazione Gestionali AI",
   description: "Crea gestionali personalizzati con intelligenza artificiale per il tuo business",
   // manifest.json esisteva in public/ ma non era mai collegato: il sito
   // principale (dashboard/pricing/login) non risultava installabile come
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'ZeusX',
+    title: 'ShardApps',
   },
 };
 

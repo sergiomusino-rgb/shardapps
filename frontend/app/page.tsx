@@ -112,7 +112,7 @@ export default function Home() {
         {/* HEADER */}
         <header className="pt-16 pb-4 flex justify-center shrink-0">
           <h1 className="text-7xl md:text-9xl font-black tracking-tighter text-white">
-            ZEUS<span className="text-indigo-500">X</span>
+            SHARD<span className="text-indigo-500">APPS</span>
           </h1>
         </header>
 
@@ -170,7 +170,7 @@ export default function Home() {
       <div className="fixed top-6 left-6 z-50 flex flex-col items-center gap-2 pointer-events-none">
         <img
           src="/favicon.png"
-          alt="ZeusX"
+          alt="ShardApps"
           className="h-14 w-14 rounded-full object-cover"
         />
         <p className="text-xs font-semibold text-slate-400">{t('sidebar_by')}</p>
