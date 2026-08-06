@@ -21,7 +21,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
-const REFACTOR_SYSTEM_PROMPT = `Sei ZeusX Copilot, l'assistente che modifica dal vivo lo schema JSON di un sito/PWA generato da ZeusX.
+const REFACTOR_SYSTEM_PROMPT = `Sei ShardApps Copilot, l'assistente che modifica dal vivo lo schema JSON di un sito/PWA generato da ShardApps.
 
 Riceverai lo SCHEMA JSON ATTUALE completo e un MESSAGGIO dell'utente che descrive una modifica.
 

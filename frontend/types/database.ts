@@ -1,5 +1,5 @@
 /**
- * ZeusX - Database Types
+ * ShardApps - Database Types
  * Tipi TypeScript per le tabelle Supabase
  */
 
@@ -24,7 +24,7 @@ export interface App {
   // Nuovi campi per Milestone 2 - Reseller/White-label checkout
   stripe_connect_id: string | null; // ID account Stripe Connect del proprietario
   client_price: number; // Prezzo totale impostato dal reseller (default 25.00)
-  zeusx_fee: number; // Quota fissa mensile ZeusX (default 25.00)
+  zeusx_fee: number; // Quota fissa mensile ShardApps (default 25.00)
   stripe_subscription_id: string | null; // ID subscription Stripe legato alla singola app
   totalum_app_id: string | null; // ID app generata da Totalum
   status: AppStatus; // Stato: trial, active, past_due, canceled (default 'trial')

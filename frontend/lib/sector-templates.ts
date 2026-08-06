@@ -1,4 +1,4 @@
-// Sector templates for ZeusX PRO
+// Sector templates for ShardApps PRO
 // Core modules + sector-specific modules
 
 export interface FieldTemplate {

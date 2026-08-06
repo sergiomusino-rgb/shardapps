@@ -65,7 +65,7 @@ function buildSystemPrompt(userPrompt: string, appName?: string, sector?: string
   const inferredAppName = appName || 'Gestionale';
   const languageName = LANG_NAMES[(lang || 'it').toLowerCase()] || LANG_NAMES.it;
 
-  return `Sei l'architetto software di ZeusX. Devi produrre SOLO un oggetto JSON valido, senza testo aggiuntivo, senza markdown, senza spiegazioni.
+  return `Sei l'architetto software di ShardApps. Devi produrre SOLO un oggetto JSON valido, senza testo aggiuntivo, senza markdown, senza spiegazioni.
 
 Il JSON rappresenta un gestionale SaaS per il settore: "${inferredSector}".
 ${userPrompt ? `Richiesta dell'utente: ${userPrompt}` : ''}

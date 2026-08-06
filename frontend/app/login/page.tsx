@@ -299,7 +299,7 @@ function LoginForm() {
 
         {/* Footer */}
         <p className="text-center text-xs text-slate-600">
-          © {new Date().getFullYear()} ZeusX by MUSINO. Tutti i diritti riservati.
+          © {new Date().getFullYear()} ShardApps by MUSINO. Tutti i diritti riservati.
         </p>
       </div>
     </div>

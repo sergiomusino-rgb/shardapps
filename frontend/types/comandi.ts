@@ -1,5 +1,5 @@
 /**
- * ZeusX - Motore "Comandi"
+ * ShardApps - Motore "Comandi"
  * Tipi TypeScript per le tabelle Supabase e schema Zod per l'estrazione
  * strutturata degli ordini vocali via LLM.
  */

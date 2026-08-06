@@ -976,7 +976,7 @@ function SettingsModal({
         </div>
       )}
 
-      {/* Pagamenti Online (modulo opzionale Plug & Play): ZeusX non vede né
+      {/* Pagamenti Online (modulo opzionale Plug & Play): ShardApps non vede né
           gestisce le transazioni, solo il Payment Link del tenant. */}
       <div className={sectionCard}>
         <PaymentSettings appId={appId} authToken={authToken} initial={paymentSettings} />

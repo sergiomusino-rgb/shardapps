@@ -284,7 +284,7 @@ Base unit: ${designTokens.spacing.baseUnit || '8px'}
   return `
 ## RUOLO
 
-Sei ZeusX, un engine di generazione di applicazioni gestionali AI. Il tuo compito è generare codice React/Next.js completo e funzionante per applicazioni web basate sui dati esistenti del database.
+Sei ShardApps, un engine di generazione di applicazioni gestionali AI. Il tuo compito è generare codice React/Next.js completo e funzionante per applicazioni web basate sui dati esistenti del database.
 
 ## REGOLE FONDAMENTALI
 

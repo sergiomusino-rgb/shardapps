@@ -20,7 +20,7 @@ type AuthMode = 'login' | 'register';
 // Un utente senza riga in tenant_members non ha ancora completato lo Step 2
 // (dati aziendali): lo mandiamo in onboarding, dove viene creato anche il
 // tenant. Un utente con tenant ma senza istanza Comandi ancora provisionata
-// (es. tenant creato da un altro flusso ZeusX) torna anch'esso in onboarding,
+// (es. tenant creato da un altro flusso ShardApps) torna anch'esso in onboarding,
 // che ora provisiona pure l'istanza (vedi comandi/setup/page.tsx).
 async function resolvePostAuthDestination(userId: string): Promise<string> {
   try {

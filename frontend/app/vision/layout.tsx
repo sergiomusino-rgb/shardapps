@@ -1,6 +1,6 @@
 // Riusa esattamente la stessa shell (sidebar, header con orologio e
 // selettore lingua, AuthGuard) di app/dashboard/layout.tsx: Vision AI deve
-// avere lo stesso "chrome" di tutte le altre pagine ZeusX invece di un
+// avere lo stesso "chrome" di tutte le altre pagine ShardApps invece di un
 // layout standalone a sé stante.
 export const dynamic = 'force-dynamic';
 

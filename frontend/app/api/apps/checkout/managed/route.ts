@@ -39,7 +39,7 @@ function getSupabaseClients() {
   return { authClient, dbClient };
 }
 
-// ZeusX fee fissa in centesimi (25€)
+// ShardApps fee fissa in centesimi (25€)
 const ZEUSX_FEE_CENTS = 2500;
 
 /**
@@ -51,7 +51,7 @@ const ZEUSX_FEE_CENTS = 2500;
  * 2. Recupera il prezzo dell'abbonamento (client_subscription_price) e i dettagli del reseller
  * 3. Crea una Checkout Session Stripe con managed_payments[enabled]=true
  * 4. L'importo totale = client_subscription_price
- *    - ZeusX trattiene 25€ (Application Fee)
+ *    - ShardApps trattiene 25€ (Application Fee)
  *    - Il resto viene registrato come credito per il reseller (payout successivo)
  * 5. Redirect a success_url o cancel_url
  */
@@ -142,11 +142,11 @@ export async function POST(req: NextRequest) {
     const zeusxFeeCents = Math.round(zeusxFee * 100);
     const resellerAmountCents = clientPriceCents - zeusxFeeCents;
 
-    // Verifica che il prezzo sia sufficiente a coprire la fee ZeusX
+    // Verifica che il prezzo sia sufficiente a coprire la fee ShardApps
     if (resellerAmountCents <= 0) {
       return NextResponse.json({ 
         error: 'Prezzo non valido', 
-        message: `Il prezzo del cliente (${clientPrice}€) deve essere maggiore della fee ZeusX (${zeusxFee}€)` 
+        message: `Il prezzo del cliente (${clientPrice}€) deve essere maggiore della fee ShardApps (${zeusxFee}€)` 
       }, { status: 400 });
     }
 
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
 
     // Crea la sessione di checkout con Managed Payments (Merchant of Record)
     // managed_payments[enabled]=true abilita la modalità MoR:
-    // - La piattaforma (ZeusX) è il Merchant of Record
+    // - La piattaforma (ShardApps) è il Merchant of Record
     // - I fondi vengono raccolti direttamente da Stripe sulla piattaforma
     // - La ripartizione viene gestita a livello di database per i payout successivi
     const session = await stripe.checkout.sessions.create({

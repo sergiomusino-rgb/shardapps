@@ -105,17 +105,17 @@ export function SidebarLogo({ logoUrl, companyName }: { logoUrl: string; company
   );
 }
 
-// Stesso logo/layout del footer sidebar di ZeusX (components/layout/
+// Stesso logo/layout del footer sidebar di ShardApps (components/layout/
 // Sidebar.tsx) e di Comand AI (components/comandi/ComandiSidebar.tsx):
 // stesso file (/favicon.png), stessa forma (cerchio, non rettangolo
 // arrotondato), stessa disposizione verticale — un solo aspetto per il
-// branding "ZeusX by MUSINO" in ogni app, generata o no.
+// branding "ShardApps by MUSINO" in ogni app, generata o no.
 export function SidebarBrandFooter() {
   return (
     <div className="flex flex-col items-center gap-2 px-5 py-3">
       <Image
         src="/favicon.png"
-        alt="ZeusX"
+        alt="ShardApps"
         width={56}
         height={56}
         className="h-14 w-14 shrink-0 rounded-full object-cover"

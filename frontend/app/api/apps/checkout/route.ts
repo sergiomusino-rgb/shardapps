@@ -39,7 +39,7 @@ function getSupabaseClients() {
   return { authClient, dbClient };
 }
 
-// ZeusX fee di default in centesimi (25€), usata solo se l'app non ha un
+// ShardApps fee di default in centesimi (25€), usata solo se l'app non ha un
 // zeusx_fee proprio impostato in DB (vedi stesso pattern in checkout/managed).
 const DEFAULT_ZEUSX_FEE_CENTS = 2500;
 

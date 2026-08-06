@@ -187,7 +187,7 @@ router.post('/update-app-fee', checkoutLimiter, async (req, res) => {
     // 1. status != 'active' — le app con status:'active' hanno un cliente
     //    finale che paga tramite Stripe (vedi verify-checkout-session/route.ts,
     //    che imposta status:'active' + stripe_subscription_id al checkout
-    //    del cliente): ZeusX incassa già la sua quota di 25€ trattenendola
+    //    del cliente): ShardApps incassa già la sua quota di 25€ trattenendola
     //    da quel pagamento (client_price - zeusx_fee = reseller_amount,
     //    vedi create-checkout-session dell'app). Altrimenti il reseller
     //    pagherebbe la stessa app due volte.

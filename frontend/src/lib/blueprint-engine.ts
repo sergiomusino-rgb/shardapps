@@ -130,7 +130,7 @@ export class BlueprintEngine {
   }
 
   private buildSystemPrompt(sector: string, customPrompt: string | undefined, lang: string): string {
-    return `Sei l'architetto software di ZeusX. Devi produrre SOLO un oggetto JSON valido, senza testo aggiuntivo.
+    return `Sei l'architetto software di ShardApps. Devi produrre SOLO un oggetto JSON valido, senza testo aggiuntivo.
 
 Il JSON rappresenta un gestionale SaaS per il settore: "${sector}".
 ${customPrompt ? `Richiesta aggiuntiva dell'utente: ${customPrompt}` : ''}

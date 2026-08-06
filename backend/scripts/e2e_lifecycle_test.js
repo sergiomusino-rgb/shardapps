@@ -1,11 +1,11 @@
 // ============================================================================
-// ZeusX - E2E Stress Test: ciclo di vita multi-tenant + flusso finanziario
+// ShardApps - E2E Stress Test: ciclo di vita multi-tenant + flusso finanziario
 // ----------------------------------------------------------------------------
 // Simula: registrazione tenant -> acquisto piano PRO (5 slot, webhook Stripe
 // REALE con firma valida) -> generazione 3 app -> scadenza trial su tutte ->
 // pagamento reale (Stripe Connect, 25€/mese per app venduta e attiva) su 2
 // app -> 1 app resta bloccata -> verifica finanziaria finale (ricavo
-// reseller, quota ZeusX, margine, stato slot) letta sia da Supabase sia
+// reseller, quota ShardApps, margine, stato slot) letta sia da Supabase sia
 // dall'API Stripe reale.
 //
 // Nota: il "canone personale" (25€/mese per uno slot che il reseller tiene
@@ -384,7 +384,7 @@ async function step6_financialSummary() {
 
   console.log('\n--- Riepilogo finanziario ---');
   console.log(`Ricavo reseller (clienti finali): ${resellerRevenue}€/mese [${active.map((a) => a.name).join(', ')}]`);
-  console.log(`Incasso ricorrente ZeusX: ${zeusxRecurringIncome}€/mese [${breakdown.join(' + ')}]`);
+  console.log(`Incasso ricorrente ShardApps: ${zeusxRecurringIncome}€/mese [${breakdown.join(' + ')}]`);
   console.log(`Margine netto reseller: ${margin}€/mese`);
   console.log(`Stato slot: ${active.length} attivi / ${blocked.length} scaduti-bloccati / ${5 - apps.length} liberi`);
 
@@ -428,7 +428,7 @@ async function cleanup() {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`=== ZeusX E2E Lifecycle Test — run ${TAG} ===\n`);
+  console.log(`=== ShardApps E2E Lifecycle Test — run ${TAG} ===\n`);
   try {
     await step1_registerTenant();
     await step2_purchaseProPlan();

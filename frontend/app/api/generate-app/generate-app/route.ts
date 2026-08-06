@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     const { prompt, lang } = await req.json();
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-    const systemInstruction = `Sei l'architetto di ZeusX. Genera SOLO un oggetto JSON valido basato su questo prompt: "${prompt}".
+    const systemInstruction = `Sei l'architetto di ShardApps. Genera SOLO un oggetto JSON valido basato su questo prompt: "${prompt}".
     Lingua: ${lang}. 
     Schema obbligatorio (NON aggiungere altro testo):
     { 

@@ -2,7 +2,7 @@
 
 // ─── PaymentSettings ────────────────────────────────────────────────────────
 // Modulo pagamenti online OPZIONALE e "Plug & Play": il tenant decide se
-// attivarlo e collega il proprio Stripe Payment Link. ZeusX non vede né
+// attivarlo e collega il proprio Stripe Payment Link. ShardApps non vede né
 // gestisce mai le transazioni — nessuna chiave segreta lato server, solo un
 // link pubblico salvato in apps.config.paymentSettings (stesso pattern
 // read-merge-write di BusinessConfigSettings.tsx, vedi
@@ -123,7 +123,7 @@ export default function PaymentSettings({ appId, authToken, initial }: PaymentSe
               className="w-full rounded-lg border border-tenant-border bg-tenant-card-alt px-3 py-2 text-sm text-tenant-text outline-none placeholder:text-tenant-text-secondary focus:border-tenant-primary"
             />
             <p className="mt-1 text-xs text-tenant-text-secondary">
-              Crealo da Stripe Dashboard → Payment Links. ZeusX non gestisce le tue transazioni: i pagamenti vanno direttamente al tuo account Stripe.
+              Crealo da Stripe Dashboard → Payment Links. ShardApps non gestisce le tue transazioni: i pagamenti vanno direttamente al tuo account Stripe.
             </p>
           </div>
 

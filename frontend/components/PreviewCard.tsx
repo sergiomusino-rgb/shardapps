@@ -56,7 +56,7 @@ export default function PreviewCard({ title, slug, description, appType }: Previ
                 <div className="w-2 h-2 rounded-full bg-amber-500/70" />
                 <div className="w-2 h-2 rounded-full bg-emerald-500/70" />
                 <div className="ml-3 flex-1 h-3 rounded-full bg-slate-700/60 px-2 flex items-center">
-                  <span className="text-[8px] text-slate-500 truncate">Powered by ZeusX</span>
+                  <span className="text-[8px] text-slate-500 truncate">Powered by ShardApps</span>
                 </div>
               </div>
               {/* Mock content */}
@@ -109,7 +109,7 @@ export default function PreviewCard({ title, slug, description, appType }: Previ
           {/* Branding footer */}
           <div className="mt-3 pt-3 border-t border-slate-800/50">
             <span className="text-[10px] font-medium text-slate-600 tracking-wider">
-              Powered by <span className="text-slate-500">ZeusX</span>
+              Powered by <span className="text-slate-500">ShardApps</span>
             </span>
           </div>
         </div>

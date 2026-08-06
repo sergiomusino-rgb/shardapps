@@ -38,7 +38,7 @@ async function callSchemaGenerator(
   // Carica il design system per il settore
   const designSystem = await getDesignSystemForSector(sector);
 
-  const systemPrompt = `Sei ZeusX AI, un assistente specializzato nella generazione di applicazioni SaaS.
+  const systemPrompt = `Sei ShardApps AI, un assistente specializzato nella generazione di applicazioni SaaS.
 Genera uno schema JSON per un'applicazione di ${sector} in lingua ${lang}.
 
 ${designSystem.systemPrompt}
@@ -146,7 +146,7 @@ async function callSiteSchemaGenerator(
     'ecommerce': 'E-Commerce Vetrina per un negozio: pagine tipiche Home, Catalogo (sezione "list" collegata a un\'entità "prodotti" con almeno i campi nome/prezzo/immagine/descrizione), Contatti. adminPanel.entities DEVE includere l\'entità prodotti referenziata dal Catalogo. Gli ordini avvengono via WhatsApp o alla cassa: NON generare un carrello o un checkout, usa piuttosto un actionButton "whatsapp" per ordinare.',
   };
 
-  const systemPrompt = `Sei ZeusX AI, un architetto di siti web e PWA per piccole attività. Genera uno schema JSON per un progetto di tipo "${projectType}" in lingua ${langName} (${lang}).
+  const systemPrompt = `Sei ShardApps AI, un architetto di siti web e PWA per piccole attività. Genera uno schema JSON per un progetto di tipo "${projectType}" in lingua ${langName} (${lang}).
 
 ${projectTypeGuide[projectType]}
 

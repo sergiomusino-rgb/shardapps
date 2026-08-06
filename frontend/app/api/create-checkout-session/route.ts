@@ -239,7 +239,7 @@ export async function POST(req: NextRequest) {
       ],
       // Managed Payments (Merchant of Record): Stripe diventa il venditore
       // di riferimento (gestisce tasse/IVA, chargeback, compliance) al posto
-      // dell'account ZeusX. I Product collegati a effectivePriceId hanno già
+      // dell'account ShardApps. I Product collegati a effectivePriceId hanno già
       // un tax_code impostato (richiesto da Stripe per l'idoneità al MoR).
       managed_payments: {
         enabled: true,

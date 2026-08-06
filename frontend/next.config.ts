@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',
-      allowedOrigins: ['localhost:3000', 'zeusx.app', 'www.zeusx.app', 'zeusxapps.com'],
+      allowedOrigins: ['localhost:3000', 'shardapps.com', 'www.shardapps.com', 'zeusx.app', 'www.zeusx.app', 'zeusxapps.com'],
     },
   },
   // I file designmd/*.md sono letti a runtime via fs.readFile (non

@@ -320,7 +320,7 @@ export async function POST(req: Request) {
          expires_at: expiresAt.toISOString(),
          slug,
          client_password: clientPassword,
-         client_email: user.email, // Email di default dell'utente ZeusX
+         client_email: user.email, // Email di default dell'utente ShardApps
          client_active: true,
          expiry_warning_sent: false,
          is_active: true,

@@ -7,18 +7,18 @@ export type Locale = 'it' | 'en' | 'fr' | 'de' | 'es';
 // Default placeholder content (used when file not found)
 const DEFAULT_CONTENT: Record<LegalType, Record<Locale, string>> = {
   terms: {
-    it: 'Inserisci qui il testo dei termini e condizioni di ZeusX...',
-    en: 'Insert the terms and conditions text for ZeusX here...',
-    fr: 'Insérez le texte des conditions générales de ZeusX ici...',
-    de: 'Fügen Sie hier den AGB-Text von ZeusX ein...',
-    es: 'Inserta aquí el texto de términos y condiciones de ZeusX...',
+    it: 'Inserisci qui il testo dei termini e condizioni di ShardApps...',
+    en: 'Insert the terms and conditions text for ShardApps here...',
+    fr: 'Insérez le texte des conditions générales de ShardApps ici...',
+    de: 'Fügen Sie hier den AGB-Text von ShardApps ein...',
+    es: 'Inserta aquí el texto de términos y condiciones de ShardApps...',
   },
   privacy: {
-    it: 'Inserisci qui il testo della privacy policy di ZeusX...',
-    en: 'Insert the privacy policy text for ZeusX here...',
-    fr: 'Insérez le texte de la politique de confidentialité de ZeusX ici...',
-    de: 'Fügen Sie hier den Datenschutzrichtlinien-Text von ZeusX ein...',
-    es: 'Inserta aquí el texto de la política de privacidad de ZeusX...',
+    it: 'Inserisci qui il testo della privacy policy di ShardApps...',
+    en: 'Insert the privacy policy text for ShardApps here...',
+    fr: 'Insérez le texte de la politique de confidentialité de ShardApps ici...',
+    de: 'Fügen Sie hier den Datenschutzrichtlinien-Text von ShardApps ein...',
+    es: 'Inserta aquí el texto de la política de privacidad de ShardApps...',
   },
 };
 

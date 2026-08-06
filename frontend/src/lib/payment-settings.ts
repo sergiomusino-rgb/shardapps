@@ -11,7 +11,7 @@ export interface PaymentSettings {
    * metodi tradizionali anche se stripeLink è già stato compilato in passato. */
   enabled: boolean;
   /** Stripe Payment Link del tenant (https://buy.stripe.com/... o
-   * checkout.stripe.com/...). ZeusX non genera né gestisce mai questo link:
+   * checkout.stripe.com/...). ShardApps non genera né gestisce mai questo link:
    * il tenant lo crea nel proprio dashboard Stripe. */
   stripeLink: string;
   /** Publishable key (pk_...) del tenant, salvata per un futuro checkout

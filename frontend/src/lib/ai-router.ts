@@ -1,5 +1,5 @@
 // ─── AI Model Router (OpenRouter) ──────────────────────────────────────────────
-// Punto centrale per le chiamate a OpenRouter nel backend ZeusX. Instrada ogni
+// Punto centrale per le chiamate a OpenRouter nel backend ShardApps. Instrada ogni
 // richiesta verso un modello "advanced" (generazione complessa: nuove app,
 // schema, codice — es. l'app del Lotto) o "fast" (micro-fix, testo, UI) in
 // base al tipo di task dichiarato dal chiamante, invece di lasciare che ogni
@@ -129,7 +129,7 @@ export interface AiRouterResult {
 }
 
 /**
- * Punto unico di ingresso per ogni chiamata a OpenRouter nel backend ZeusX.
+ * Punto unico di ingresso per ogni chiamata a OpenRouter nel backend ShardApps.
  * Sceglie il modello in base al tipo di task, gestisce la chiave API in modo
  * centralizzato e restituisce il costo reale della chiamata.
  */
@@ -164,7 +164,7 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://zeusx.app',
-        'X-Title': 'ZeusX AI Router',
+        'X-Title': 'ShardApps AI Router',
       },
       body: JSON.stringify(body),
     });

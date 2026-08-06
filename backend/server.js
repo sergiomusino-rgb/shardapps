@@ -810,5 +810,5 @@ const { startExpiryCheck } = require('./jobs/expiry-check');
 startExpiryCheck();
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ ZeusX backend attivo su http://0.0.0.0:${PORT}`);
+  console.log(`✅ ShardApps backend attivo su http://0.0.0.0:${PORT}`);
 });

@@ -129,7 +129,7 @@ export default function ManagementConsolePage() {
         });
       });
       // Inizializza gli input dei prezzi con il prezzo realmente in vigore
-      // (client_subscription_price || client_price || quota minima ZeusX),
+      // (client_subscription_price || client_price || quota minima ShardApps),
       // non solo client_subscription_price: per le app appena create con
       // Creator AI quella colonna è 0.00 e mostrerebbe un prezzo sbagliato.
       const initialPrices: Record<string, string> = {};
@@ -293,7 +293,7 @@ export default function ManagementConsolePage() {
   }
 
   // Riepilogo Finanziario: solo le app 'active' generano incasso reale e
-  // quota ZeusX (25€/mese ciascuna, la quota minima trattenuta via Stripe
+  // quota ShardApps (25€/mese ciascuna, la quota minima trattenuta via Stripe
   // Connect — vedi lib/pricing.ts). Le app in trial non hanno ancora un
   // cliente pagante, quindi non contano né come incasso né come costo.
   const activeApps = apps.filter((a) => a.status === 'active');

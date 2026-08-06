@@ -1,11 +1,11 @@
 'use client';
 
-// ─── Comandi: sidebar di navigazione (stile ZeusX) ─────────────────────────
+// ─── Comandi: sidebar di navigazione (stile ShardApps) ─────────────────────────
 // Sostituisce la lista tab orizzontale sotto l'header con una sidebar
 // verticale fissa, sullo stesso schema di components/layout/Sidebar.tsx (voce
-// attiva evidenziata, drawer mobile con backdrop, footer "ZeusX by MUSINO")
+// attiva evidenziata, drawer mobile con backdrop, footer "ShardApps by MUSINO")
 // ma con la palette grigio/ambra di Comandi invece di slate/indigo. Il footer
-// di branding ZeusX va replicato in tutte le app generate da ZeusX (Comandi
+// di branding ShardApps va replicato in tutte le app generate da ShardApps (Comandi
 // incluso), non è in conflitto col resto del white-label del modulo.
 //
 // Due modalità d'uso:
@@ -180,7 +180,7 @@ export default function ComandiSidebar({
 
       <div className="border-t border-gray-800/60 bg-gray-950/40 p-4">
         <div className="flex flex-col items-center gap-2">
-          <img src="/favicon.png" alt="ZeusX" className="h-14 w-14 rounded-full object-cover" />
+          <img src="/favicon.png" alt="ShardApps" className="h-14 w-14 rounded-full object-cover" />
           <p className="text-xs font-semibold text-gray-400">{t('sidebar_by')}</p>
         </div>
       </div>

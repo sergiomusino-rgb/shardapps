@@ -99,13 +99,13 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'ZeusX Comandi <noreply@zeusx.it>',
+        from: 'ShardApps Comandi <noreply@zeusx.it>',
         to: [recipientEmail],
         subject: 'Esportazione Ordini',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <p>In allegato l'esportazione della tabella Ordini (${rows.length} righe).</p>
-            <p style="color: #64748b; font-size: 14px; margin-top: 20px;">ZeusX Comandi</p>
+            <p style="color: #64748b; font-size: 14px; margin-top: 20px;">ShardApps Comandi</p>
           </div>
         `,
         attachments: [{ filename, content: attachmentContent }],

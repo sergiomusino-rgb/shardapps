@@ -527,7 +527,7 @@ router.put('/client/apps/:appId/business-config', clientAuthMiddleware, async (r
 // sopra, non fidarsi del body. Nessuna secret key qui: solo un Payment Link
 // pubblico e, se serve in futuro a un checkout embedded, la publishable key
 // (pk_...) — mai la secret key di Stripe, che resta esclusivamente nel
-// dashboard Stripe del tenant finale e non transita mai da ZeusX.
+// dashboard Stripe del tenant finale e non transita mai da ShardApps.
 function sanitizePaymentSettingsPatch(body) {
   const patch = {};
   if (typeof body.enabled === 'boolean') {
@@ -552,7 +552,7 @@ function sanitizePaymentSettingsPatch(body) {
 
 // PUT /client/apps/:appId/payment-settings - Attiva/configura i pagamenti
 // online opzionali del tenant finale (config.paymentSettings). Modulo
-// "Plug & Play": ogni app collega il proprio Payment Link Stripe, ZeusX non
+// "Plug & Play": ogni app collega il proprio Payment Link Stripe, ShardApps non
 // vede né gestisce mai le transazioni. Stesso pattern read-merge-write di
 // business-config qui sopra, così sito pubblico e gestionale restano
 // sincronizzati sullo stesso apps.config.

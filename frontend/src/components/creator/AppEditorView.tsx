@@ -47,7 +47,7 @@ export interface AppEditorViewLabels {
 }
 
 const DEFAULT_LABELS: AppEditorViewLabels = {
-  chatTitle: 'ZeusX Copilot',
+  chatTitle: 'ShardApps Copilot',
   chatSubtitle: 'Scrivi una modifica e la vedi applicata subito a sinistra.',
   inputPlaceholder: 'Es. "Cambia il colore principale in blu navy", "Aggiungi una sezione recensioni in Home"',
   sendButton: 'Invia',

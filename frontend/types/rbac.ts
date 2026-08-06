@@ -1,5 +1,5 @@
 // ============================================================================
-// ZeusX - RBAC Types
+// ShardApps - RBAC Types
 // ============================================================================
 
 export type AppUserRole = 'admin' | 'agent' | 'viewer' | 'editor' | 'reseller';

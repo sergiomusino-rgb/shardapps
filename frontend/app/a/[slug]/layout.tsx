@@ -354,7 +354,7 @@ export default function AppLayout({ children }: PropsWithChildren) {
   // Paywall: si applica a tutte le route tranne la landing pubblica e la
   // pagina "app sospesa" (che deve restare visibile per spiegare il blocco).
   // Vale anche per Comandi AI: il blocco per trial scaduto/abbonamento non in
-  // regola è logica di business, non "chrome" ZeusX da nascondere.
+  // regola è logica di business, non "chrome" ShardApps da nascondere.
   if (isAppBlocked && appInfo && !isRootLanding && !isBlockedPage) {
     return <TrialPaywallModal appName={appInfo.name} slug={slug} trialEndsAt={appInfo.trial_ends_at || new Date().toISOString()} price={clientPrice} />;
   }
@@ -436,8 +436,8 @@ export default function AppLayout({ children }: PropsWithChildren) {
               <div className={isAppShellRoute ? 'flex-1 overflow-hidden' : 'flex-1'}>
                 {children}
               </div>
-              {/* La shell app/dashboard mostra già il brand ZeusX nel footer
-                  della sidebar (icona + "ZeusX by MUSINO"): niente striscia
+              {/* La shell app/dashboard mostra già il brand ShardApps nel footer
+                  della sidebar (icona + "ShardApps by MUSINO"): niente striscia
                   duplicata in fondo alla pagina. Nelle altre route (fatture,
                   settings, admin...) resta invariata. */}
               {!isAppShellRoute && <ZeusXBrandingFooter />}

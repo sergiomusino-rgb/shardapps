@@ -23,11 +23,11 @@ services:
       - key: PORT
         value: 10000
       - key: ALLOWED_ORIGINS
-        value: https://zeusxapps.com,https://www.zeusxapps.com,https://zeusx.app,https://www.zeusx.app,https://zeusx-zwu8.vercel.app
+        value: https://shardapps.com,https://www.shardapps.com,https://zeusxapps.com,https://www.zeusxapps.com,https://zeusx.app,https://www.zeusx.app,https://zeusx-zwu8.vercel.app
       - key: APP_URL
-        value: https://zeusxapps.com
+        value: https://shardapps.com
       - key: FRONTEND_URL
-        value: https://zeusxapps.com
+        value: https://shardapps.com
       - key: OPENROUTER_API_KEY
         sync: false
       - key: GROQ_API_KEY

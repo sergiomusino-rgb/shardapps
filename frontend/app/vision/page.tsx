@@ -204,7 +204,7 @@ interface GenerateVideoSuccess {
     targetLanguage: TargetLanguage;
     creditsUsed: number;
     creditsRemaining: number;
-    // false se il salvataggio della clip nello storage ZeusX è fallito: la
+    // false se il salvataggio della clip nello storage ShardApps è fallito: la
     // clip resta guardabile/scaricabile ma non può entrare nella Sequenza
     // (concat-videos accetta solo clip del nostro bucket, vedi route).
     persisted: boolean;

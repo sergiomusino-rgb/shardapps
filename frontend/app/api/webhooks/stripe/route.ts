@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
 
       case 'customer.subscription.deleted':
       case 'customer.subscription.paused':
-        // User ha cancellato o messo in pausa il proprio abbonamento a ZeusX
+        // User ha cancellato o messo in pausa il proprio abbonamento a ShardApps
         await handleUserSubscriptionCancelled(event, supabase);
         break;
       
@@ -352,7 +352,7 @@ async function handleInvoicePaid(event: Stripe.Event, supabase: any) {
   }
 
   // Legacy: takeover automatico app di un reseller/tenant per mancato
-  // pagamento del proprio abbonamento a ZeusX (non correlato al paywall
+  // pagamento del proprio abbonamento a ShardApps (non correlato al paywall
   // trial dell'app-cliente gestito sopra). Questo ramo richiede
   // subscription.tenant_id da una fonte non presente in questo evento — se
   // in futuro va ripristinato va prima ricostruito da dove recuperare il
@@ -404,7 +404,7 @@ async function handleAppSubscriptionUpdated(event: Stripe.Event, supabase: any) 
     .maybeSingle();
 
   // Non è la subscription di un'app cliente (es. abbonamento reseller a
-  // ZeusX): ignorato, non è di competenza di questo handler.
+  // ShardApps): ignorato, non è di competenza di questo handler.
   if (!app) return;
 
   const { error } = await supabase
@@ -498,17 +498,17 @@ async function notifyAdminTakeover(totalumAppId: string, userEmail: string, reas
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'ZeusX <noreply@zeusx.it>',
+          from: 'ShardApps <noreply@zeusx.it>',
           to: [adminEmail],
           subject: `[URGENTE] Takeover automatico app ${totalumAppId}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #ef4444;">Takeover automatico eseguito</h2>
-              <p>L'app <strong>${totalumAppId}</strong> è stata messa in gestione diretta da ZeusX.</p>
+              <p>L'app <strong>${totalumAppId}</strong> è stata messa in gestione diretta da ShardApps.</p>
               <p><strong>Motivo:</strong> ${reason}</p>
               <p><strong>User:</strong> ${userEmail}</p>
               <p style="color: #64748b; font-size: 14px; margin-top: 20px;">
-                ZeusX System<br>
+                ShardApps System<br>
                 Questo messaggio è stato inviato automaticamente.
               </p>
             </div>

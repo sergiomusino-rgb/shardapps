@@ -10,7 +10,7 @@ interface HeaderClockProps {
 }
 
 /**
- * Orologio + data compatti per header (dashboard ZeusX e app generate).
+ * Orologio + data compatti per header (dashboard ShardApps e app generate).
  * Nessuna dipendenza da Tailwind: i colori sono passati come prop così può
  * essere riusato sia nel layout a classi Tailwind sia nel renderer delle app
  * generate, che usa styling inline basato sui colori di tema per-app.

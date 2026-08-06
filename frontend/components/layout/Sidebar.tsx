@@ -377,7 +377,7 @@ export default function Sidebar({
           <div className="flex flex-col items-center gap-2">
             <img
               src="/favicon.png"
-              alt="ZeusX"
+              alt="ShardApps"
               className="h-14 w-14 rounded-full object-cover"
             />
             <p className="text-xs font-semibold text-slate-400">{t('sidebar_by')}</p>

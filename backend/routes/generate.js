@@ -193,10 +193,10 @@ router.post('/generate', async (req, res) => {
     const projectId = validProjectId.slice(0, 35).replace(/-$/, '');
 
     // ─── CARICA DESIGN SYSTEM PER SETTORE ─────────────────────────────────────────
-    console.log(`[ZeusX] Caricamento design system per settore: ${sectorValue}`);
+    console.log(`[ShardApps] Caricamento design system per settore: ${sectorValue}`);
     const designSystem = getDesignSystemForSector(sectorValue);
     
-    console.log(`[ZeusX] Design system caricato:`, {
+    console.log(`[ShardApps] Design system caricato:`, {
       hasDesignContent: !!designSystem.designContent,
       hasDesignTokens: !!designSystem.designTokens,
       primaryColor: designSystem.designTokens?.colors?.primary,
@@ -218,7 +218,7 @@ router.post('/generate', async (req, res) => {
       },
       body: JSON.stringify({
         projectId: projectId,
-        description: `App generata da ZeusX: ${appNameValue}`
+        description: `App generata da ShardApps: ${appNameValue}`
       }),
     });
 
@@ -263,8 +263,8 @@ router.post('/generate', async (req, res) => {
     console.log('[Totalum] URL completo:', `${TOTALUM_API_URL}/api/v1/vcaas/projects/${projectId}/agent/start`);
 
     // ─── AVVIO AGENTE TOTALUM CON PROMPT MIGLIORATO ───────────────────────────────
-    console.log('[ZeusX] Invio prompt a Totalum con design system iniettato');
-    console.log('[ZeusX] Lunghezza prompt:', fullPrompt.length, 'caratteri');
+    console.log('[ShardApps] Invio prompt a Totalum con design system iniettato');
+    console.log('[ShardApps] Lunghezza prompt:', fullPrompt.length, 'caratteri');
     
     const startAgentResponse = await fetch(`${TOTALUM_API_URL}/api/v1/vcaas/projects/${projectId}/agent/start`, {
       method: 'POST',

@@ -67,13 +67,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'L\'app non ha un account Stripe Connect configurato' }, { status: 400 });
     }
 
-    // Fee ZeusX fissa (€25/mese per app, coerente con apps/checkout,
+    // Fee ShardApps fissa (€25/mese per app, coerente con apps/checkout,
     // apps/checkout/managed e a/[slug]/create-checkout-session — non più il
     // 25% del prezzo cliente, che divergeva dagli altri tre flussi). Stripe
     // però non supporta un application_fee_amount fisso su una subscription
     // a destination charge: si converte il fisso in una percentuale
     // equivalente sul prezzo di questo cliente, così l'incasso netto per
-    // ZeusX resta sempre €25 a prescindere da quanto il reseller fa pagare.
+    // ShardApps resta sempre €25 a prescindere da quanto il reseller fa pagare.
     const applicationFeePercent = Math.min(
       100,
       Math.round((ZEUSX_MINIMUM_FEE_EUR / app.client_subscription_price) * 10000) / 100
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
           price_data: {
             currency: 'eur',
             product_data: {
-              name: 'Abbonamento App ZeusX',
+              name: 'Abbonamento App ShardApps',
               description: `Abbonamento per l'app ${totalum_app_id}`,
               metadata: {
                 totalum_app_id: totalum_app_id,
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         },
       ],
       // Destination Charge: trasferisce i fondi all'account connesso
-      // e trattiene una application fee per ZeusX
+      // e trattiene una application fee per ShardApps
       subscription_data: {
         application_fee_percent: applicationFeePercent,
         transfer_data: {

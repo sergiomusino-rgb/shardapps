@@ -23,12 +23,12 @@ export interface ProjectWizardLabels {
 }
 
 const DEFAULT_LABELS: ProjectWizardLabels = {
-  title: 'Crea con ZeusX',
+  title: 'Crea con ShardApps',
   subtitle: 'Scegli il tipo di progetto e descrivi la tua idea: ci pensa l\'AI.',
   projectTypeLabel: 'Tipo di progetto',
   promptLabel: 'Descrivi la tua idea',
   promptPlaceholder: 'Es. "Pizzeria Da Mario, menu con margherita e diavola, prenotazioni tavoli e ordini d\'asporto via WhatsApp"',
-  generateButton: 'Genera con ZeusX',
+  generateButton: 'Genera con ShardApps',
   generatingButton: 'Generazione in corso…',
 };
 

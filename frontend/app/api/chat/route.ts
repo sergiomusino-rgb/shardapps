@@ -4,9 +4,9 @@ import type { Database } from '@/types/database';
 import { callAiRouter, AiRouterError, AiRouterConfigError, type AiRouterMessage } from '@/src/lib/ai-router';
 import { checkRateLimit } from '@/src/lib/rate-limit';
 
-const SYSTEM_PROMPT = `Sei ZeusX AI, un assistente AI specializzato nella piattaforma ZeusX.
+const SYSTEM_PROMPT = `Sei ShardApps AI, un assistente AI specializzato nella piattaforma ShardApps.
 Sei preparato, utile, creativo e conciso. Puoi aiutare gli utenti a:
-- Capire come funziona ZeusX
+- Capire come funziona ShardApps
 - Creare applicazioni SaaS tramite il generatore AI
 - Rispondere a domande tecniche e di business
 - Fornire consigli su sviluppo e best practices

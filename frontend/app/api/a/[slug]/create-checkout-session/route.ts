@@ -35,9 +35,9 @@ export async function POST(request: NextRequest) {
 
     // Il prezzo NON è fisso a 25€: lo decide il reseller per questa specifica
     // app dalla pagina Management (client_subscription_price / client_price).
-    // 25€ è solo il minimo/fallback che spetta a ZeusX se il reseller non ha
+    // 25€ è solo il minimo/fallback che spetta a ShardApps se il reseller non ha
     // impostato nulla — se il reseller vende l'app a 70€/mese, il cliente
-    // paga 70€, di cui 25€ restano a ZeusX e il resto al reseller.
+    // paga 70€, di cui 25€ restano a ShardApps e il resto al reseller.
     const clientPrice = getClientSubscriptionPrice(app);
     const zeusxFee = app.zeusx_fee || ZEUSX_MINIMUM_FEE_EUR;
     const clientPriceCents = Math.round(clientPrice * 100);
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       }],
       // Managed Payments (Merchant of Record): Stripe diventa il venditore
       // di riferimento (tasse/IVA, chargeback, compliance) al posto
-      // dell'account ZeusX per l'abbonamento del cliente finale del reseller.
+      // dell'account ShardApps per l'abbonamento del cliente finale del reseller.
       managed_payments: {
         enabled: true,
       },

@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "ZeusX backend API server",
+  "description": "ShardApps backend API server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

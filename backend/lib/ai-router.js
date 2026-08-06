@@ -106,7 +106,7 @@ async function callAiRouter(options) {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://zeusx.app',
-        'X-Title': 'ZeusX AI Router',
+        'X-Title': 'ShardApps AI Router',
       },
       body: JSON.stringify(body),
     });

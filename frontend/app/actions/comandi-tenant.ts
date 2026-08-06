@@ -118,7 +118,7 @@ export async function setupTenantAction(input: SetupTenantInput): Promise<SetupT
     };
 
     // Un tenant può già esistere per questo utente creato da altri flussi
-    // ZeusX (es. Creator AI) che impostano solo owner_id senza riga in
+    // ShardApps (es. Creator AI) che impostano solo owner_id senza riga in
     // tenant_members: verifichiamo entrambi i percorsi per non duplicare.
     let tenantId: string | undefined;
     let callerRole: string | undefined;

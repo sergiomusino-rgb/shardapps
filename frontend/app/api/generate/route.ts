@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
     const companySettingsDirective = `\n\n⚠️ DIRETTIVA IMPOSTAZIONI AZIENDA (VIETATO HARDCODING):\nNon inserire nomi, testi o dati aziendali fissi direttamente nel codice dei componenti. Ogni blueprint deve includere obbligatoriamente una tabella di database globale chiamata 'company_settings' e una pagina 'Impostazioni' (tradotta nella lingua selezionata) nell'app del cliente. Questa pagina deve permettere al cliente finale di modificare liberamente i valori di default: Nome Azienda/Ditta, Logo, Intestazione, Partita IVA e Indirizzo. Tutti i componenti del layout devono leggere questi dati in modo dinamico dal database 'company_settings'.`;
 
     // ─── DIRETTIVA BRANDING WHITE LABEL ZEUSX ──────────────────────────────
-    const brandingDirective = `\n\n⚠️ DIRETTIVA BRANDING WHITE LABEL:\nAssicurati che nel layout dell'applicazione venga inserito correttamente il logo e il branding di ZeusX (nel footer o nella barra laterale con la dicitura "Powered by ZeusX"), verificando che i percorsi degli asset siano validi e vengano renderizzati senza errori.`;
+    const brandingDirective = `\n\n⚠️ DIRETTIVA BRANDING WHITE LABEL:\nAssicurati che nel layout dell'applicazione venga inserito correttamente il logo e il branding di ShardApps (nel footer o nella barra laterale con la dicitura "Powered by ShardApps"), verificando che i percorsi degli asset siano validi e vengano renderizzati senza errori.`;
 
     // Combina il prompt completo
     const fullPrompt = `${basePrompt}${languageDirective}${companySettingsDirective}${brandingDirective}`;
@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         projectId: finalProjectId,
-        description: `App generata da ZeusX: ${appNameValue}`
+        description: `App generata da ShardApps: ${appNameValue}`
       }),
     });
 

@@ -50,7 +50,7 @@ const BASELINE = {
   },
   tenants: {
     // has_table_access('tenants') è l'accesso RBAC per gli admin/reseller
-    // ZeusX, in OR con l'appartenenza/ruolo nel tenant per l'utente normale.
+    // ShardApps, in OR con l'appartenenza/ruolo nel tenant per l'utente normale.
     SELECT: ['tenants_select'],
     INSERT: ['tenants_insert'],
     UPDATE: ['tenants_update'],
@@ -115,7 +115,7 @@ const BASELINE = {
   },
   app_registry: {
     // Dopo 20260808000015: niente scrittura diretta dal rivenditore su
-    // monthly_fee/zeusx_share (commissioni ZeusX) — solo lettura della
+    // monthly_fee/zeusx_share (commissioni ShardApps) — solo lettura della
     // propria riga, ogni scrittura passa da service role.
     SELECT: ['Resellers view their own apps', 'Service role manages app_registry'],
     INSERT: ['Service role manages app_registry'],

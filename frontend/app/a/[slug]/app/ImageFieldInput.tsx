@@ -12,7 +12,7 @@ interface ImageFieldInputProps {
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 // Upload diretto dal browser nel bucket pubblico 'vision-uploads' (già usato
-// da ZeusX Vision e dal logo aziendale di Comandi, stesso pattern: vedi
+// da ShardApps Vision e dal logo aziendale di Comandi, stesso pattern: vedi
 // handleLogoFile in components/comandi/ComandiInstanceDashboard.tsx),
 // scoped per utente. Il campo tabella (type: 'image') salva solo l'URL
 // risultante come stringa, coerente con renderCellValue in cellRenderers.tsx

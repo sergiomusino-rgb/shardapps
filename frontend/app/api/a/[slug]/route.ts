@@ -47,7 +47,7 @@ export async function GET(
     }
 
     // Questa route usa la service_role key (bypassa RLS): senza questo
-    // controllo qualunque utente ZeusX autenticato — non solo il proprietario
+    // controllo qualunque utente ShardApps autenticato — non solo il proprietario
     // del tenant — poteva leggere client_email/client_password in chiaro di
     // QUALSIASI app conoscendone lo slug (vedi audit pre-lancio).
     const { data: membership } = await supabase

@@ -21,7 +21,7 @@ const ProvisionComandiAppInputSchema = z.object({
   // tenant, idempotente, gratuita, nessuno slot consumato.
   // true: crea SEMPRE una nuova istanza (una copia venduta a un cliente
   // diverso), consuma uno slot del piano come le app Creator/Generator e usa
-  // zeusx_fee:25 (meccanismo B, ZeusX trattiene la quota dal pagamento del
+  // zeusx_fee:25 (meccanismo B, ShardApps trattiene la quota dal pagamento del
   // cliente finale) invece di zeusx_fee:0.
   createNew: z.boolean().optional().default(false),
 });
@@ -172,7 +172,7 @@ export async function provisionComandiAppAction(
     // Vero utente Supabase Auth (non un gate a password condivisa storico):
     // serve perché il catalogo/ordini sono protetti da RLS su auth.uid(), non
     // funzionerebbero con una sessione fittizia. Email sintetica sul dominio
-    // ZeusX: non deve ricevere posta reale, il reset avviene da dentro l'app
+    // ShardApps: non deve ricevere posta reale, il reset avviene da dentro l'app
     // (updatePosCredentialsAction), non via email di conferma.
     const posEmail = `pos-${slug}@zeusxapps.com`;
     const posPassword = generatePassword();

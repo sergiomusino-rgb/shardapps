@@ -8,7 +8,7 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
 // Manifest PWA dinamico per app generata: nome, logo e palette (theme/background
-// color) presi dai dati reali dell'app invece del placeholder generico ZeusX,
+// color) presi dai dati reali dell'app invece del placeholder generico ShardApps,
 // cosi' l'icona/splash installata sulla Home corrisponde al brand del cliente.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -103,7 +103,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     realLogo = typeof raw.logo === 'string' ? raw.logo : null;
   }
 
-  const appName = realName || (branding.company_name as string) || (config.appName as string) || app?.name || 'ZeusX App';
+  const appName = realName || (branding.company_name as string) || (config.appName as string) || app?.name || 'ShardApps App';
   const description = (config.description as string) || `Gestionale ${appName}`;
   const logo = realLogo || (branding.logo_url as string) || (config.logo as string) || '';
 

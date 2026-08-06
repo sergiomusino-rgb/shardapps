@@ -49,7 +49,7 @@ export default function ShowcasePage() {
         {/* Branding Footer */}
         <div className="mt-12 text-center">
           <p className="text-xs text-slate-600">
-            Powered by <span className="text-slate-500 font-semibold">ZeusX</span> — 
+            Powered by <span className="text-slate-500 font-semibold">ShardApps</span> — 
             AI-powered management software generation
           </p>
         </div>

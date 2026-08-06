@@ -59,16 +59,16 @@ async function sendTakeoverNotification(userEmail: string, appName: string): Pro
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'ZeusX <noreply@zeusx.it>',
+          from: 'ShardApps <noreply@zeusx.it>',
           to: [userEmail],
-          subject: 'Servizio ZeusX - Aggiornamento Gestione',
+          subject: 'Servizio ShardApps - Aggiornamento Gestione',
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #1e293b;">Gentile utente,</h2>
-              <p>Il tuo servizio <strong>${appName}</strong> è ora gestito direttamente da ZeusX.</p>
+              <p>Il tuo servizio <strong>${appName}</strong> è ora gestito direttamente da ShardApps.</p>
               <p>Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.</p>
               <p style="color: #64748b; font-size: 14px; margin-top: 20px;">
-                ZeusX Team<br>
+                ShardApps Team<br>
                 Questo messaggio è stato inviato automaticamente.
               </p>
             </div>
@@ -85,7 +85,7 @@ async function sendTakeoverNotification(userEmail: string, appName: string): Pro
   } else {
     // Fallback: log the notification (for development)
     console.log(`[TAKEOVER NOTIFICATION] To: ${userEmail}, App: ${appName}`);
-    console.log('Gentile utente, il tuo servizio è ora gestito direttamente da ZeusX. Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.');
+    console.log('Gentile utente, il tuo servizio è ora gestito direttamente da ShardApps. Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.');
   }
 }
 
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'App messa in gestione diretta da ZeusX',
+      message: 'App messa in gestione diretta da ShardApps',
       app_name: appData.name,
       app_id: appData.id,
       is_managed_by_platform: true

@@ -7,7 +7,7 @@ import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
-// Punto d'ingresso storico (voce sidebar ZeusX "Comandi AI") e rete di
+// Punto d'ingresso storico (voce sidebar ShardApps "Comandi AI") e rete di
 // sicurezza per /comandi in caso di errore di provisioning: risolve o
 // provisiona l'istanza Comandi del tenant dell'utente e reindirizza subito a
 // /a/{slug}, dove vivono ormai landing, login, cassa e dashboard dedicati

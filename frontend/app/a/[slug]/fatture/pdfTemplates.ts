@@ -187,7 +187,7 @@ export function generateClassicPdf(input: PdfInvoiceInput): jsPDF {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(150, 150, 150);
-  doc.text('Documento generato con ZeusX', PAGE_WIDTH / 2, 287, { align: 'center' });
+  doc.text('Documento generato con ShardApps', PAGE_WIDTH / 2, 287, { align: 'center' });
 
   return doc;
 }
@@ -304,7 +304,7 @@ export function generateModernPdf(input: PdfInvoiceInput): jsPDF {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(170, 170, 170);
-  doc.text('Documento generato con ZeusX', PAGE_WIDTH / 2, 287, { align: 'center' });
+  doc.text('Documento generato con ShardApps', PAGE_WIDTH / 2, 287, { align: 'center' });
 
   return doc;
 }
@@ -413,7 +413,7 @@ export function generateMinimalPdf(input: PdfInvoiceInput): jsPDF {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(180, 180, 180);
-  doc.text('Documento generato con ZeusX', PAGE_WIDTH / 2, 287, { align: 'center' });
+  doc.text('Documento generato con ShardApps', PAGE_WIDTH / 2, 287, { align: 'center' });
 
   return doc;
 }

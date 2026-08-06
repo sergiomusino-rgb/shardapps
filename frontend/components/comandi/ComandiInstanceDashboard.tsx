@@ -104,7 +104,7 @@ function formatCurrency(value: number): string {
 // non va duplicato qui. Questo banner copre invece il caso non ancora
 // coperto: il promemoria discreto durante un trial ancora attivo, con
 // styling coerente col resto di Comandi (ambra/grigio) invece del gradiente
-// ZeusX generico, per restare in linea con l'isolamento white-label del
+// ShardApps generico, per restare in linea con l'isolamento white-label del
 // modulo (vedi commento nella diramazione comandi_ai di layout.tsx).
 export function TrialNudgeBanner({ slug }: { slug: string }) {
   const { t } = useLanguage();
@@ -1686,7 +1686,7 @@ function CompanyTab({ tenantId, slug }: { tenantId: string; slug: string }) {
     })();
   }, [tenantId]);
 
-  // Caricato subito nel bucket pubblico 'vision-uploads' (già usato da ZeusX
+  // Caricato subito nel bucket pubblico 'vision-uploads' (già usato da ShardApps
   // Vision) al momento della scelta del file: l'URL risultante viene salvato
   // in tenants.logo_url solo quando l'utente preme "Salva dati aziendali",
   // coerente col resto del form (un solo pulsante di salvataggio).

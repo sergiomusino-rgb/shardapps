@@ -1,6 +1,6 @@
-# ZeusX Backend
+# ShardApps Backend
 
-Server Express per le API di ZeusX.
+Server Express per le API di ShardApps.
 
 ## Avvio
 

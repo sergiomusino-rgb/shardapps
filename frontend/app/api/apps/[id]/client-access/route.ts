@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const { id } = await params;
 
-    // Verifica autenticazione ZeusX: la sessione utente vive in localStorage
+    // Verifica autenticazione ShardApps: la sessione utente vive in localStorage
     // (non in cookie), quindi il client invia il token via header Authorization
     // come nel resto delle route sotto /api/apps/[id].
     const authHeader = req.headers.get('authorization');

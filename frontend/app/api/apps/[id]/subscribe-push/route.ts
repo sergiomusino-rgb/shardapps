@@ -5,7 +5,7 @@ import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 
 // ─── POST /api/apps/[id]/subscribe-push ────────────────────────────────────
 // Rotta PUBBLICA (nessuna autenticazione): chi si iscrive è un visitatore
-// anonimo della PWA finale (/a/[slug]), non un account ZeusX né un cliente
+// anonimo della PWA finale (/a/[slug]), non un account ShardApps né un cliente
 // loggato in app_users — non ha nessun token da presentare. L'unico controllo
 // applicativo è che l'app_id esista davvero: la scrittura vera e propria
 // passa dalla service_role key (RLS su app_push_subscriptions nega tutto ad

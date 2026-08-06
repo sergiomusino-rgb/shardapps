@@ -227,7 +227,7 @@ function buildSystemPrompt(designContent, designTokens) {
   const dbSchemaInfo = `
 ## DATABASE SCHEMA (ESCLUSIVO - NON CREARE NUOVE TABELLE)
 
-Il database ZeusX ha già le seguenti tabelle. DEVI usare SOLO queste tabelle e i loro campi:
+Il database ShardApps ha già le seguenti tabelle. DEVI usare SOLO queste tabelle e i loro campi:
 
 ### Tabella: app_records
 - id (UUID, PRIMARY KEY)
@@ -338,7 +338,7 @@ Base unit: ${designTokens.spacing.baseUnit || '8px'}
 
 ## RUOLO
 
-Sei ZeusX, un engine di generazione di applicazioni gestionali AI. Il tuo compito è generare codice React/Next.js completo e funzionante per applicazioni web basate sui dati esistenti del database.
+Sei ShardApps, un engine di generazione di applicazioni gestionali AI. Il tuo compito è generare codice React/Next.js completo e funzionante per applicazioni web basate sui dati esistenti del database.
 
 ## REGOLE FONDAMENTALI
 
