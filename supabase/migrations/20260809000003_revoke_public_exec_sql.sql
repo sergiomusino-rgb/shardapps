@@ -31,16 +31,29 @@
 -- stesso ruolo che le ha già usate finora.
 -- ============================================================================
 
-REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM authenticated;
-REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM anon;
+-- to_regprocedure(...) IS NOT NULL invece di un REVOKE/GRANT diretto: queste
+-- funzioni non sono mai state create da una migrazione di questo repo (erano
+-- a mano su Dashboard, vedi sopra). Su un DB rifatto da zero a partire dalla
+-- storia delle migrazioni (supabase db reset in locale, un nuovo ambiente,
+-- CI) non esisterebbero affatto, e un REVOKE/GRANT diretto su una funzione
+-- inesistente fa fallire con errore l'intera catena di migrazioni successive
+-- — qui invece salta silenziosamente se la funzione non c'è.
+DO $$
+BEGIN
+  IF to_regprocedure('public.exec_sql(text)') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM PUBLIC;
+    REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM authenticated;
+    REVOKE EXECUTE ON FUNCTION public.exec_sql(text) FROM anon;
+    GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
+  END IF;
 
-REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM authenticated;
-REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM anon;
-
-GRANT EXECUTE ON FUNCTION public.exec_sql(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.execute_sql(text) TO service_role;
+  IF to_regprocedure('public.execute_sql(text)') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM PUBLIC;
+    REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM authenticated;
+    REVOKE EXECUTE ON FUNCTION public.execute_sql(text) FROM anon;
+    GRANT EXECUTE ON FUNCTION public.execute_sql(text) TO service_role;
+  END IF;
+END $$;
 
 -- ============================================================================
 -- FINE MIGRAZIONE
