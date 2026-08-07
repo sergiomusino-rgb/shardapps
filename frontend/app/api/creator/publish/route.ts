@@ -38,7 +38,16 @@ function generateClientPassword(): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Body non-JSON/malformato: senza questo catch dedicato, request.json()
+    // rilancia e cade nel catch generico sotto come 500 INTERNAL_ERROR —
+    // corretto per un errore nostro, fuorviante per un input malformato del
+    // client, che va segnalato come 400.
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Body della richiesta non è JSON valido', code: 'INVALID_JSON' }, { status: 400 });
+    }
     const { schema: rawSchema, appId: existingAppId, appName: appNameOverride } = body;
 
     if (!rawSchema || typeof rawSchema !== 'object') {

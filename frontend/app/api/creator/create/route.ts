@@ -25,7 +25,14 @@ const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 // ─── POST /api/creator/create ───────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Vedi stesso fix in api/creator/publish/route.ts: JSON malformato deve
+    // essere un 400, non finire nel catch generico come 500 INTERNAL_ERROR.
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Body della richiesta non è JSON valido', code: 'INVALID_JSON' }, { status: 400 });
+    }
     const { schema: rawSchema } = body;
 
     if (!rawSchema || typeof rawSchema !== 'object') {

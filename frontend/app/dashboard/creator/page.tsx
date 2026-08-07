@@ -207,7 +207,7 @@ export default function CreatorPage() {
                 <div>
                   <h2 className="text-sm font-semibold text-white">Brandizza la tua app</h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Il tuo logo al posto di "ShardApps by MUSINO" in ogni app che pubblichi da qui in poi.
+                    Il tuo logo al posto di &quot;ShardApps by MUSINO&quot; in ogni app che pubblichi da qui in poi.
                   </p>
                 </div>
               </div>
