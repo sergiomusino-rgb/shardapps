@@ -1,5 +1,45 @@
 import type { NextConfig } from "next";
 
+// CSP costruita per elenco esplicito di origini realmente usate dal
+// frontend (verificate nel codice, non per assunzione):
+// - fonts.googleapis.com/gstatic.com: unico script/stylesheet di terze
+//   parti caricato dal browser (Google Fonts in app/layout.tsx). Nessun
+//   altro script esterno nel repo (niente Stripe.js: i pagamenti passano
+//   per Stripe Payment Link via redirect a pagina intera, non embed).
+// - Supabase (ujdyqnzofclzztmppxea.supabase.co): client browser (src/lib/supabase.ts)
+//   fa fetch REST diretti; stesso host serve anche i video generati da
+//   Vision (riscaricati da fal.ai e ri-caricati su Supabase Storage, mai
+//   servito da fal.ai al client — vedi app/api/generate-video/route.ts).
+// - zeusx-backend.onrender.com: unico backend Express referenziato da
+//   NEXT_PUBLIC_BACKEND_URL in tutto il repo (nessun altro dominio trovato).
+// - Nessun iframe nel repo (grep su tutta la codebase) -> frame-src 'none'.
+// script-src usa 'unsafe-inline' invece di un nonce per-richiesta: il
+// pattern a nonce di Next richiede rendering dinamico su OGNI pagina
+// (niente più pagine statiche/ISR: /pricing, /login, /management...),
+// un cambio di architettura invasivo. 'unsafe-inline' è il livello base
+// raccomandato da Next per chi non ha requisiti di compliance stretti;
+// resta comunque un salto reale da "nessuna CSP" a un default-src 'self'
+// che blocca exfiltration verso domini non whitelisted.
+const isDev = process.env.NODE_ENV === 'development';
+const SUPABASE_ORIGIN = 'https://ujdyqnzofclzztmppxea.supabase.co';
+const SUPABASE_WS_ORIGIN = 'wss://ujdyqnzofclzztmppxea.supabase.co';
+const BACKEND_ORIGIN = 'https://zeusx-backend.onrender.com';
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''};
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  img-src 'self' data: blob: https:;
+  font-src 'self' https://fonts.gstatic.com data:;
+  media-src 'self' blob: ${SUPABASE_ORIGIN};
+  connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_WS_ORIGIN} ${BACKEND_ORIGIN}${isDev ? ' http://127.0.0.1:5005 http://localhost:5005 ws://localhost:3000 ws://127.0.0.1:3000' : ''};
+  frame-src 'none';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+  frame-ancestors 'self';
+  upgrade-insecure-requests;
+`.replace(/\s{2,}/g, ' ').trim();
+
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   // ffmpeg-static espone il path del binario tramite require.resolve interno:
@@ -29,19 +69,17 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   },
-  // Header di sicurezza a rischio zero (nessuna CSP): il backend Express ha
-  // già CSP/HSTS/X-Frame-Options via Helmet (server.js), il frontend Next.js
-  // no. Qui solo gli header che non richiedono di conoscere in anticipo ogni
-  // script/font/iframe di terze parti usato dalle pagine (Stripe.js, Google
-  // Fonts, Supabase realtime...) — una CSP scritta senza poter testare il
-  // build reale su Vercel rischierebbe di rompere qualcosa in produzione
-  // senza preavviso. Permissions-Policy lascia esplicitamente il microfono
-  // per il dettato vocale del Creator/Comandi AI (useVoiceInput.ts).
+  // Header di sicurezza sul frontend: il backend Express ha già CSP/HSTS/
+  // X-Frame-Options via Helmet (server.js). Permissions-Policy lascia
+  // esplicitamente il microfono per il dettato vocale del Creator/Comandi
+  // AI (useVoiceInput.ts). La CSP è costruita sopra da un elenco esplicito
+  // di origini verificate nel codice — vedi commento su cspHeader.
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
+          { key: 'Content-Security-Policy', value: cspHeader },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'no-referrer' },
