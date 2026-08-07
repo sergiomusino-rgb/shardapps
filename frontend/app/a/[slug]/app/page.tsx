@@ -158,6 +158,9 @@ interface AppConfig {
     logo_url?: string;
     primary_color?: string;
     theme?: 'dark' | 'light';
+    /** White label piano Business ("Brandizza la tua app"): sostituisce logo+testo ShardApps nel footer sidebar. */
+    footer_logo_url?: string;
+    footer_label?: string;
   };
   blueprint?: {
     schema?: { tables: TableDef[] };
