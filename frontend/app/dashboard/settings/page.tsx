@@ -158,7 +158,7 @@ export default function SettingsPage() {
           <h3 className="text-base font-bold text-slate-200 border-b border-slate-800/60 pb-2">App Mobile</h3>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             <div className="flex-1">
-              <p className="text-sm text-slate-300 mb-2">Scansiona il QR code per aprire l'app sul tuo telefono</p>
+              <p className="text-sm text-slate-300 mb-2">Scansiona il QR code per aprire l&apos;app sul tuo telefono</p>
               <p className="text-xs text-slate-500">
                 Collega la tua area riservata direttamente dal tuo dispositivo mobile.
               </p>

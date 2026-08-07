@@ -346,7 +346,7 @@ function SectionRenderer({
                 <div className="mb-1 flex gap-0.5" style={{ color: primary }}>
                   {Array.from({ length: r.rating }, (_, s) => <Star key={s} size={12} fill="currentColor" />)}
                 </div>
-                <p className="mb-2 text-xs text-gray-600">"{r.text}"</p>
+                <p className="mb-2 text-xs text-gray-600">&quot;{r.text}&quot;</p>
                 <div className="text-xs font-semibold text-gray-800">— {r.author}</div>
               </div>
             ))}

@@ -11,12 +11,12 @@ export default function BlockedPage() {
         <h2 className="text-2xl font-bold text-white">App non disponibile</h2>
 
         <p className="text-slate-400 leading-relaxed">
-          Questa app e stata sospesa dall'amministratore.<br />
-          Contatta il tuo gestionale per riattivare l'accesso.
+          Questa app e stata sospesa dall&apos;amministratore.<br />
+          Contatta il tuo gestionale per riattivare l&apos;accesso.
         </p>
 
         <p className="text-slate-500 text-sm">
-          Se pensi sia un errore, verifica con l'amministratore.
+          Se pensi sia un errore, verifica con l&apos;amministratore.
         </p>
       </div>
     </div>

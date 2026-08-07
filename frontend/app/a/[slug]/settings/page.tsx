@@ -416,7 +416,7 @@ export default function SettingsPage() {
               />
             </div>
             <p className="text-gray-400 text-sm text-center">
-              Scansiona per aprire l'app su smartphone
+              Scansiona per aprire l&apos;app su smartphone
             </p>
           </div>
         </div>

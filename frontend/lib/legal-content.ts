@@ -38,8 +38,16 @@ export function getLegalContentUrl(type: LegalType, locale: Locale): string {
 export function getLegalContent(type: LegalType, locale: Locale): string {
   // In server context, we can read files directly
   if (typeof window === 'undefined') {
-    // Server-side: read from filesystem
+    // Server-side: read from filesystem. require() qui (non import in cima al
+    // file) e' intenzionale: questo modulo e' importato anche da pagine
+    // 'use client' (per getLegalContentUrl, l'export client-safe) — un
+    // import statico di 'fs'/'path' verrebbe risolto anche nel bundle
+    // client e romperebbe la build (Node core module senza polyfill
+    // browser). Con require() dentro il branch server-only, il bundler non
+    // lo eager-risolve per il client.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const fs = require('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const path = require('path');
     const filePath = path.join(process.cwd(), 'public', 'legal', `${type}.${locale}.txt`);
     

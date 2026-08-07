@@ -488,7 +488,7 @@ export default function AdminSettingsPage() {
                     className={`w-full ${inputBg} border ${border} ${textPrimary} rounded-xl px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition resize-none`}
                   />
                   <p className={`text-xs ${textMuted} mt-1`}>
-                    Questo testo apparirà nell'intestazione dei documenti generati
+                    Questo testo apparirà nell&apos;intestazione dei documenti generati
                   </p>
                 </div>
 
