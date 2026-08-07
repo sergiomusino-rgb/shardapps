@@ -29,6 +29,30 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   },
+  // Header di sicurezza a rischio zero (nessuna CSP): il backend Express ha
+  // già CSP/HSTS/X-Frame-Options via Helmet (server.js), il frontend Next.js
+  // no. Qui solo gli header che non richiedono di conoscere in anticipo ogni
+  // script/font/iframe di terze parti usato dalle pagine (Stripe.js, Google
+  // Fonts, Supabase realtime...) — una CSP scritta senza poter testare il
+  // build reale su Vercel rischierebbe di rompere qualcosa in produzione
+  // senza preavviso. Permissions-Policy lascia esplicitamente il microfono
+  // per il dettato vocale del Creator/Comandi AI (useVoiceInput.ts).
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'X-DNS-Prefetch-Control', value: 'off' },
+          { key: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+          { key: 'Permissions-Policy', value: 'camera=(), geolocation=(), microphone=(self)' },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     // Only use backend rewrite in production
     if (process.env.NODE_ENV === 'production') {

@@ -44,78 +44,93 @@ async function resolveTenant(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  const resolved = await resolveTenant(req);
-  if (resolved.error) return resolved.error;
-  const { adminClient, tenantId } = resolved;
+  try {
+    const resolved = await resolveTenant(req);
+    if (resolved.error) return resolved.error;
+    const { adminClient, tenantId } = resolved;
 
-  const { data: tenant, error } = await adminClient
-    .from('tenants')
-    .select('plan, white_label_logo_url, white_label_label')
-    .eq('id', tenantId)
-    .single();
+    const { data: tenant, error } = await adminClient
+      .from('tenants')
+      .select('plan, white_label_logo_url, white_label_label')
+      .eq('id', tenantId)
+      .single();
 
-  if (error || !tenant) {
-    return NextResponse.json({ error: 'Tenant non trovato' }, { status: 404 });
+    if (error || !tenant) {
+      return NextResponse.json({ error: 'Tenant non trovato' }, { status: 404 });
+    }
+
+    return NextResponse.json({ tenant });
+  } catch (error) {
+    console.error('[GET /api/tenants/white-label] error:', error);
+    return NextResponse.json({ error: 'Errore interno' }, { status: 500 });
   }
-
-  return NextResponse.json({ tenant });
 }
 
 const MAX_URL_LENGTH = 2000;
 const MAX_LABEL_LENGTH = 40;
 
 export async function PATCH(req: NextRequest) {
-  const resolved = await resolveTenant(req);
-  if (resolved.error) return resolved.error;
-  const { adminClient, tenantId } = resolved;
+  try {
+    const resolved = await resolveTenant(req);
+    if (resolved.error) return resolved.error;
+    const { adminClient, tenantId } = resolved;
 
-  const { data: tenant } = await adminClient
-    .from('tenants')
-    .select('plan')
-    .eq('id', tenantId)
-    .single();
+    const { data: tenant } = await adminClient
+      .from('tenants')
+      .select('plan')
+      .eq('id', tenantId)
+      .single();
 
-  if ((tenant as { plan?: string } | null)?.plan !== 'business') {
-    return NextResponse.json(
-      { error: 'Il white label è disponibile solo con il piano Business', code: 'PLAN_REQUIRED' },
-      { status: 403 }
-    );
-  }
-
-  const body = await req.json();
-  const updates: Record<string, string | null> = {};
-
-  if ('white_label_logo_url' in body) {
-    const val = body.white_label_logo_url;
-    if (typeof val === 'string' && val.length > MAX_URL_LENGTH) {
-      return NextResponse.json({ error: 'URL logo troppo lungo' }, { status: 400 });
+    if ((tenant as { plan?: string } | null)?.plan !== 'business') {
+      return NextResponse.json(
+        { error: 'Il white label è disponibile solo con il piano Business', code: 'PLAN_REQUIRED' },
+        { status: 403 }
+      );
     }
-    updates.white_label_logo_url = typeof val === 'string' && val ? val : null;
-  }
-  if ('white_label_label' in body) {
-    const val = body.white_label_label;
-    if (typeof val === 'string' && val.length > MAX_LABEL_LENGTH) {
-      return NextResponse.json({ error: 'Testo troppo lungo' }, { status: 400 });
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
     }
-    updates.white_label_label = typeof val === 'string' && val ? val : null;
+    const updates: Record<string, string | null> = {};
+
+    if ('white_label_logo_url' in body) {
+      const val = body.white_label_logo_url;
+      if (typeof val === 'string' && val.length > MAX_URL_LENGTH) {
+        return NextResponse.json({ error: 'URL logo troppo lungo' }, { status: 400 });
+      }
+      updates.white_label_logo_url = typeof val === 'string' && val ? val : null;
+    }
+    if ('white_label_label' in body) {
+      const val = body.white_label_label;
+      if (typeof val === 'string' && val.length > MAX_LABEL_LENGTH) {
+        return NextResponse.json({ error: 'Testo troppo lungo' }, { status: 400 });
+      }
+      updates.white_label_label = typeof val === 'string' && val ? val : null;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 });
+    }
+
+    const { data: tenantUpdated, error: updateError } = await adminClient
+      .from('tenants')
+      // updates è whitelisted sopra: il cast bypassa la corrispondenza esatta col tipo Update generato.
+      .update(updates as any)
+      .eq('id', tenantId)
+      .select('plan, white_label_logo_url, white_label_label')
+      .single();
+
+    if (updateError || !tenantUpdated) {
+      console.error('[PATCH /api/tenants/white-label] update error:', updateError);
+      return NextResponse.json({ error: 'Errore salvataggio' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, tenant: tenantUpdated });
+  } catch (error) {
+    console.error('[PATCH /api/tenants/white-label] error:', error);
+    return NextResponse.json({ error: 'Errore interno' }, { status: 500 });
   }
-
-  if (Object.keys(updates).length === 0) {
-    return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 });
-  }
-
-  const { data: tenantUpdated, error: updateError } = await adminClient
-    .from('tenants')
-    // updates è whitelisted sopra: il cast bypassa la corrispondenza esatta col tipo Update generato.
-    .update(updates as any)
-    .eq('id', tenantId)
-    .select('plan, white_label_logo_url, white_label_label')
-    .single();
-
-  if (updateError || !tenantUpdated) {
-    console.error('[PATCH /api/tenants/white-label] update error:', updateError);
-    return NextResponse.json({ error: 'Errore salvataggio' }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true, tenant: tenantUpdated });
 }

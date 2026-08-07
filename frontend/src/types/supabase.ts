@@ -1608,14 +1608,20 @@ export type Database = {
           city: string | null
           created_at: string | null
           id: string
+          logo_url: string | null
           name: string
           owner_id: string
+          payments_enabled: boolean
           phone: string | null
           plan: string
           slug: string
+          stripe_payment_link: string | null
+          stripe_public_key: string | null
           total_apps_created: number
           updated_at: string | null
           vat_number: string | null
+          white_label_label: string | null
+          white_label_logo_url: string | null
         }
         Insert: {
           address?: string | null
@@ -1623,14 +1629,20 @@ export type Database = {
           city?: string | null
           created_at?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           owner_id: string
+          payments_enabled?: boolean
           phone?: string | null
           plan?: string
           slug: string
+          stripe_payment_link?: string | null
+          stripe_public_key?: string | null
           total_apps_created?: number
           updated_at?: string | null
           vat_number?: string | null
+          white_label_label?: string | null
+          white_label_logo_url?: string | null
         }
         Update: {
           address?: string | null
@@ -1638,14 +1650,20 @@ export type Database = {
           city?: string | null
           created_at?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           owner_id?: string
+          payments_enabled?: boolean
           phone?: string | null
           plan?: string
           slug?: string
+          stripe_payment_link?: string | null
+          stripe_public_key?: string | null
           total_apps_created?: number
           updated_at?: string | null
           vat_number?: string | null
+          white_label_label?: string | null
+          white_label_logo_url?: string | null
         }
         Relationships: []
       }
