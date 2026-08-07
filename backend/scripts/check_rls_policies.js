@@ -10,10 +10,20 @@
 // attese, invece di fidarsi che "il file di migrazione esiste quindi è a
 // posto".
 //
+// Dal 2026-08-09 controlla anche i permessi EXECUTE sulle funzioni (schema
+// public, FUNCTION_BASELINE sotto) — nato da un'altra vulnerabilità critica
+// nella stessa categoria (drift di permessi mai tracciato in una
+// migrazione): exec_sql/execute_sql eseguivano SQL arbitrario con EXECUTE
+// ancora aperto a PUBLIC, e altre funzioni admin/crediti bypassavano ogni
+// RLS senza alcun controllo interno sul chiamante. Il controllo sulle sole
+// policy RLS delle tabelle non le avrebbe mai intercettate — vedi
+// 20260809000003/05/06 nelle migrazioni.
+//
 // Uso: node backend/scripts/check_rls_policies.js
-// Exit code 1 se una tabella con contratto noto (BASELINE sotto) non
-// combacia esattamente — pensato per essere lanciato prima di ogni deploy
-// (manualmente per ora; puoi aggiungerlo come step in CI).
+// Exit code 1 se una tabella o una funzione con contratto noto (BASELINE/
+// FUNCTION_BASELINE sotto) non combacia esattamente — pensato per essere
+// lanciato prima di ogni deploy (manualmente per ora; puoi aggiungerlo come
+// step in CI).
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { createClient } = require('@supabase/supabase-js');
@@ -282,6 +292,86 @@ const BASELINE = {
   test_tabella: { SELECT: [], INSERT: [], UPDATE: [], DELETE: [] },
 };
 
+// Contratto verificato il 2026-08-09, stesso giorno e stesso motivo del
+// BASELINE sopra: due funzioni SECURITY DEFINER (exec_sql/execute_sql,
+// create a mano su Dashboard, mai da una migrazione) eseguivano qualunque
+// SQL gli venisse passato con EXECUTE ancora aperto a PUBLIC — mai revocato,
+// perché Postgres lo concede di default alla creazione di una funzione e
+// nessuno lo aveva mai tolto esplicitamente. Verificato con una sessione
+// utente autenticata reale: chiunque loggato poteva eseguire SQL arbitrario,
+// bypassando ogni RLS (vedi 20260809000003_revoke_public_exec_sql.sql).
+// Estendendo questo stesso controllo alle funzioni sono emerse altre 4
+// funzioni admin/finanziarie con lo stesso problema, questa volta create da
+// una migrazione regolare ma senza mai un REVOKE FROM PUBLIC esplicito
+// (20260809000005_revoke_public_admin_functions.sql): chiunque poteva
+// riassegnare la proprietà di qualunque app, azzerare i debiti di qualunque
+// reseller, o leggere email/nome/debito di tutti i reseller.
+//
+// Come per BASELINE: un elenco vuoto (INSERT/UPDATE/DELETE nella tabella
+// sopra) significa "nessuna policy permissiva" — qui un elenco di grantee
+// mancante da FUNCTION_BASELINE significa "non ancora verificata", non
+// "sicura per default". Le funzioni degli helper di introspezione stesse
+// (list_rls_policies, list_function_privileges, ecc.) sono incluse qui:
+// devono restare riservate a service_role tanto quanto qualunque altra.
+// Chiavi = full_signature esatta restituita da list_function_privileges()
+// (pg_get_function_identity_arguments: include i nomi dei parametri, non
+// solo i tipi) — un disallineamento qui produce un falso "nessun grant
+// trovato" per ogni voce, non un problema reale del database.
+const FUNCTION_BASELINE = {
+  // Tooling di introspezione/migrazione: mai da esporre oltre service_role.
+  'exec_sql(sql text)': ['service_role'],
+  'execute_sql(sql_query text)': ['service_role'],
+  'get_function_source(fn_name text)': ['service_role'],
+  'list_rls_policies()': ['service_role'],
+  'list_table_rls_status()': ['service_role'],
+  'list_function_privileges()': ['service_role'],
+  // Admin/reseller: nessun controllo interno sul chiamante, protette solo
+  // dal verifyAdmin() delle route app/api/admin/*.ts (già su service_role) —
+  // vedi 20260809000005_revoke_public_admin_functions.sql.
+  'admin_takeover_reseller_app(target_app_id uuid)': ['service_role'],
+  'mark_reseller_transactions_paid(p_reseller_id uuid)': ['service_role'],
+  'get_reseller_debts()': ['service_role'],
+  'get_zeusx_total_due(p_reseller_id uuid)': ['service_role'],
+  'get_app_for_takeover(target_app_id uuid)': ['service_role'],
+  'get_reseller_apps(p_reseller_id uuid)': ['service_role'],
+  'get_reseller_apps_with_total(p_reseller_id uuid)': ['service_role'],
+  'get_user_tenant_ids(p_user_id uuid)': ['service_role'],
+  'count_tenant_apps(p_tenant_id uuid)': ['service_role'],
+  'is_app_accessible(p_app_id uuid)': ['service_role'],
+  'is_tenant_member(p_tenant_id uuid, p_user_id uuid)': ['service_role'],
+  'add_tenant_slots(tenant_id uuid, slots_to_add integer)': ['service_role'],
+  'check_rate_limit(p_key text, p_window_seconds integer, p_max_requests integer)': ['service_role'],
+  // Crediti Vision: nessun controllo interno, l'importo/utente arriva intero
+  // dal chiamante — vanno chiamate solo da un flusso server già verificato
+  // (webhook Stripe, conteggio consumo reale), mai dal client diretto. Vedi
+  // 20260809000006_revoke_public_credits_and_misc_functions.sql.
+  'deduct_credits(p_user_id uuid, p_amount integer, p_type text, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
+  'grant_credits(p_user_id uuid, p_amount integer, p_type text, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
+  'refund_credits(p_user_id uuid, p_amount integer, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
+  // Slot app: RPC atomica anti race-condition, chiamata solo da route server
+  // già su service_role (api/creator/create, api/apps) — non ha bisogno di
+  // essere raggiungibile dal client.
+  'increment_tenant_app_count(p_tenant_id uuid)': ['service_role'],
+
+  // ─── Verificate: grant ampio intenzionale, con controllo interno solido ──
+  // Lette per intero il 2026-08-09 — ognuna filtra esplicitamente su
+  // auth.uid() prima di restituire qualunque dato, quindi un chiamante non
+  // autenticato o non pertinente riceve sempre riga vuota/eccezione, a
+  // prescindere da quanto è ampio il grant. Corretto lasciarle raggiungibili
+  // da anon/authenticated: sono pensate per essere chiamate dal client (RLS
+  // helper e lettura dei propri dati), non solo da service_role.
+  'get_app_client_credentials(p_app_id uuid)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+  'get_my_tenant_ids()': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+  'has_feature_access(feature_name text)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+  'has_table_access(table_name text)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+  'is_member_of_tenant(tenant_id_to_check uuid)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+  // NON SECURITY DEFINER: gira con i privilegi del chiamante, quindi resta
+  // comunque soggetta alla RLS reale della tabella tenants (tenants_select)
+  // anche con un grant ampio sulla funzione — verificato empiricamente che
+  // un utente anon non riesce a leggere slot di un tenant che non è il suo.
+  'get_tenant_slots_available(tenant_id uuid)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
+};
+
 function sameSet(a, b) {
   if (a.length !== b.length) return false;
   const sa = [...a].sort();
@@ -307,6 +397,14 @@ async function main() {
   if (error) {
     console.error('❌ Impossibile leggere le policy RLS:', error.message);
     console.error('   Verifica di aver applicato la migrazione 20260808000012_list_rls_policies_function.sql');
+    process.exitCode = 2;
+    return;
+  }
+
+  const { data: funcRows, error: funcError } = await supabase.rpc('list_function_privileges');
+  if (funcError) {
+    console.error('❌ Impossibile leggere i permessi sulle funzioni:', funcError.message);
+    console.error('   Verifica di aver applicato la migrazione 20260809000004_list_function_privileges.sql');
     process.exitCode = 2;
     return;
   }
@@ -367,17 +465,57 @@ async function main() {
     }
   }
 
+  // 3. Permessi EXECUTE sulle funzioni (schema public). Nato dalla
+  // vulnerabilità del 2026-08-09: exec_sql/execute_sql eseguivano SQL
+  // arbitrario con EXECUTE ancora aperto a PUBLIC, mai revocato — questo
+  // controllo sulle sole policy RLS delle tabelle non l'avrebbe mai vista,
+  // categoria di permesso diversa. Stessa struttura del controllo tabelle:
+  // FUNCTION_BASELINE = contratto verificato, confronto esatto; qualunque
+  // altra funzione custom (non di estensione, non trigger) con un grant ad
+  // anon/authenticated/PUBLIC non ancora verificato è un warning, non un
+  // fallimento — così una nuova funzione RPC scritta domani senza pensare ai
+  // permessi viene segnalata qui invece di scoprirla con un audit a mano.
+  console.log('\n🔍 Controllo permessi EXECUTE sulle funzioni (schema public)\n');
+
+  const byFunctionGrantee = {};
+  const funcMeta = {};
+  for (const row of funcRows || []) {
+    if (row.is_extension_function || row.is_trigger) continue; // rumore: pg_trgm e trigger non richiamabili via RPC
+    if (row.grantee === 'postgres') continue; // privilegio implicito del proprietario, non un grant significativo
+    byFunctionGrantee[row.full_signature] = byFunctionGrantee[row.full_signature] || new Set();
+    byFunctionGrantee[row.full_signature].add(row.grantee);
+    funcMeta[row.full_signature] = { isSecurityDefiner: row.is_security_definer };
+  }
+
+  for (const [fnSignature, expected] of Object.entries(FUNCTION_BASELINE)) {
+    const actual = [...(byFunctionGrantee[fnSignature] || new Set())];
+    if (!sameSet(expected, actual)) {
+      hasFailure = true;
+      console.log(`❌ ${fnSignature}: atteso [${expected.join(', ')}], trovato [${actual.join(', ') || 'nessun grant'}]`);
+    }
+    delete byFunctionGrantee[fnSignature];
+  }
+
+  for (const [fnSignature, granteeSet] of Object.entries(byFunctionGrantee)) {
+    const grantees = [...granteeSet];
+    const risky = grantees.filter((g) => g === 'PUBLIC' || g === 'anon' || g === 'authenticated');
+    if (risky.length === 0) continue;
+    hasWarning = true;
+    const tag = funcMeta[fnSignature]?.isSecurityDefiner ? 'SECURITY DEFINER' : 'invoker rights';
+    console.log(`⚠️  ${fnSignature} (${tag}): non ancora verificata, eseguibile da [${risky.join(', ')}]. Se non ha un controllo interno su auth.uid()/membership, revoca il grant o aggiungila a FUNCTION_BASELINE dopo averla letta.`);
+  }
+
   console.log();
   if (hasFailure) {
-    console.log('❌ FALLITO: una o più tabelle critiche non hanno il set di policy atteso. Vedi sopra.');
+    console.log('❌ FALLITO: una o più tabelle critiche non hanno il set di policy atteso, o una funzione non combacia col contratto verificato. Vedi sopra.');
     process.exitCode = 1;
     return;
   }
   if (hasWarning) {
-    console.log('⚠️  Nessuna tabella del contratto critico è compromessa, ma ci sono sovrapposizioni su tabelle non ancora verificate — vedi sopra.');
+    console.log('⚠️  Nessuna tabella/funzione del contratto critico è compromessa, ma ci sono sovrapposizioni di policy o funzioni non ancora verificate — vedi sopra.');
     return;
   }
-  console.log('✅ Tutte le policy RLS combaciano con quanto atteso.');
+  console.log('✅ Tutte le policy RLS e i permessi sulle funzioni combaciano con quanto atteso.');
 }
 
 // process.exitCode invece di process.exit(): su Windows, chiudere il
