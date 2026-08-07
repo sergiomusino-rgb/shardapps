@@ -140,8 +140,8 @@ export default function PricingPage() {
       features: [
         t('pricing_slots_included_singular'),
         `20 ${t('pricing_credits_included')}`,
-        t('pricing_per_app').replace('{fee}', '25€') + ' (dopo 1 mese gratis)',
-        'Supporto email'
+        t('pricing_per_app').replace('{fee}', '25€') + ' ' + t('pricing_first_month_free'),
+        t('pricing_feature_support_email')
       ],
       priceId: 'price_1Ty8ZPRZR2YaFu2s8aFmA4Az',
       highlighted: false,
@@ -157,8 +157,8 @@ export default function PricingPage() {
         '5 ' + t('pricing_slots_included'),
         `100 ${t('pricing_credits_included')}`,
         t('pricing_per_app').replace('{fee}', '25€'),
-        'Supporto prioritario',
-        'API illimitate'
+        t('pricing_feature_support_priority'),
+        t('pricing_feature_api_unlimited')
       ],
       priceId: 'price_1TyX0yRZR2YaFu2s1nKkKHVw',
       highlighted: true,
@@ -174,9 +174,9 @@ export default function PricingPage() {
         '50 ' + t('pricing_slots_included'),
         `500 ${t('pricing_credits_included')}`,
         t('pricing_per_app').replace('{fee}', '25€'),
-        'Supporto dedicato 24/7',
-        'API illimitate',
-        'SLA garantito'
+        t('pricing_feature_support_dedicated'),
+        t('pricing_feature_api_unlimited'),
+        t('pricing_feature_sla')
       ],
       priceId: 'price_1TyX0yRZR2YaFu2s4veOZc6r',
       highlighted: false,
@@ -342,7 +342,7 @@ export default function PricingPage() {
                     <span className="text-slate-400">{t('pricing_setup')}</span>
                   </div>
                   <div className="text-sm text-slate-400 mt-2">
-                    + {plan.monthlyFee}€/mese per app attiva
+                    {t('pricing_monthly_fee_line').replace('{fee}', plan.monthlyFee)}
                   </div>
                 </div>
 

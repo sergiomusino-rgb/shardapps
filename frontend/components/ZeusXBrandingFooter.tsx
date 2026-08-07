@@ -11,7 +11,7 @@ export default function ZeusXBrandingFooter() {
         {/* Logo ShardApps */}
         <div className="flex items-center gap-2">
           <Image
-            src="/zeusxapps.jpeg"
+            src="/favicon.png"
             alt="ShardApps Logo"
             width={20}
             height={20}

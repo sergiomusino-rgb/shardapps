@@ -143,6 +143,9 @@ interface AppConfig {
       logo_url?: string;
       primary_color?: string;
       theme?: 'dark' | 'light';
+      /** White label piano Business ("Brandizza la tua app"): sostituisce logo+testo ShardApps nel footer sidebar. */
+      footer_logo_url?: string;
+      footer_label?: string;
     };
     appName?: string;
     logo?: string;
@@ -155,6 +158,9 @@ interface AppConfig {
     logo_url?: string;
     primary_color?: string;
     theme?: 'dark' | 'light';
+    /** White label piano Business ("Brandizza la tua app"): sostituisce logo+testo ShardApps nel footer sidebar. */
+    footer_logo_url?: string;
+    footer_label?: string;
   };
   blueprint?: {
     schema?: { tables: TableDef[] };
@@ -1352,6 +1358,14 @@ export function ViewerProFinal() {
     || config?.logo
     || '';
 
+  // White label (piano Business): quando il creator ha caricato un logo
+  // custom da "Brandizza la tua app" (dashboard/projects/[id]/page.tsx),
+  // sostituisce logo+testo ShardApps nel footer sidebar. Assente per le app
+  // create prima di questa feature o senza piano Business → fallback al
+  // branding ShardApps di default (vedi SidebarBrandFooter).
+  const footerLogoUrl = config?.branding?.footer_logo_url || '';
+  const footerLabel = config?.branding?.footer_label || '';
+
   // Motore Sito/PWA (Creator v2): assente per le app del vecchio motore
   // tabellare, quindi la sezione "Dati Attività" in Impostazioni non compare.
   const rawBusinessConfig = innerConfig?.businessConfig
@@ -2151,6 +2165,8 @@ export function ViewerProFinal() {
           designTokens={designTokens}
           companyName={companyName}
           logoUrl={logoUrl}
+          footerLogoUrl={footerLogoUrl}
+          footerLabel={footerLabel}
           slug={slug}
           tables={tables}
           activeView={activeView}
@@ -2276,6 +2292,8 @@ export function ViewerProFinal() {
         onLogout={handleLogout}
         logoUrl={logoUrl}
         companyName={companyName}
+        footerLogoUrl={footerLogoUrl}
+        footerLabel={footerLabel}
         slug={slug}
         isMobile={isMobile}
         open={sidebarOpen}

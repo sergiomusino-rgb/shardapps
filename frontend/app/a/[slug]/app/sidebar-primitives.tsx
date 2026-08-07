@@ -110,7 +110,26 @@ export function SidebarLogo({ logoUrl, companyName }: { logoUrl: string; company
 // stesso file (/favicon.png), stessa forma (cerchio, non rettangolo
 // arrotondato), stessa disposizione verticale — un solo aspetto per il
 // branding "ShardApps by MUSINO" in ogni app, generata o no.
-export function SidebarBrandFooter() {
+//
+// White label (piano Business, vedi "Brandizza la tua app" in
+// dashboard/projects/[id]/page.tsx): se il creator ha caricato un proprio
+// logo in config.branding.footer_logo_url, sostituisce logo+testo
+// ShardApps qui — stesso posto, stessa forma, nessun altro cambiamento di
+// layout per non rompere lo spazio riservato nella sidebar.
+export function SidebarBrandFooter({ logoUrl, label }: { logoUrl?: string; label?: string }) {
+  if (logoUrl) {
+    return (
+      <div className="flex flex-col items-center gap-2 px-5 py-3">
+        <img
+          src={logoUrl}
+          alt={label || 'App'}
+          className="h-14 w-14 shrink-0 rounded-full object-cover"
+        />
+        {label && <p className="m-0 max-w-full truncate text-xs font-semibold text-tenant-sidebar-text/50">{label}</p>}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center gap-2 px-5 py-3">
       <Image

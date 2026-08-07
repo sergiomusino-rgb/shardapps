@@ -15,6 +15,7 @@ import {
   generateCreatorSlug,
   toViewerTables,
   CREATOR_ADMIN_USER_ID,
+  getTenantWhiteLabel,
 } from '@/src/lib/creator-server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -148,6 +149,14 @@ export async function POST(request: NextRequest) {
       ...blueprint,
       schema: { tables: toViewerTables(blueprint.schema.tables) },
     };
+
+    // White label reseller ("Brandizza la tua app", piano Business): stesso
+    // meccanismo di /api/creator/publish, qui solo per la prima creazione —
+    // questa route non gestisce ripubblicazioni di un'app esistente.
+    const whiteLabel = await getTenantWhiteLabel(supabase, tenantId);
+    if (whiteLabel) {
+      (schema as { branding?: typeof whiteLabel }).branding = whiteLabel;
+    }
 
     const slug = generateCreatorSlug(schema.appName || 'app-creator', blueprint.sector);
     const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;

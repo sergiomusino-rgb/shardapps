@@ -230,7 +230,7 @@ export default function Sidebar({
         {onClose && (
           <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4 md:hidden">
             <span className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-lg font-black tracking-wider text-transparent">
-              ⚡ ZEUSX
+              ⚡ SHARDAPPS
             </span>
             <button
               onClick={onClose}
@@ -248,7 +248,7 @@ export default function Sidebar({
             href="/dashboard"
             className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-xl font-black tracking-wider text-transparent"
           >
-            ⚡ ZEUSX
+            ⚡ SHARDAPPS
           </Link>
           {appId && (
             <span className="ml-auto rounded-md bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-400">
