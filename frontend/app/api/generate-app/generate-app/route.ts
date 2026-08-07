@@ -5,7 +5,13 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
-    const { prompt, lang } = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
+    const { prompt, lang } = body;
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     const systemInstruction = `Sei l'architetto di ShardApps. Genera SOLO un oggetto JSON valido basato su questo prompt: "${prompt}".

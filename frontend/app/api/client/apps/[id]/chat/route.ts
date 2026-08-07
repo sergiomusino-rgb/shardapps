@@ -16,7 +16,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const body = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const res = await fetch(`${BACKEND_URL}/api/client/apps/${id}/chat`, {
       method: 'POST',
       headers: {

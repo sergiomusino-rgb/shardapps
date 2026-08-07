@@ -9,7 +9,12 @@ const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   try {
     const { slug } = await params;
-    const body = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { password } = body;
 
     if (!password) {

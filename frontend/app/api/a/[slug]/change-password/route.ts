@@ -8,7 +8,13 @@ export async function POST(
 ) {
   try {
     const { slug } = await params;
-    const { oldPassword, newPassword } = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
+    const { oldPassword, newPassword } = body;
 
     if (!oldPassword || !newPassword) {
       return NextResponse.json({ error: 'Password vecchia e nuova richieste' }, { status: 400 });

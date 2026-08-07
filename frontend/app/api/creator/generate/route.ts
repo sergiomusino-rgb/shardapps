@@ -328,7 +328,12 @@ function fillBusinessConfigDefaults(blueprint: SiteBlueprintJSON, lang: string):
 // ─── POST /api/creator/generate ───────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { userPrompt, sector, lang: rawLang } = body;
     const safeSector = sector || 'saas';
     // Whitelist esplicita: non fidarsi di una stringa libera dal body per un

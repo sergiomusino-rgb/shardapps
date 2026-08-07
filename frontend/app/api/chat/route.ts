@@ -45,7 +45,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Troppe richieste, riprova tra poco.' }, { status: 429 });
     }
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { messages } = body;
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
