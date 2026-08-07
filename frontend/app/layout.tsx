@@ -61,9 +61,16 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* Google Fonts per i Design System */}
+        {/* Google Fonts per i Design System: qui e non via next/font perche'
+            l'insieme di famiglie e' scelto dinamicamente per ogni sito
+            generato (design system diverso per settore/tenant), non
+            un elenco statico che next/font possa risolvere a build time.
+            La regola no-page-custom-font e' pensata per il Pages Router
+            (dove esiste _document.js) — in App Router questo <link> nel
+            root layout si applica gia' a ogni pagina, non solo a una. */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&family=Playfair+Display:wght@400;500;600;700;800&family=Fraunces:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"

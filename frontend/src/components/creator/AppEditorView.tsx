@@ -129,7 +129,7 @@ function PublishSuccessModal({ result, onClose }: { result: PublishResult; onClo
             rel="noreferrer"
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
           >
-            <ExternalLink size={14} /> Apri l'app
+            <ExternalLink size={14} /> Apri l&apos;app
           </a>
           <button
             onClick={onClose}

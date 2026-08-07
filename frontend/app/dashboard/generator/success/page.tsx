@@ -1,6 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Sparkles, Copy, Check, Key, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useState, useEffect } from 'react';
@@ -359,12 +360,12 @@ export default function SuccessPage() {
                {t('success_button_go_to_app_details') || 'Vai ai dettagli dell\'app'}
              </a>
            )}
-           <a
+           <Link
              href="/dashboard/generator"
              className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 px-6 rounded-xl font-semibold transition-colors text-center"
            >
              {t('success_button_new_prompt')}
-           </a>
+           </Link>
          </div>
       </div>
     </div>

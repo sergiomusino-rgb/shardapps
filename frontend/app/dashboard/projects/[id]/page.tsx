@@ -499,7 +499,7 @@ export default function AppDetailPage() {
                   </button>
                 </div>
                 <p className="text-xs text-slate-500">
-                   Il cliente può cambiare la password in qualsiasi momento dall'interno dell'app.
+                   Il cliente può cambiare la password in qualsiasi momento dall&apos;interno dell&apos;app.
                 </p>
               </div>
             )}
@@ -611,7 +611,7 @@ export default function AppDetailPage() {
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
         <h2 className="text-lg font-semibold">Dati Acquirente</h2>
         <p className="text-sm text-slate-400 -mt-2">
-          Anagrafica del titolare che usa l'app e paga l'abbonamento (diversa dalle credenziali di accesso qui sopra).
+          Anagrafica del titolare che usa l&apos;app e paga l&apos;abbonamento (diversa dalle credenziali di accesso qui sopra).
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -693,7 +693,7 @@ export default function AppDetailPage() {
           <div>
             <h2 className="text-lg font-semibold">Brandizza la tua app</h2>
             <p className="text-sm text-slate-400 mt-1">
-              Sostituisci "ShardApps by MUSINO" in fondo alla sidebar con il tuo logo, così l'app sembra fatta interamente da te.
+              Sostituisci &quot;ShardApps by MUSINO&quot; in fondo alla sidebar con il tuo logo, così l&apos;app sembra fatta interamente da te.
             </p>
           </div>
           {tenantPlan !== 'business' && (

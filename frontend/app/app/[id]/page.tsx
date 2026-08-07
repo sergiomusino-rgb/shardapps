@@ -259,7 +259,7 @@ export default function AppViewerPage() {
                 {records.length === 0 ? (
                   <tr>
                     <td colSpan={(currentTable?.fields?.length || 0) + 1} className="px-4 py-12 text-center text-gray-500">
-                      Nessun record. Clicca "+ Nuovo" per crearne uno.
+                      Nessun record. Clicca &quot;+ Nuovo&quot; per crearne uno.
                     </td>
                   </tr>
                 ) : (
