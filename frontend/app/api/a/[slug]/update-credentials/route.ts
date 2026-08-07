@@ -12,7 +12,12 @@ export async function POST(
 ) {
   try {
     const { slug } = await params;
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { client_email, client_password } = body;
 
     // Validazioni base

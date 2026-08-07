@@ -35,7 +35,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const authHeader = request.headers.get('authorization');
 
     // Forward to backend, incluso l'Authorization: senza, il backend non ha

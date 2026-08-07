@@ -16,7 +16,12 @@ export async function POST(request: NextRequest) {
   try {
     console.log('[save-production-url] === RICHIESTA RICEVUTA ===');
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { appId, appSlug } = body;
 
     if (!appId || !appSlug) {

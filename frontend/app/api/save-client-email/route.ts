@@ -6,7 +6,13 @@ import { cookies } from 'next/headers';
 
 export async function POST(request: Request) {
   try {
-    const { slug, email } = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
+    const { slug, email } = body;
 
     if (!slug || !email) {
       return NextResponse.json(

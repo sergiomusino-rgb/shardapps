@@ -223,7 +223,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Tenant non trovato' }, { status: 404 });
     }
 
-    const body = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const updates: Record<string, string | null> = {};
     for (const field of CLIENT_PROFILE_FIELDS) {
       if (field in body) {

@@ -153,7 +153,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { app_id } = body;
 
     if (!app_id) {

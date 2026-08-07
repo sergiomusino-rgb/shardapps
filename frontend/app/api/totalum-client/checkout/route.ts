@@ -31,7 +31,12 @@ function getSupabase() {
 export async function POST(request: NextRequest) {
   try {
     // Leggi il body della richiesta
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { totalum_app_id, customer_email } = body;
 
     // Validazione parametri

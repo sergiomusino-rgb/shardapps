@@ -31,7 +31,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Leggi il body della richiesta
-    const body = await request.json();
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
     const { app_id, totalum_app_id, client_subscription_price } = body;
 
     // Validazione parametri: serve un identificativo dell'app. Le app create

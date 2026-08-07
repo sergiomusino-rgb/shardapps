@@ -40,7 +40,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Utente non autenticato' }, { status: 401 });
     }
 
-    const { name, slug } = await req.json();
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
+    }
+    const { name, slug } = body;
 
     if (!name || !slug) {
       return NextResponse.json({ error: 'Nome e slug sono obbligatori' }, { status: 400 });
