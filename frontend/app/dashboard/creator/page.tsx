@@ -15,9 +15,10 @@
 // SiteBlueprintJSON. Il passo di conferma/pubblicazione per il nuovo motore
 // resta da costruire.
 
-import { useState } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { RotateCcw, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { RotateCcw, AlertCircle, UploadCloud, Loader2, Check, Sparkles } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import ProjectWizard from '@/src/components/creator/ProjectWizard';
 import AppEditorView from '@/src/components/creator/AppEditorView';
@@ -31,6 +32,106 @@ export default function CreatorPage() {
   const [schema, setSchema] = useState<SiteBlueprintJSON | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Brandizza la tua app (white label reseller, piano Business): impostato
+  // una volta qui, applicato automaticamente a ogni pubblicazione da
+  // getTenantWhiteLabel (src/lib/creator-server.ts) — vedi
+  // 20260809000001_tenants_white_label_branding.sql.
+  const [tenantPlan, setTenantPlan] = useState<string | null | undefined>(undefined);
+  const [whiteLabelLogoUrl, setWhiteLabelLogoUrl] = useState('');
+  const [whiteLabelLabel, setWhiteLabelLabel] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingSaved, setBrandingSaved] = useState(false);
+  const [brandingError, setBrandingError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch('/api/tenants/white-label', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.tenant) {
+        setTenantPlan(data.tenant.plan || null);
+        setWhiteLabelLogoUrl(data.tenant.white_label_logo_url || '');
+        setWhiteLabelLabel(data.tenant.white_label_label || '');
+      } else {
+        setTenantPlan(null);
+      }
+    })();
+  }, []);
+
+  // Stesso pattern di upload di ComandiInstanceDashboard.tsx (CompanyTab):
+  // carica subito nel bucket pubblico 'vision-uploads', il PATCH persiste
+  // solo l'URL risultante quando l'utente preme "Salva branding".
+  const handleWhiteLabelLogoFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBrandingError('');
+    if (!file.type.startsWith('image/')) {
+      setBrandingError('Il file deve essere un\'immagine');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setBrandingError('Immagine troppo grande (max 2MB)');
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      const { data: { user } } = await supabaseBrowser.auth.getUser();
+      if (!user) {
+        setBrandingError('Devi effettuare il login');
+        return;
+      }
+      const ext = file.name.split('.').pop() || 'png';
+      const path = `${user.id}/white-label-logo-${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabaseBrowser.storage
+        .from('vision-uploads')
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: publicUrlData } = supabaseBrowser.storage.from('vision-uploads').getPublicUrl(path);
+      setWhiteLabelLogoUrl(publicUrlData.publicUrl);
+    } catch (err) {
+      console.error('[CreatorBranding] errore upload logo:', err);
+      setBrandingError('Errore durante il caricamento del logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleSaveBranding = async () => {
+    setSavingBranding(true);
+    setBrandingSaved(false);
+    setBrandingError('');
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch('/api/tenants/white-label', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          white_label_logo_url: whiteLabelLogoUrl,
+          white_label_label: whiteLabelLabel,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setBrandingError(data.error || 'Errore salvataggio');
+        return;
+      }
+      setBrandingSaved(true);
+      setTimeout(() => setBrandingSaved(false), 2000);
+    } catch (err) {
+      setBrandingError('Errore di connessione');
+    } finally {
+      setSavingBranding(false);
+    }
+  };
 
   const handleGenerate = async (projectType: ProjectType, prompt: string) => {
     setIsGenerating(true);
@@ -94,7 +195,71 @@ export default function CreatorPage() {
 
       {/* Wizard o Editor */}
       {!schema ? (
-        <div className="flex flex-1 items-center justify-center py-10">
+        <div className="flex flex-1 flex-col items-center gap-6 py-10">
+          {/* Brandizza la tua app: qui perché è il default applicato a ogni
+              app che questo tenant pubblica da questo momento in poi, non
+              un'impostazione della singola app (quella resta modificabile
+              dopo, in dashboard/projects/[id]). */}
+          <div className="mx-auto w-full max-w-2xl rounded-2xl border border-gray-800 bg-gray-900 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles size={16} className="text-indigo-400 shrink-0" />
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Brandizza la tua app</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Il tuo logo al posto di "ShardApps by MUSINO" in ogni app che pubblichi da qui in poi.
+                  </p>
+                </div>
+              </div>
+              {tenantPlan !== 'business' && (
+                <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400">
+                  Piano Business
+                </span>
+              )}
+            </div>
+
+            {tenantPlan === undefined ? null : tenantPlan !== 'business' ? (
+              <p className="mt-3 text-xs text-gray-500">
+                Disponibile con il piano Business.{' '}
+                <Link href="/pricing" className="text-indigo-400 hover:underline">Scopri di più</Link>
+              </p>
+            ) : (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-700 bg-gray-800">
+                    {whiteLabelLogoUrl ? (
+                      <img src={whiteLabelLogoUrl} alt="Il tuo logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-[9px] text-gray-500">Logo</span>
+                    )}
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-200 hover:border-gray-600">
+                    {uploadingLogo ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
+                    Carica logo
+                    <input type="file" accept="image/*" onChange={handleWhiteLabelLogoFile} disabled={uploadingLogo} className="hidden" />
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  value={whiteLabelLabel}
+                  onChange={(e) => setWhiteLabelLabel(e.target.value)}
+                  placeholder="Testo sotto il logo, es. by Rossi Digital"
+                  maxLength={40}
+                  className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-gray-200 focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  onClick={handleSaveBranding}
+                  disabled={savingBranding || uploadingLogo}
+                  className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-500 disabled:bg-gray-700"
+                >
+                  {savingBranding ? 'Salvataggio...' : 'Salva'}
+                </button>
+                {brandingSaved && <Check size={16} className="shrink-0 text-emerald-400" />}
+              </div>
+            )}
+            {brandingError && <p className="mt-2 text-xs text-red-400">{brandingError}</p>}
+          </div>
+
           <ProjectWizard onGenerate={handleGenerate} isGenerating={isGenerating} lang={locale} />
         </div>
       ) : (

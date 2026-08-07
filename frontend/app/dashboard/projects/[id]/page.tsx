@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
@@ -59,6 +59,14 @@ export default function AppDetailPage() {
   const [savingBuyer, setSavingBuyer] = useState(false);
   const [buyerSaved, setBuyerSaved] = useState(false);
 
+  // Brandizza la tua app (white label piano Business): sostituisce logo+testo
+  // ShardApps nel footer sidebar dell'app generata (vedi SidebarBrandFooter).
+  const [tenantPlan, setTenantPlan] = useState<string | null | undefined>(undefined);
+  const [brandingForm, setBrandingForm] = useState({ footer_logo_url: '', footer_label: '' });
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingSaved, setBrandingSaved] = useState(false);
+  const [brandingError, setBrandingError] = useState('');
+
   function applyLoadedApp(loaded: App) {
     // Questa pagina è costruita per le app a schema generato (Creator AI):
     // "credenziali" qui sono client_email/client_password dell'app stessa,
@@ -82,6 +90,10 @@ export default function AppDetailPage() {
       client_tax_id: loaded.client_tax_id || '',
       client_billing_address: loaded.client_billing_address || '',
       client_notes: loaded.client_notes || '',
+    });
+    setBrandingForm({
+      footer_logo_url: loaded.config?.branding?.footer_logo_url || '',
+      footer_label: loaded.config?.branding?.footer_label || '',
     });
 
     // client_password/initial_password non sono più leggibili con la anon/
@@ -135,6 +147,18 @@ export default function AppDetailPage() {
 
     loadApp();
   }, [idOrSlug]);
+
+  useEffect(() => {
+    if (!app?.tenant_id) return;
+    supabase
+      .from('tenants')
+      .select('plan')
+      .eq('id', app.tenant_id)
+      .single()
+      .then(({ data }) => {
+        setTenantPlan((data as { plan?: string } | null)?.plan || null);
+      });
+  }, [app?.tenant_id]);
 
   const formatDate = (iso: string | null | undefined) => {
     if (!iso) return '-';
@@ -269,6 +293,58 @@ export default function AppDetailPage() {
       setError('Errore di connessione');
     } finally {
       setSavingBuyer(false);
+    }
+  }
+
+  function handleBrandingLogoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBrandingError('');
+    // Stesso limite lato server (route.ts, MAX_LOGO_DATA_URL_LENGTH) — qui
+    // controllato prima sul file grezzo per non far attendere l'utente
+    // l'encoding base64 di un file già troppo grande.
+    if (file.size > 1_000_000) {
+      setBrandingError('Immagine troppo grande (max 1MB). Scegline una più leggera.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setBrandingForm(prev => ({ ...prev, footer_logo_url: (ev.target?.result as string) || '' }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSaveBranding() {
+    if (!app?.id) return;
+    setSavingBranding(true);
+    setBrandingSaved(false);
+    setBrandingError('');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/apps/${app.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ branding: brandingForm }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setBrandingError(data.error || 'Errore salvataggio branding');
+        return;
+      }
+
+      setApp(prev => prev ? { ...prev, config: data.app.config } : prev);
+      setBrandingSaved(true);
+      setTimeout(() => setBrandingSaved(false), 2000);
+    } catch (err) {
+      setBrandingError('Errore di connessione');
+    } finally {
+      setSavingBranding(false);
     }
   }
 
@@ -609,6 +685,88 @@ export default function AppDetailPage() {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Brandizza la tua app (white label, piano Business) */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Brandizza la tua app</h2>
+            <p className="text-sm text-slate-400 mt-1">
+              Sostituisci "ShardApps by MUSINO" in fondo alla sidebar con il tuo logo, così l'app sembra fatta interamente da te.
+            </p>
+          </div>
+          {tenantPlan !== 'business' && (
+            <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-400">
+              Piano Business
+            </span>
+          )}
+        </div>
+
+        {tenantPlan === undefined ? (
+          <p className="text-sm text-slate-500">Verifica piano...</p>
+        ) : tenantPlan !== 'business' ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-400">
+            Questa funzione è riservata al piano Business.{' '}
+            <Link href="/pricing" className="text-indigo-400 hover:underline">Passa al piano Business</Link> per rimuovere il branding ShardApps dalle tue app.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-800">
+                {brandingForm.footer_logo_url ? (
+                  <img src={brandingForm.footer_logo_url} alt="Il tuo logo" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[10px] text-slate-500">ShardApps</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-200 hover:border-slate-600">
+                  Carica logo
+                  <input type="file" accept="image/*" onChange={handleBrandingLogoFile} className="hidden" />
+                </label>
+                {brandingForm.footer_logo_url && (
+                  <button
+                    type="button"
+                    onClick={() => setBrandingForm(prev => ({ ...prev, footer_logo_url: '' }))}
+                    className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-400 hover:border-red-700 hover:text-red-400"
+                  >
+                    Rimuovi
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-400">Testo sotto il logo (opzionale)</label>
+              <input
+                type="text"
+                value={brandingForm.footer_label}
+                onChange={(e) => setBrandingForm(prev => ({ ...prev, footer_label: e.target.value }))}
+                placeholder="es. by Rossi Digital"
+                maxLength={40}
+                className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            {brandingError && <p className="text-sm text-red-400">{brandingError}</p>}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={handleSaveBranding}
+                disabled={savingBranding}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900/50 text-white rounded-lg text-sm font-medium transition"
+              >
+                {savingBranding ? 'Salvataggio...' : 'Salva branding'}
+              </button>
+              {brandingSaved && (
+                <span className="text-emerald-400 text-sm flex items-center gap-1">
+                  <Check className="w-4 h-4" /> Salvato
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

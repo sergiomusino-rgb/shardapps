@@ -23,6 +23,9 @@ interface ViewerSidebarProps {
   onLogout: () => void;
   logoUrl: string;
   companyName: string;
+  /** White label piano Business: sostituisce logo+testo ShardApps nel footer sidebar. */
+  footerLogoUrl?: string;
+  footerLabel?: string;
   /** Slug del tenant, per il link a /a/{slug}/fatture (route standalone, fuori dalla shell). */
   slug: string;
   isMobile: boolean;
@@ -33,7 +36,7 @@ interface ViewerSidebarProps {
 function SidebarContent({
   tables, customTables, activeView, onNavigate, datiAziendaliTable,
   onEditTable, onCreateTable, onOpenSettings, onLogout,
-  logoUrl, companyName, slug,
+  logoUrl, companyName, footerLogoUrl, footerLabel, slug,
 }: Omit<ViewerSidebarProps, 'isMobile' | 'open' | 'onClose'>) {
   const [comunicazioniOpen, setComunicazioniOpen] = useState(false);
   const [importazioniOpen, setImportazioniOpen] = useState(false);
@@ -152,7 +155,7 @@ function SidebarContent({
         </button>
       </div>
 
-      <SidebarBrandFooter />
+      <SidebarBrandFooter logoUrl={footerLogoUrl} label={footerLabel} />
     </div>
   );
 }

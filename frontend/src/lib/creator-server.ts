@@ -119,6 +119,32 @@ export function getAppBaseUrl(): string {
   return (cleaned || 'https://zeusxapps.com').replace(/\/+$/, '');
 }
 
+// White label reseller ("Brandizza la tua app", piano Business, vedi
+// CreatorBrandingPanel in dashboard/creator/page.tsx e migrazione
+// 20260809000001_tenants_white_label_branding.sql): letto qui da
+// /api/creator/publish e /api/creator/create per applicare automaticamente
+// il logo del reseller a ogni app pubblicata, senza bisogno di rifarlo app
+// per app. null se il tenant non è su piano Business o non ha ancora
+// caricato un logo — in quel caso l'app usa il branding ShardApps di default.
+export async function getTenantWhiteLabel(
+  supabase: SupabaseClient,
+  tenantId: string
+): Promise<{ footer_logo_url: string; footer_label: string } | null> {
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('plan, white_label_logo_url, white_label_label')
+    .eq('id', tenantId)
+    .single();
+
+  const t = tenant as { plan?: string; white_label_logo_url?: string | null; white_label_label?: string | null } | null;
+  if (!t || t.plan !== 'business' || !t.white_label_logo_url) return null;
+
+  return {
+    footer_logo_url: t.white_label_logo_url,
+    footer_label: t.white_label_label || '',
+  };
+}
+
 export function generateCreatorSlug(name: string, sector: string): string {
   const base = `${sector || 'app'}-${name}`
     .toLowerCase()

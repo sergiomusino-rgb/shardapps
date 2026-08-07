@@ -24,6 +24,7 @@ import {
   canCreateApp,
   generateCreatorSlug,
   getAppBaseUrl,
+  getTenantWhiteLabel,
 } from '@/src/lib/creator-server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
     if (existingAppId) {
       const { data: existingApp, error: lookupError } = await supabase
         .from('apps')
-        .select('id, tenant_id, slug')
+        .select('id, tenant_id, slug, config')
         .eq('id', existingAppId)
         .single();
 
@@ -78,6 +79,19 @@ export async function POST(request: NextRequest) {
       }
       if (existingApp.tenant_id !== tenantId) {
         return NextResponse.json({ success: false, error: 'Non autorizzato per questa app' }, { status: 403 });
+      }
+
+      // White label reseller: se l'app ha già un logo custom (impostato qui o
+      // da dashboard/projects/[id]) lo mantiene invariato a ogni ripubblicazione
+      // — solo le app senza branding proprio ricevono il default del tenant.
+      const existingBranding = (existingApp.config as { branding?: { footer_logo_url?: string; footer_label?: string } } | null)?.branding;
+      if (!existingBranding?.footer_logo_url) {
+        const whiteLabel = await getTenantWhiteLabel(supabase, tenantId);
+        if (whiteLabel) {
+          (configToSave as { branding?: typeof whiteLabel }).branding = whiteLabel;
+        }
+      } else {
+        (configToSave as { branding?: typeof existingBranding }).branding = existingBranding;
       }
 
       const { error: updateError } = await supabase
@@ -120,6 +134,13 @@ export async function POST(request: NextRequest) {
     const clientPassword = generateClientPassword();
     const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;
     const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // White label reseller: prima pubblicazione, nessun branding esistente da
+    // preservare, applica direttamente il default del tenant se presente.
+    const whiteLabel = await getTenantWhiteLabel(supabase, tenantId);
+    if (whiteLabel) {
+      (configToSave as { branding?: typeof whiteLabel }).branding = whiteLabel;
+    }
 
     const { data: app, error: appError } = await supabase
       .from('apps')

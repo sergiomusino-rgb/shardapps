@@ -29,6 +29,9 @@ interface DynamicLayoutRendererProps {
   designTokens?: DesignTokens;
   companyName: string;
   logoUrl: string;
+  /** White label piano Business: sostituisce logo+testo ShardApps nel footer sidebar. */
+  footerLogoUrl?: string;
+  footerLabel?: string;
   /** Slug del tenant, per il link "Fatture e Ricevute" (route standalone). */
   slug: string;
   tables: TableDef[];
@@ -85,6 +88,8 @@ export default function DynamicLayoutRenderer({
   designTokens = getDesignTokens(),
   companyName,
   logoUrl,
+  footerLogoUrl,
+  footerLabel,
   slug,
   tables,
   activeView,
@@ -282,6 +287,8 @@ export default function DynamicLayoutRenderer({
             onLogout={onLogout}
             logoUrl={logoUrl}
             companyName={companyName}
+            footerLogoUrl={footerLogoUrl}
+            footerLabel={footerLabel}
             slug={slug}
             comunicazioniOpen={comunicazioniOpen}
             onToggleComunicazioni={() => setComunicazioniOpen((v) => !v)}
@@ -303,6 +310,8 @@ export default function DynamicLayoutRenderer({
             onLogout={onLogout}
             logoUrl={logoUrl}
             companyName={companyName}
+            footerLogoUrl={footerLogoUrl}
+            footerLabel={footerLabel}
             slug={slug}
             comunicazioniOpen={comunicazioniOpen}
             onToggleComunicazioni={() => setComunicazioniOpen((v) => !v)}
@@ -346,6 +355,8 @@ interface LayoutSidebarProps {
   onLogout: () => void;
   logoUrl: string;
   companyName: string;
+  footerLogoUrl?: string;
+  footerLabel?: string;
   slug: string;
   comunicazioniOpen: boolean;
   onToggleComunicazioni: () => void;
@@ -355,7 +366,7 @@ interface LayoutSidebarProps {
 
 function LayoutSidebar({
   tables, customTables, activeView, onNavigate, onNavigateView, datiAziendaliTable,
-  onEditTable, onOpenSettings, onLogout, logoUrl, companyName, slug,
+  onEditTable, onOpenSettings, onLogout, logoUrl, companyName, footerLogoUrl, footerLabel, slug,
   comunicazioniOpen, onToggleComunicazioni, importazioniOpen, onToggleImportazioni,
 }: LayoutSidebarProps) {
   return (
@@ -458,7 +469,7 @@ function LayoutSidebar({
         </button>
       </div>
 
-      <SidebarBrandFooter />
+      <SidebarBrandFooter logoUrl={footerLogoUrl} label={footerLabel} />
     </div>
   );
 }

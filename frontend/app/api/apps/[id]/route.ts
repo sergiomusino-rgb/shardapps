@@ -22,6 +22,17 @@ const CLIENT_PROFILE_FIELDS = [
   'client_notes',
 ] as const;
 
+// White label ("Brandizza la tua app", piano Business): unici campi
+// scrivibili dentro config.branding via questa route, whitelist esplicita
+// per lo stesso motivo di CLIENT_PROFILE_FIELDS — il body non può scrivere
+// altre chiavi di config.branding (es. company_name/logo_url, di pertinenza
+// del motore Creator).
+const BRANDING_FIELDS = ['footer_logo_url', 'footer_label'] as const;
+// Limite dimensione data URL del logo (base64): stesso ordine di grandezza
+// del body limit delle Server Actions in next.config.ts (2mb), qui applicato
+// lato server perché le route handler non hanno quel limite di default.
+const MAX_LOGO_DATA_URL_LENGTH = 1_500_000;
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -220,18 +231,70 @@ export async function PATCH(
       }
     }
 
-    if (Object.keys(updates).length === 0) {
+    // White label ("Brandizza la tua app"): riservato al piano Business,
+    // verificato qui e non solo lato UI perché questa route è l'unico punto
+    // di scrittura di config.branding.footer_logo_url/footer_label.
+    let brandingUpdate: Record<string, string | null> | null = null;
+    if (body.branding && typeof body.branding === 'object') {
+      const { data: tenant } = await adminClient
+        .from('tenants')
+        .select('plan')
+        .eq('id', tenantId)
+        .single();
+
+      if ((tenant as { plan?: string } | null)?.plan !== 'business') {
+        return NextResponse.json(
+          { error: 'Il white label è disponibile solo con il piano Business', code: 'PLAN_REQUIRED' },
+          { status: 403 }
+        );
+      }
+
+      brandingUpdate = {};
+      for (const field of BRANDING_FIELDS) {
+        if (!(field in body.branding)) continue;
+        const val = body.branding[field];
+        if (field === 'footer_logo_url' && typeof val === 'string' && val.length > MAX_LOGO_DATA_URL_LENGTH) {
+          return NextResponse.json({ error: 'Logo troppo grande, usa un\'immagine più leggera' }, { status: 400 });
+        }
+        brandingUpdate[field] = typeof val === 'string' ? val : null;
+      }
+    }
+
+    if (Object.keys(updates).length === 0 && !brandingUpdate) {
       return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 });
+    }
+
+    const finalUpdates: Record<string, unknown> = { ...updates };
+
+    if (brandingUpdate) {
+      // config è un JSONB: niente merge parziale lato DB, va letto e
+      // riscritto per intero (stesso pattern già usato dal Creator per
+      // salvare lo schema — vedi AppEditorView.tsx) per non perdere il resto
+      // di config (schema, businessConfig, altri campi di branding).
+      const { data: currentApp } = await adminClient
+        .from('apps')
+        .select('config')
+        .eq('id', id)
+        .eq('tenant_id', tenantId)
+        .single();
+
+      if (!currentApp) {
+        return NextResponse.json({ error: 'App non trovata o non autorizzata' }, { status: 404 });
+      }
+
+      const currentConfig = (currentApp.config as Record<string, unknown>) || {};
+      const currentBranding = (currentConfig.branding as Record<string, unknown>) || {};
+      finalUpdates.config = { ...currentConfig, branding: { ...currentBranding, ...brandingUpdate } };
     }
 
     const { data: app, error: updateError } = await adminClient
       .from('apps')
-      // updates è costruito dinamicamente da una whitelist (CLIENT_PROFILE_FIELDS):
-      // il cast bypassa la corrispondenza esatta col tipo Update generato.
-      .update(updates as any)
+      // finalUpdates è costruito dinamicamente da whitelist (CLIENT_PROFILE_FIELDS/
+      // BRANDING_FIELDS): il cast bypassa la corrispondenza esatta col tipo Update generato.
+      .update(finalUpdates as any)
       .eq('id', id)
       .eq('tenant_id', tenantId)
-      .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
+      .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes, config')
       .single();
 
     if (updateError || !app) {
