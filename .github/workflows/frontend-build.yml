@@ -1,0 +1,100 @@
+name: Build & Lint frontend
+
+# Nato dal report dello stress test del 7 agosto: un errore di tipo che
+# bloccava ogni deploy Vercel (un replace_all aveva aggiornato solo uno dei
+# due blocchi di tipo `branding` in page.tsx) è stato scoperto solo leggendo
+# a mano i log del deploy fallito — nessun check girava prima del merge.
+# `next build` include il type-check completo di TypeScript (quello che
+# Turbopack salta in `next dev`), quindi è la stessa identica verifica che
+# gira su Vercel, ma qui gira PRIMA del merge, su ogni PR.
+#
+# Le variabili d'ambiente sono valori segnaposto, non secret reali: il build
+# di produzione di Next.js valuta i moduli a build-time (SSG/type-check) ma
+# non deve MAI eseguire in questa fase logica che dipende da credenziali
+# vere (quella gira solo a runtime, quando arriva una request). Verificato
+# localmente: build pulita con questi stessi placeholder, identica a quella
+# con le credenziali reali in .env.local.
+#
+# Il lint (ESLint) gira ma non blocca la PR (continue-on-error): il
+# frontend ha ~550 problemi pre-esistenti (soprattutto @typescript-eslint/
+# no-explicit-any, stile diffuso e consistente nel progetto, non bug
+# attivi — vedi report interno del 2026-08-08). Renderlo bloccante oggi
+# fermerebbe ogni PR futura per debito non correlato. Resta visibile nei
+# check della PR per chi vuole guardarlo, e pronto a diventare bloccante
+# il giorno in cui quel debito viene ripagato.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+  SUPABASE_URL: https://placeholder.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY: placeholder-service-key
+  GROQ_API_KEY: placeholder
+  GEMINI_API_KEY: placeholder
+  OPENROUTER_API_KEY: placeholder
+  FAL_KEY: placeholder
+  STRIPE_SECRET_KEY: sk_test_placeholder
+  STRIPE_FEE_PRICE_STARTER: price_placeholder
+  STRIPE_FEE_PRICE_PRO: price_placeholder
+  STRIPE_FEE_PRICE_BUSINESS: price_placeholder
+  STRIPE_WEBHOOK_SECRET: whsec_placeholder
+  NEXT_PUBLIC_EXTRA_SLOT_PRICE_ID: price_placeholder
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_placeholder
+  NEXT_PUBLIC_APP_URL: https://shardapps.com
+  TOTALUM_API_KEY: placeholder
+  TOTALUM_API_URL: https://api-accounts.totalum.app
+  MOCK_TOTALUM: 'true'
+  NEXT_PUBLIC_TOTALUM_API_KEY: placeholder
+  NEXT_PUBLIC_TOTALUM_API_URL: https://api-accounts.totalum.app
+  NEXT_PUBLIC_BACKEND_URL: https://zeusx-backend.onrender.com
+  BACKEND_URL: https://zeusx-backend.onrender.com
+  RESEND_API_KEY: placeholder
+  ADMIN_EMAIL: admin@shardapps.com
+  NEXT_PUBLIC_VAPID_PUBLIC_KEY: placeholder
+  VAPID_PRIVATE_KEY: placeholder
+  VAPID_SUBJECT: mailto:admin@shardapps.com
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa le dipendenze del frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build di produzione (include il type-check TypeScript)
+        working-directory: frontend
+        run: npm run build
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa le dipendenze del frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint (non bloccante, vedi commento in testa al file)
+        working-directory: frontend
+        continue-on-error: true
+        run: npm run lint
