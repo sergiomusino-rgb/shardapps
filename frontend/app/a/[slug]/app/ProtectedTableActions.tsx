@@ -36,7 +36,7 @@ export function ProtectedTableActions({
   record,
   colors,
 }: ProtectedTableActionsProps) {
-  const { canPerformAction, role } = usePermissions();
+  const { canPerformAction } = usePermissions();
 
   // Verifica i permessi
   const canWrite = canPerformAction(tableName, 'write');

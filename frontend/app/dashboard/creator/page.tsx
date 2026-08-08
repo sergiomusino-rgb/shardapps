@@ -126,7 +126,7 @@ export default function CreatorPage() {
       }
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 2000);
-    } catch (err) {
+    } catch {
       setBrandingError('Errore di connessione');
     } finally {
       setSavingBranding(false);

@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { getTableConfig, UITable, SECTOR_LABELS, TABLE_CATALOG } from '@/lib/table-config';
 import DynamicTable from '@/components/DynamicTablev2';
-import { ArrowLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 /**
@@ -26,7 +26,6 @@ import Link from 'next/link';
  */
 export default function DynamicTablePage() {
   const params = useParams();
-  const router = useRouter();
   const rawTable = params.table as string;
 
   // ─── State ───────────────────────────────────────────────────────────────

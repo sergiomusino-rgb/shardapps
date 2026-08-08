@@ -246,11 +246,6 @@ export default function ManagementConsolePage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const formatDate = (iso: string | null) => {
-    if (!iso) return '-';
-    return new Date(iso).toLocaleDateString('it-IT');
-  };
-
   const getDaysRemaining = (trialEndsAt: string | null): number => {
     if (!trialEndsAt) return 0;
     const trialDate = new Date(trialEndsAt);

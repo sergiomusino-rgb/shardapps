@@ -56,7 +56,7 @@ export default function SettingsPage() {
 
     setPasswordLoading(true);
     try {
-      const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
         if (error.message?.includes('Auth session missing') || error.message?.includes('session')) {
           setPasswordError('Sessione non valida. Effettua di nuovo il login.');

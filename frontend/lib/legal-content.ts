@@ -65,6 +65,7 @@ export function getLegalContent(type: LegalType, locale: Locale): string {
 /**
  * Get all available locales for a legal type
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- parametro tenuto per l'API pubblica della funzione (nessun chiamante nel repo oggi): tutti i tipi legali supportano oggi le stesse 5 lingue, ma un chiamante futuro potrebbe passare `type` per differenziare.
 export function getAvailableLocales(type: LegalType): Locale[] {
   return ['it', 'en', 'fr', 'de', 'es'];
 }

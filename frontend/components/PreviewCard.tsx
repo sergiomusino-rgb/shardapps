@@ -15,7 +15,7 @@ interface PreviewCardProps {
  * Mostra un'anteprima dell'app generata e apre la demo in una nuova scheda.
  */
 export default function PreviewCard({ title, slug, description, appType }: PreviewCardProps) {
-  const [imageError, setImageError] = useState(false);
+  const [imageError] = useState(false);
   const [loading] = useState(false);
 
   // Genera un colore univoco basato sullo slug per l'icona

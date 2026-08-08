@@ -109,7 +109,7 @@ export default function EntityBuilder() {
       } else {
         setMessage({ type: 'error', text: data.error || 'Errore durante la creazione della tabella' });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: 'Errore di connessione al server' });
     } finally {
       setIsLoading(false);

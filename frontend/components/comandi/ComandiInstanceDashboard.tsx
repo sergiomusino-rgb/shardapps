@@ -23,7 +23,6 @@ import {
   FileSpreadsheet,
   KeyRound,
   Loader2,
-  LogOut,
   Mail,
   Menu,
   MessageCircle,
@@ -3009,6 +3008,7 @@ interface AgentCredentials {
   password: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- tenantId non usato: le server action sottostanti derivano il tenant dal token di sessione lato server, non dal client (stesso principio delle policy RLS), non da un tenantId passato dal client.
 function AgentsTab({ tenantId, slug }: { tenantId: string; slug: string }) {
   const { t } = useLanguage();
   const [agents, setAgents] = useState<AgentRecord[]>([]);

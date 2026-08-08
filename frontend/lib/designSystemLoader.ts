@@ -94,7 +94,7 @@ export async function loadDesignFileContent(fileName: string): Promise<string | 
     const content = await fs.readFile(designPath, 'utf-8');
     designCache[fileName] = content;
     return content;
-  } catch (error) {
+  } catch {
     console.warn(`[DesignSystem] Design file not found: ${fileName}`);
     return null;
   }

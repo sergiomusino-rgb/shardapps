@@ -1,7 +1,5 @@
 'use client';
 
-import { supabase } from '@/src/lib/supabase';
-
 export default function CheckoutPage() {
   const totalum_app_id = 'pizzeria'; // ID dell'app per cui creare il checkout
 
@@ -27,9 +25,6 @@ export default function CheckoutPage() {
       alert("Errore di connessione al server.");
     }
   };
-
-  // URL per accedere all'app (con slug)
-  const appUrl = `http://localhost:3000/a/pizzeria-mr6n7ces`;
 
   return (
     <div className="p-12 text-center">

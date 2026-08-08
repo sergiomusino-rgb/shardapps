@@ -3,7 +3,7 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { getTablesBySector, SECTOR_LABELS, getAllTables, UITable } from '@/lib/table-config';
+import { getTablesBySector, SECTOR_LABELS, getAllTables } from '@/lib/table-config';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { useUserPlan } from '@/src/lib/useUserPlan';
 

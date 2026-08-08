@@ -8,13 +8,6 @@ const supabase = createClient<Database>(
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
-const PLAN_PRICES: Record<string, number> = {
-  free: 0,
-  starter: 10,
-  pro: 25,
-  business: 50,
-};
-
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('authorization');

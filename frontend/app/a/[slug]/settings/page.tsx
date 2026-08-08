@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [, setUser] = useState<any>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -65,7 +65,7 @@ export default function SettingsPage() {
       } else {
         alert(data.error || 'Errore durante la creazione della sessione di checkout');
       }
-    } catch (err) {
+    } catch {
       alert('Errore di connessione');
     } finally {
       setActionLoading(false);
@@ -91,7 +91,7 @@ export default function SettingsPage() {
       } else {
         alert(data.error || 'Errore durante la disdetta');
       }
-    } catch (err) {
+    } catch {
       alert('Errore di connessione');
     } finally {
       setActionLoading(false);
@@ -164,7 +164,7 @@ export default function SettingsPage() {
       } else {
         setCredentialsMessage({ type: 'error', text: data.error || 'Errore durante l\'aggiornamento' });
       }
-    } catch (err) {
+    } catch {
       setCredentialsMessage({ type: 'error', text: 'Errore di connessione' });
     } finally {
       setCredentialsLoading(false);

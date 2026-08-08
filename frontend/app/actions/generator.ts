@@ -140,14 +140,14 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
         set(name: string, value: string, options: any) {
           try {
             cookieStore.set({ name, value, ...options });
-          } catch (err) {
+          } catch {
             // Ignora errori in server action read-only
           }
         },
         remove(name: string, options: any) {
           try {
             cookieStore.set({ name, value: '', ...options });
-          } catch (err) {
+          } catch {
             // Ignora errori
           }
         },
@@ -163,12 +163,12 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
         set(name: string, value: string, options: any) {
           try {
             cookieStore.set({ name, value, ...options });
-          } catch (err) {}
+          } catch {}
         },
         remove(name: string, options: any) {
           try {
             cookieStore.set({ name, value: '', ...options });
-          } catch (err) {}
+          } catch {}
         },
       },
     }) as unknown as SupabaseClient<Database>;

@@ -37,37 +37,6 @@ export interface DesignStructure {
 }
 
 /**
- * Estrae le sezioni dal contenuto markdown
- */
-function parseSections(content: string): DesignSection[] {
-  const lines = content.split('\n');
-  const sections: DesignSection[] = [];
-  let currentSection: DesignSection | null = null;
-
-  for (const line of lines) {
-    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    if (headingMatch) {
-      if (currentSection) {
-        sections.push(currentSection);
-      }
-      currentSection = {
-        title: headingMatch[2],
-        content: '',
-        level: headingMatch[1].length
-      };
-    } else if (currentSection) {
-      currentSection.content += line + '\n';
-    }
-  }
-
-  if (currentSection) {
-    sections.push(currentSection);
-  }
-
-  return sections;
-}
-
-/**
  * Estrae i colori dal contenuto markdown
  */
 function parseColors(content: string): Record<string, string> {
@@ -221,7 +190,6 @@ function determineLayoutType(overview: string, components: DesignComponent[]): D
  * Parser principale per il file DESIGN.md
  */
 export function parseDesign(content: string): DesignStructure {
-  const sections = parseSections(content);
   const overview = parseOverview(content);
   const colors = parseColors(content);
   const components = parseComponents(content);

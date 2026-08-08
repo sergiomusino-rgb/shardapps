@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { Trash2, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
@@ -20,7 +19,6 @@ interface App {
 }
 
 export default function ProjectsPage() {
-  const router = useRouter();
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

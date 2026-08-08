@@ -478,48 +478,8 @@ async function handleUserSubscriptionCancelled(event: Stripe.Event, supabase: an
  * revocato l'accesso OAuth). Non correlato al paywall trial dell'app
  * cliente; nessuna azione automatica implementata, solo log per audit.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- firma intenzionale: nessuna azione automatica implementata oggi (vedi commento sopra), i parametri restano documentati per quando verrà aggiunta.
 async function handleOAuthDeauthorized(event: Stripe.Event, supabase: any) {
   console.log('[Stripe Webhook] account.application.deauthorized ricevuto, nessuna azione automatica implementata');
 }
 
-/**
- * Notifica l'admin del takeover automatico
- */
-async function notifyAdminTakeover(totalumAppId: string, userEmail: string, reason: string) {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@zeusx.it';
-  
-  if (resendApiKey) {
-    try {
-      await fetch('https://api.resend.com/v1/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'ShardApps <noreply@zeusx.it>',
-          to: [adminEmail],
-          subject: `[URGENTE] Takeover automatico app ${totalumAppId}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #ef4444;">Takeover automatico eseguito</h2>
-              <p>L'app <strong>${totalumAppId}</strong> è stata messa in gestione diretta da ShardApps.</p>
-              <p><strong>Motivo:</strong> ${reason}</p>
-              <p><strong>User:</strong> ${userEmail}</p>
-              <p style="color: #64748b; font-size: 14px; margin-top: 20px;">
-                ShardApps System<br>
-                Questo messaggio è stato inviato automaticamente.
-              </p>
-            </div>
-          `,
-        }),
-      });
-    } catch (error) {
-      console.error('[Stripe Webhook] Errore invio notifica admin:', error);
-    }
-  } else {
-    // Fallback: log
-    console.log(`[ADMIN NOTIFICATION] App ${totalumAppId} takeover per ${reason} (User: ${userEmail})`);
-  }
-}

@@ -39,9 +39,6 @@ function getSupabaseClients() {
   return { authClient, dbClient };
 }
 
-// ShardApps fee fissa in centesimi (25€)
-const ZEUSX_FEE_CENTS = 2500;
-
 /**
  * POST /api/apps/checkout/managed
  * Crea una Stripe Checkout Session in modalità Managed Payments (Merchant of Record).

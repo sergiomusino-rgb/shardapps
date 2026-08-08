@@ -31,10 +31,6 @@ interface App {
   client_notes?: string | null;
 }
 
-interface Membership {
-  tenant_id: string;
-}
-
 export default function AppDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -127,7 +123,7 @@ export default function AppDetailPage() {
 
       // Se non trovato per ID, prova a cercare per slug
       if (error || !data) {
-        const { data: slugData, error: slugError } = await supabase
+        const { data: slugData } = await supabase
           .from('apps')
           .select('id, name, config, trial_ends_at, is_active, created_at, blueprint_id, tenant_id, app_type, slug, client_email, client_active, expires_at, auth_mode, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes')
           .eq('slug', idOrSlug)
@@ -253,7 +249,7 @@ export default function AppDetailPage() {
       } else if (action === 'extend-expiry') {
         setApp(prev => prev ? { ...prev, expires_at: data.new_expires_at, client_active: true } : prev);
       }
-    } catch (err) {
+    } catch {
       setError('Errore di connessione');
     } finally {
       setToggling(false);
@@ -289,7 +285,7 @@ export default function AppDetailPage() {
       setApp(prev => prev ? { ...prev, ...buyerForm } : prev);
       setBuyerSaved(true);
       setTimeout(() => setBuyerSaved(false), 2000);
-    } catch (err) {
+    } catch {
       setError('Errore di connessione');
     } finally {
       setSavingBuyer(false);
@@ -341,7 +337,7 @@ export default function AppDetailPage() {
       setApp(prev => prev ? { ...prev, config: data.app.config } : prev);
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 2000);
-    } catch (err) {
+    } catch {
       setBrandingError('Errore di connessione');
     } finally {
       setSavingBranding(false);

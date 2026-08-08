@@ -8,9 +8,6 @@ import type { Database } from '@/types/database';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-// Admin user ID - bypassa tutti i limiti
-const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
-
 function getSupabaseAdmin() {
   return createClient<Database>(supabaseUrl, supabaseServiceKey);
 }

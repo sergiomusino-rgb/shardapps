@@ -215,12 +215,6 @@ export default function DashboardPage() {
     });
   }
 
-  const utilityFeatures = [
-    { title: t('dashboard_chat_title'), desc: t('dashboard_chat_desc'), link: "/dashboard/chat", color: "bg-cyan-600", icon: "" },
-    { title: t('dashboard_stats_title'), desc: t('dashboard_stats_desc'), link: "/dashboard/stats", color: "bg-purple-600", icon: "📊" },
-    { title: t('dashboard_settings_title'), desc: t('dashboard_settings_desc'), link: "/dashboard/settings", color: "bg-gray-600", icon: "" },
-  ];
-
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (chatInput.trim()) {

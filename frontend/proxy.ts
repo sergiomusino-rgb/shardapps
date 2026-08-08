@@ -7,7 +7,6 @@ import type { NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next();
-  const pathname = request.nextUrl.pathname;
 
   // Disabilita la cache per dashboard
   if (request.nextUrl.pathname.startsWith('/dashboard') ||

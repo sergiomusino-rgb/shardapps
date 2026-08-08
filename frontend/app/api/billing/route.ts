@@ -50,7 +50,7 @@ export async function POST(req: Request) {
     }
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-      apiVersion: "2026-06-24.dahlia" as any,
+      apiVersion: STRIPE_API_VERSION as any,
     });
 
     const portalSession = await stripe.billingPortal.sessions.create({
