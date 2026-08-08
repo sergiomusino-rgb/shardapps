@@ -24,7 +24,7 @@ export default function SuccessPage() {
   
   // URL dell'app generata - verrà sovrascritto dal database se disponibile
   const [appUrl, setAppUrl] = useState<string>('');
-  const [loadingUrl, setLoadingUrl] = useState(true);
+  const [, setLoadingUrl] = useState(true);
 
   // Recupera l'URL di produzione dal database
   useEffect(() => {

@@ -19,7 +19,7 @@ export default function SuccessPage() {
   const router = useRouter();
   const sessionId = searchParams.get('session_id');
   const appSlug = searchParams.get('appSlug');
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<string>('');
 
   useEffect(() => {

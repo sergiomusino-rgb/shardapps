@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { MessageSquare, Send, Mic, MicOff, Loader2, AlertTriangle, CreditCard } from 'lucide-react';
+import { Send, Mic, MicOff, Loader2, AlertTriangle, CreditCard } from 'lucide-react';
 
 // Type declarations for SpeechRecognition
 declare global {
@@ -40,13 +40,13 @@ const ADMIN_USER_ID = 'd3eda57f-692a-4904-ac5f-93bdaaec8ce5';
 export default function GeneratorPage() {
   const router = useRouter();
   const { t, locale } = useLanguage();
-  const [messages, setMessages] = useState<{role: string, text: string, isAppLink?: boolean, appUrl?: string}[]>([]);
+  const [, setMessages] = useState<{role: string, text: string, isAppLink?: boolean, appUrl?: string}[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
   const [showSlotsExhaustedModal, setShowSlotsExhaustedModal] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -128,6 +128,7 @@ export default function GeneratorPage() {
   }, [showLoadingOverlay]);
 
   // Estrae nome attività e tipo dalla richiesta
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- non chiamata da nessun punto del componente oggi (verificato); lasciata intatta invece di rimossa, segnalata nel changelog: potrebbe essere logica di parsing "offline" mai ricollegata dopo un refactor verso l'endpoint AI diretto.
   const parseAppRequest = (text: string): { activityName: string; activityType: string } | null => {
     const lowerText = text.toLowerCase();
     

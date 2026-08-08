@@ -1,16 +1,14 @@
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Users, Package, ShoppingCart, Database,
   Settings, LogOut, Search, Plus, Pencil, Trash2, X,
-  Download, Upload, FileText, FileSpreadsheet, MessageSquare, Mail, MessageCircle,
-  Settings2, TrendingUp, AlertTriangle, Star, StarHalf, Heart, HeartPulse, Receipt,
-  BarChart3, Activity, Globe, MapPin, Calendar as CalendarIcon, Clock, CheckCircle,
-  XCircle, Tag, Code, BookOpen, HelpCircle, ExternalLink, Copy, RefreshCw
+  Download, Upload, MessageSquare, Mail, MessageCircle,
+  Settings2, Heart, Receipt, ExternalLink
 } from 'lucide-react';
 import { TableDef, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField } from './table-definitions';
-import { DesignLayout, DesignComponent } from './DesignParser';
+import { DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
@@ -57,6 +55,7 @@ interface DynamicLayoutRendererProps {
 
 // ─── Theme Helpers ───────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- mai chiamata direttamente, ma il suo ReturnType e' il tipo di `colors` in tutte le props dei componenti di layout sotto (7 punti).
 function getThemeVars(theme: 'dark' | 'light', primaryColor: string) {
   const isDark = theme === 'dark';
   return {
@@ -95,9 +94,7 @@ export default function DynamicLayoutRenderer({
   activeView,
   setActiveView,
   onLogout,
-  showSettings,
   setShowSettings,
-  session,
   customTables = [],
   activeCustomTable,
   records = [],
@@ -498,9 +495,9 @@ interface DocsLayoutContentProps {
 
 function DocsLayoutContent({
   companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
-  activeView, setActiveView, activeTable, activeCustomTableData,
+  activeView, setActiveView, activeTable,
   records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew, designComponents
+  onEdit, onDelete, onAddNew
 }: DocsLayoutContentProps) {
   const [totalRecords, setTotalRecords] = useState(0);
 
@@ -915,10 +912,9 @@ interface EcommerceLayoutContentProps {
 }
 
 function EcommerceLayoutContent({
-  companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
-  activeView, setActiveView, activeTable, activeCustomTableData,
-  records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew
+  tables, colors, primaryColor,
+  activeView, activeTable,
+  records
 }: EcommerceLayoutContentProps) {
   // E-commerce specific layout with product grid
   return (
@@ -1076,7 +1072,7 @@ interface SaaSLayoutContentProps {
 
 function SaaSLayoutContent({
   companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
-  activeView, setActiveView, activeTable, activeCustomTableData,
+  activeView, setActiveView, activeTable,
   records, loading, searchQuery, setSearchQuery,
   onEdit, onDelete, onAddNew
 }: SaaSLayoutContentProps) {
@@ -1420,10 +1416,9 @@ interface RecipeLayoutContentProps {
 }
 
 function RecipeLayoutContent({
-  companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
+  tables, colors, primaryColor,
   activeView, activeTable,
-  records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew
+  records
 }: RecipeLayoutContentProps) {
   // Recipe-specific layout with step-by-step view
   return (
@@ -1522,10 +1517,9 @@ interface RestaurantLayoutContentProps {
 }
 
 function RestaurantLayoutContent({
-  companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
+  tables, colors, primaryColor,
   activeView, activeTable,
-  records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew
+  records
 }: RestaurantLayoutContentProps) {
   // Restaurant-specific layout with menu cards
   return (

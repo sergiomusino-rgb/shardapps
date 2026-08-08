@@ -9,7 +9,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 import HeaderClock from '@/components/HeaderClock';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import Sidebar from '@/components/layout/Sidebar';
-import { Menu, X } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 const supabase = supabaseBrowser;
 
@@ -22,7 +22,7 @@ export default function ManagementLayout({
   const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [isReseller, setIsReseller] = useState(false);
-  const [userPlan, setUserPlan] = useState<string>('free');
+  const [, setUserPlan] = useState<string>('free');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t } = useLanguage();
 

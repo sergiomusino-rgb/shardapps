@@ -1,7 +1,7 @@
 const CACHE_NAME = 'zeusx-app-v1';
 
 // Cache on install
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 

@@ -207,7 +207,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Set is_managed_by_platform to TRUE
-    const { data, error } = await supabaseAdmin
+    const { error } = await supabaseAdmin
       .from('apps')
       .update({
         is_managed_by_platform: true,

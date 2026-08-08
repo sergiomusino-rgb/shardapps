@@ -7,7 +7,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import AuthGuard from '@/components/layout/AuthGuard';
 import LanguageSelector from '@/components/LanguageSelector';
 import { useLanguage } from '@/src/lib/LanguageContext';
-import { Menu, X } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 
 

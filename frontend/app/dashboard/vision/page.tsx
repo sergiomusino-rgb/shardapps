@@ -1,6 +1,5 @@
 "use client";
 import { useState } from 'react';
-import Link from 'next/link';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 

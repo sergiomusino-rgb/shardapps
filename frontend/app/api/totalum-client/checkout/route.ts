@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
     }
-    const { totalum_app_id, customer_email } = body;
+    const { totalum_app_id } = body;
 
     // Validazione parametri
     if (!totalum_app_id) {

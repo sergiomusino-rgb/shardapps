@@ -82,39 +82,6 @@ async function getUserTenant(userId: string) {
   return newTenant;
 }
 
-// ─── Helper: Check and decrement slots ─────────────────────────────────────────────
-async function checkAndDecrementSlots(tenantId: string) {
-  // Usa una transazione per evitare race condition
-  const { data: tenant, error: fetchError } = await supabase
-    .from('tenants')
-    .select('app_limit, total_apps_created')
-    .eq('id', tenantId)
-    .single();
-
-  if (fetchError || !tenant) {
-    return { success: false, error: 'Tenant non trovato' };
-  }
-
-  const slotsAvailable = tenant.app_limit - tenant.total_apps_created;
-
-  // Controllo slot
-  if (slotsAvailable <= 0) {
-    return { success: false, error: 'Slot esauriti. Aggiorna il tuo piano per creare nuovi gestionali.' };
-  }
-
-  // Decrementa gli slot
-  const { error: updateError } = await supabase
-    .from('tenants')
-    .update({ total_apps_created: tenant.total_apps_created + 1 })
-    .eq('id', tenantId);
-
-  if (updateError) {
-    return { success: false, error: 'Errore nell\'aggiornamento degli slot' };
-  }
-
-  return { success: true };
-}
-
 // ─── POST /api/generate ───────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {

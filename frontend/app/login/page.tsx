@@ -65,7 +65,7 @@ function LoginForm() {
         const target = returnUrl ? decodeURIComponent(returnUrl) : '/dashboard';
         router.push(`${target}?t=${Date.now()}`);
       }
-    } catch (err) {
+    } catch {
       setError(t('login_error_connection'));
       setLoading(false);
     }
@@ -112,7 +112,7 @@ function LoginForm() {
           setMode('login');
         }
       }
-    } catch (err) {
+    } catch {
       setError(t('login_error_connection'));
     } finally {
       setLoading(false);
@@ -137,7 +137,7 @@ function LoginForm() {
       } else {
         setSuccessMsg(t('login_success_reset'));
       }
-    } catch (err) {
+    } catch {
       setError(t('login_error_connection'));
     } finally {
       setLoading(false);

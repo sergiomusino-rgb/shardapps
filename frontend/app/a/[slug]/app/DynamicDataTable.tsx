@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TableDef, fieldName, extractDynamicKeys, getDisplayFields, getRecordValue, pickIdentityFields } from './table-definitions';
+import { TableDef, fieldName, extractDynamicKeys, pickIdentityFields } from './table-definitions';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
 import RecordCardGrid from './RecordCardGrid';
 import { renderCellValue } from './cellRenderers';
@@ -101,12 +101,6 @@ export default function DynamicDataTable({
 
   // Estrae tutte le chiavi dinamiche dai record correnti
   const dynamicKeys = useMemo(() => extractDynamicKeys(records), [records]);
-
-  // Costruisce la lista delle colonne da visualizzare: fissi + dinamic
-  const displayFields = useMemo(
-    () => getDisplayFields(table, showDynamicCols ? dynamicKeys : []),
-    [table, dynamicKeys, showDynamicCols]
-  );
 
   // Filtra per ricerca su TUTTI i campi (sia fissi che dati_personalizzati)
   const filteredRecords = useMemo(() => {

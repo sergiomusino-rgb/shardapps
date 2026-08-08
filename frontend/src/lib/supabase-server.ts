@@ -24,14 +24,14 @@ export async function createServerSupabase(): Promise<SupabaseClient<Database>> 
         set(name: string, value: string, options: any) {
           try {
             cookieStore.set({ name, value, ...options });
-          } catch (err) {
+          } catch {
             // Ignora errori in API route read-only
           }
         },
         remove(name: string, options: any) {
           try {
             cookieStore.set({ name, value: '', ...options });
-          } catch (err) {
+          } catch {
             // Ignora errori in API route read-only
           }
         },

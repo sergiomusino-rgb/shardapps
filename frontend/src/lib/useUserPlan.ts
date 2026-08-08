@@ -56,7 +56,7 @@ export function useUserPlan() {
         .eq('user_id', session.user.id)
         .single();
       profile = data ? (data as unknown as ProfileData) : null;
-    } catch (err) {
+    } catch {
       // Table or columns may not exist, continue with defaults
       console.warn('[useUserPlan] Profiles table not accessible, using defaults');
     }
