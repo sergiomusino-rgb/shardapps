@@ -241,25 +241,38 @@ async function getAppIdBySubscriptionId(supabase, subscriptionId) {
 // serve una guardia processed_checkout_sessions.
 //
 // eventCreatedAt (Fase 3, Step 3 — caso 13, eventi fuori ordine): il campo
-// `created` dell'Event Stripe che ha scatenato questo update. Se la riga ha
-// già un updated_at più recente di questo evento, l'evento è fuori ordine
-// (es. una cancellazione arrivata in ritardo rispetto a un rinnovo già
-// applicato) e viene scartato invece di sovrascrivere uno stato più recente.
+// `created` dell'Event Stripe che ha scatenato questo update. Confrontato
+// contro apps.stripe_event_applied_at (20260809000007_add_apps_stripe_event_applied_at.sql),
+// NON contro updated_at: apps viene scritta da 15+ percorsi non legati a
+// Stripe (cron di scadenza, azioni reseller/cliente, ecc.) e il trigger
+// tr_apps_updated_at bump updated_at su QUALUNQUE update — usarlo come
+// riferimento avrebbe scartato eventi Stripe legittimi solo perché
+// consegnati vicino nel tempo a una scrittura non correlata (falso
+// positivo verificato nell'audit Fase 3B, non solo teorico:
+// backend/jobs/expiry-check.js scrive su più app nello stesso batch ogni
+// giorno alle 9:00). stripe_event_applied_at è scritta SOLO da questa
+// funzione, quindi riflette esclusivamente l'ultimo evento Stripe
+// applicato.
 async function updateAppStatus(supabase, appId, status, eventCreatedAt, extra = {}) {
   const { data: current } = await supabase
     .from('apps')
-    .select('updated_at')
+    .select('stripe_event_applied_at')
     .eq('id', appId)
     .maybeSingle();
 
-  if (isStaleEvent(eventCreatedAt, current?.updated_at)) {
+  if (isStaleEvent(eventCreatedAt, current?.stripe_event_applied_at)) {
     console.log(`[Stripe Webhook] evento fuori ordine ignorato per app ${appId} (status richiesto: ${status})`);
     return false;
   }
 
+  const update = { status, updated_at: new Date().toISOString(), ...extra };
+  if (eventCreatedAt != null) {
+    update.stripe_event_applied_at = new Date(eventCreatedAt * 1000).toISOString();
+  }
+
   const { error } = await supabase
     .from('apps')
-    .update({ status, updated_at: new Date().toISOString(), ...extra })
+    .update(update)
     .eq('id', appId);
   if (error) console.error(`[Stripe Webhook] errore aggiornamento apps.status (app ${appId}):`, error);
   return !error;

@@ -106,19 +106,19 @@ test('isDuplicateSessionError: simula il flusso reale — insert fallito con 235
 
 // ─── 4. Prevenzione eventi fuori ordine (caso 13) ──────────────────────────
 
-test('isStaleEvent: evento più vecchio dell\'ultimo aggiornamento registrato -> true (va scartato)', () => {
-  const rowUpdatedAt = new Date().toISOString();
+test('isStaleEvent: evento più vecchio dell\'ultimo riferimento registrato -> true (va scartato)', () => {
+  const lastAppliedAt = new Date().toISOString();
   const eventCreatedAt = Math.floor(Date.now() / 1000) - 3600; // 1 ora prima
-  assert.equal(isStaleEvent(eventCreatedAt, rowUpdatedAt), true);
+  assert.equal(isStaleEvent(eventCreatedAt, lastAppliedAt), true);
 });
 
-test('isStaleEvent: evento più recente dell\'ultimo aggiornamento -> false (va applicato)', () => {
-  const rowUpdatedAt = new Date(Date.now() - 3600 * 1000).toISOString(); // 1 ora fa
+test('isStaleEvent: evento più recente dell\'ultimo riferimento -> false (va applicato)', () => {
+  const lastAppliedAt = new Date(Date.now() - 3600 * 1000).toISOString(); // 1 ora fa
   const eventCreatedAt = Math.floor(Date.now() / 1000); // ora
-  assert.equal(isStaleEvent(eventCreatedAt, rowUpdatedAt), false);
+  assert.equal(isStaleEvent(eventCreatedAt, lastAppliedAt), false);
 });
 
-test('isStaleEvent: nessuna riga precedente (rowUpdatedAt assente) -> false (niente con cui confrontare, non può essere fuori ordine)', () => {
+test('isStaleEvent: nessun riferimento precedente (lastAppliedAt assente) -> false (niente con cui confrontare, non può essere fuori ordine)', () => {
   assert.equal(isStaleEvent(Math.floor(Date.now() / 1000), null), false);
   assert.equal(isStaleEvent(Math.floor(Date.now() / 1000), undefined), false);
 });
@@ -128,18 +128,46 @@ test('isStaleEvent: timestamp malformato -> false (difensivo, non blocca l\'even
 });
 
 test('isStaleEvent: accetta sia secondi Unix (number) sia Date come eventCreatedAt', () => {
-  const rowUpdatedAt = new Date().toISOString();
+  const lastAppliedAt = new Date().toISOString();
   const oneHourAgoSeconds = Math.floor(Date.now() / 1000) - 3600;
   const oneHourAgoDate = new Date(Date.now() - 3600 * 1000);
-  assert.equal(isStaleEvent(oneHourAgoSeconds, rowUpdatedAt), true);
-  assert.equal(isStaleEvent(oneHourAgoDate, rowUpdatedAt), true);
+  assert.equal(isStaleEvent(oneHourAgoSeconds, lastAppliedAt), true);
+  assert.equal(isStaleEvent(oneHourAgoDate, lastAppliedAt), true);
 });
 
 test('isStaleEvent: scenario reale caso 13 — un customer.subscription.deleted in ritardo dopo un rinnovo già applicato viene scartato', () => {
-  // T=100: rinnovo (invoice.payment_succeeded) applicato, scrive updated_at=T100.
+  // T=100: rinnovo (invoice.payment_succeeded) applicato, scrive
+  // subscriptions.updated_at=T100 (ramo reseller: updated_at è un
+  // riferimento sicuro, nessun writer non-Stripe su subscriptions).
   const renewalAppliedAt = new Date(1700000100 * 1000).toISOString();
   // T=90: evento di cancellazione, cronologicamente precedente al rinnovo,
   // ma consegnato in ritardo (arriva DOPO che il rinnovo è già stato scritto).
   const staleDeletedEventCreated = 1700000090;
   assert.equal(isStaleEvent(staleDeletedEventCreated, renewalAppliedAt), true);
+});
+
+test('isStaleEvent: falso positivo su apps evitato usando stripe_event_applied_at invece di updated_at', () => {
+  // Regressione dell'indagine Fase 3B (2026-08-09): apps.updated_at viene
+  // bumpato dal trigger DB tr_apps_updated_at su QUALUNQUE update, anche
+  // non legato a Stripe (es. backend/jobs/expiry-check.js, cron
+  // giornaliero). Se isStaleEvent confrontasse contro updated_at, un
+  // evento Stripe legittimo consegnato subito dopo una di quelle scritture
+  // verrebbe scartato per errore.
+  const eventCreatedAt = 1700000100; // evento Stripe legittimo (es. rinnovo pagato)
+
+  // T=105: il cron di scadenza scrive sulla stessa riga per un motivo
+  // estraneo (expiry_warning_sent) - il trigger bumpa updated_at, ma la
+  // colonna stripe_event_applied_at (scritta SOLO da updateAppStatus) resta
+  // quella dell'ultimo evento Stripe realmente applicato, qui mai scritta.
+  const appsUpdatedAtAfterUnrelatedCronWrite = new Date(1700000105 * 1000).toISOString();
+  const appsStripeEventAppliedAtUntouched = null;
+
+  // Comportamento SBAGLIATO (quello che si voleva evitare): confrontando
+  // contro updated_at, l'evento legittimo risulta fuori ordine.
+  assert.equal(isStaleEvent(eventCreatedAt, appsUpdatedAtAfterUnrelatedCronWrite), true);
+
+  // Comportamento CORRETTO (quello che fa ora updateAppStatus): confrontando
+  // contro stripe_event_applied_at, non toccata dalla scrittura non-Stripe,
+  // l'evento legittimo viene applicato normalmente.
+  assert.equal(isStaleEvent(eventCreatedAt, appsStripeEventAppliedAtUntouched), false);
 });

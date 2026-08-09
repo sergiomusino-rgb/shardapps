@@ -36,26 +36,31 @@ function resolveAppStatusFromStripeStatus(stripeStatus) {
 // Protezione eventi fuori ordine (Fase 3B, caso 13): Stripe non garantisce
 // la consegna in ordine cronologico degli eventi webhook. `eventCreatedAt`
 // è il campo `created` dell'Event Stripe (secondi Unix, sempre presente);
-// `rowUpdatedAt` è il valore già salvato in `updated_at` sulla riga
-// (subscriptions/apps) che si sta per sovrascrivere. Se l'evento è più
-// vecchio dell'ultimo aggiornamento già registrato, va scartato: qualunque
-// cosa abbia scritto quell'updated_at riflette già una realtà successiva a
-// questo evento.
+// `lastAppliedAt` è il riferimento temporale dell'ultimo evento/stato già
+// applicato alla riga che si sta per sovrascrivere. Se l'evento è più
+// vecchio di quel riferimento, va scartato.
 //
-// Nessuna nuova colonna richiesta: updated_at esiste già su entrambe le
-// tabelle ed è già scritto ad ogni update — qui viene solo letto prima di
-// scrivere, non aggiunta struttura al DB.
-function isStaleEvent(eventCreatedAt, rowUpdatedAt) {
-  if (eventCreatedAt == null || !rowUpdatedAt) return false; // nessun riferimento -> non può essere fuori ordine
+// Non è sempre updated_at (Fase 3B, indagine sui falsi positivi, 2026-08-09):
+// - subscriptions.updated_at va bene com'è — scritta SOLO da codice legato
+//   a Stripe (server.js, routes/stripe.js, webhook frontend), nessun altro
+//   writer trovato.
+// - apps.updated_at NON va bene — scritta da 15+ percorsi non legati a
+//   Stripe (cron di scadenza, azioni reseller/cliente, ecc.), e il trigger
+//   DB tr_apps_updated_at la sovrascrive su QUALUNQUE update. Per questo
+//   updateAppStatus (server.js) passa qui apps.stripe_event_applied_at
+//   (20260809000007_add_apps_stripe_event_applied_at.sql), una colonna
+//   scritta SOLO dal webhook Stripe, non updated_at.
+function isStaleEvent(eventCreatedAt, lastAppliedAt) {
+  if (eventCreatedAt == null || !lastAppliedAt) return false; // nessun riferimento -> non può essere fuori ordine
 
   const eventMs = eventCreatedAt instanceof Date
     ? eventCreatedAt.getTime()
     : Number(eventCreatedAt) * 1000;
-  const rowMs = new Date(rowUpdatedAt).getTime();
+  const lastAppliedMs = new Date(lastAppliedAt).getTime();
 
-  if (Number.isNaN(eventMs) || Number.isNaN(rowMs)) return false; // dato malformato: non blocca l'evento, difensivo
+  if (Number.isNaN(eventMs) || Number.isNaN(lastAppliedMs)) return false; // dato malformato: non blocca l'evento, difensivo
 
-  return eventMs < rowMs;
+  return eventMs < lastAppliedMs;
 }
 
 // Idempotenza (Fase 3B, casi 4/17 — webhook duplicato/retry): vero se
