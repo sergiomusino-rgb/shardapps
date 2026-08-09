@@ -11,7 +11,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
-const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent, isDuplicateSessionError } = require('./lib/stripe-webhook-logic');
+const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent, isDuplicateSessionError, classifyStripeEvent } = require('./lib/stripe-webhook-logic');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -352,24 +352,23 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
       case 'checkout.session.completed': {
         const session = event.data.object;
 
-        // Abbonamento mensile app-cliente (paywall trial), creato da
-        // /api/a/[slug]/create-checkout-session con metadata.app_id: va
-        // gestito PRIMA di risolvere tenantId sotto, perché per queste
-        // sessioni client_reference_id è l'id dell'APP, non del tenant —
-        // altrimenti finirebbe trattata come un acquisto di piano reseller
-        // con un tenantId inesistente (silenziosamente ignorata, "tenant non
-        // trovato").
-        const appId = session.metadata?.app_id || null;
-        if (appId) {
+        // Routing (Fase 3, Priorità 3): decisione app-vs-reseller presa
+        // PRIMA di qualunque I/O da classifyStripeEvent
+        // (lib/stripe-webhook-logic.js, testata con node:test) — per questo
+        // evento è sempre possibile deciderlo solo dai metadata, senza
+        // interrogare il DB.
+        const target = classifyStripeEvent(event);
+
+        if (target.type === 'app') {
           const appSubscriptionId = typeof session.subscription === 'string'
             ? session.subscription
             : session.subscription?.id || null;
-          await updateAppStatus(supabase, appId, 'active', event.created, appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {});
-          console.log(`[Stripe Webhook] App ${appId} attivata (subscription ${appSubscriptionId || 'n/d'})`);
+          await updateAppStatus(supabase, target.appId, 'active', event.created, appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {});
+          console.log(`[Stripe Webhook] App ${target.appId} attivata (subscription ${appSubscriptionId || 'n/d'})`);
           break;
         }
 
-        const tenantId = session.client_reference_id || session.metadata?.tenant_id;
+        const tenantId = target.type === 'reseller' ? target.tenantId : null;
         const customerEmail = session.customer_email || session.customer_details?.email;
 
         console.log(`[Stripe Webhook] checkout.session.completed - sessionId: ${session.id}, tenantId: ${tenantId}, email: ${customerEmail}`);
@@ -477,11 +476,14 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object;
-        // Dalla ristrutturazione Invoice di Stripe (metà 2025), invoice.subscription
-        // non esiste più: l'id sta sotto invoice.parent.subscription_details.subscription.
-        // Il fallback sul campo legacy resta per compatibilità con payload più vecchi.
-        const subscriptionId = invoice.parent?.subscription_details?.subscription || invoice.subscription;
-        if (!subscriptionId) break;
+        // Routing (Fase 3, Priorità 3): subscriptionId estratto (puro) da
+        // classifyStripeEvent — stesso fallback di prima (Stripe ha spostato
+        // questo campo sotto invoice.parent.subscription_details.subscription
+        // a metà 2025). L'effettiva classificazione app-vs-reseller richiede
+        // ancora la query sotto: nessuna funzione pura può saperlo senza il DB.
+        const routingTarget = classifyStripeEvent(event);
+        if (routingTarget.type !== 'requires-lookup') break;
+        const subscriptionId = routingTarget.subscriptionId;
 
         // Rinnovo di un abbonamento app-cliente: controllato prima del ramo
         // reseller sotto, le due tabelle non si sovrappongono mai sullo
@@ -522,9 +524,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
       }
 
       case 'invoice.payment_failed': {
-        const invoice = event.data.object;
-        const subscriptionId = invoice.subscription;
-        if (!subscriptionId) break;
+        const routingTarget = classifyStripeEvent(event);
+        if (routingTarget.type !== 'requires-lookup') break;
+        const subscriptionId = routingTarget.subscriptionId;
 
         const failedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (failedAppId) {
@@ -552,8 +554,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
       }
 
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object;
-        const subscriptionId = subscription.id;
+        const routingTarget = classifyStripeEvent(event);
+        if (routingTarget.type !== 'requires-lookup') break;
+        const subscriptionId = routingTarget.subscriptionId;
 
         const deletedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (deletedAppId) {
@@ -582,7 +585,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
       case 'customer.subscription.updated': {
         const subscription = event.data.object;
-        const subscriptionId = subscription.id;
+        const routingTarget = classifyStripeEvent(event);
+        if (routingTarget.type !== 'requires-lookup') break;
+        const subscriptionId = routingTarget.subscriptionId;
 
         const updatedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (updatedAppId) {
@@ -622,15 +627,16 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object;
-        const tenantId = paymentIntent.metadata?.tenant_id;
+        const routingTarget = classifyStripeEvent(event);
         const planId = paymentIntent.metadata?.plan_id;
         const quantity = parseInt(paymentIntent.metadata?.quantity || '1', 10);
         const feePriceId = paymentIntent.metadata?.fee_price_id;
         const supabaseUserId = paymentIntent.metadata?.supabase_user_id || null;
 
-        if (!tenantId) {
+        if (routingTarget.type !== 'reseller') {
           break;
         }
+        const tenantId = routingTarget.tenantId;
 
         console.log(`[Stripe Webhook] payment_intent.succeeded for tenant ${tenantId}, plan ${planId}`);
 

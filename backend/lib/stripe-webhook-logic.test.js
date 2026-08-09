@@ -15,6 +15,8 @@ const {
   resolveAppStatusFromStripeStatus,
   isStaleEvent,
   isDuplicateSessionError,
+  resolveEventSubscriptionId,
+  classifyStripeEvent,
 } = require('./stripe-webhook-logic');
 
 // ─── 1. planRank() e guardia anti-downgrade ─────────────────────────────────
@@ -170,4 +172,119 @@ test('isStaleEvent: falso positivo su apps evitato usando stripe_event_applied_a
   // contro stripe_event_applied_at, non toccata dalla scrittura non-Stripe,
   // l'evento legittimo viene applicato normalmente.
   assert.equal(isStaleEvent(eventCreatedAt, appsStripeEventAppliedAtUntouched), false);
+});
+
+// ─── 5. resolveEventSubscriptionId (Fase 3, Priorità 3) ────────────────────
+
+test('resolveEventSubscriptionId: invoice.payment_succeeded usa il fallback parent.subscription_details.subscription', () => {
+  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } }, subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_succeeded', eventObject), 'sub_new_shape');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_succeeded ricade su subscription legacy se manca il campo nuovo', () => {
+  const eventObject = { subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_succeeded', eventObject), 'sub_legacy');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed usa SOLO invoice.subscription (asimmetria preesistente, non un fallback nuovo)', () => {
+  // A differenza di payment_succeeded, il codice originale di backend/server.js
+  // non ha mai avuto qui il fallback su parent.subscription_details.subscription
+  // — riprodotto fedelmente, non introdotto da questa estrazione. Se un
+  // payload invoice.payment_failed avesse SOLO la forma nuova (come già può
+  // accadere per payment_succeeded dopo la ristrutturazione Stripe di metà
+  // 2025), questo evento non troverebbe alcun subscriptionId.
+  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } } };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), null);
+});
+
+test('resolveEventSubscriptionId: customer.subscription.deleted/updated usano l\'id dell\'oggetto stesso', () => {
+  const eventObject = { id: 'sub_abc' };
+  assert.equal(resolveEventSubscriptionId('customer.subscription.deleted', eventObject), 'sub_abc');
+  assert.equal(resolveEventSubscriptionId('customer.subscription.updated', eventObject), 'sub_abc');
+});
+
+test('resolveEventSubscriptionId: event type sconosciuto -> null', () => {
+  assert.equal(resolveEventSubscriptionId('charge.refunded', { id: 'ch_1' }), null);
+});
+
+// ─── 6. classifyStripeEvent (Fase 3, Priorità 3 — routing) ─────────────────
+
+function stripeEvent(type, object, created = 1700000000) {
+  return { type, created, data: { object } };
+}
+
+test('classifyStripeEvent: checkout.session.completed con metadata.app_id -> ramo app', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { app_id: 'app-1' },
+    client_reference_id: 'this-should-be-ignored',
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'app', appId: 'app-1' });
+});
+
+test('classifyStripeEvent: checkout.session.completed con client_reference_id (nessun app_id) -> ramo reseller', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { plan_id: 'pro' },
+    client_reference_id: 'tenant-1',
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-1' });
+});
+
+test('classifyStripeEvent: checkout.session.completed con metadata.tenant_id (nessun client_reference_id) -> ramo reseller', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { tenant_id: 'tenant-2' },
+    client_reference_id: null,
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-2' });
+});
+
+test('classifyStripeEvent: checkout.session.completed senza app_id/tenant_id/client_reference_id -> unresolved', () => {
+  const event = stripeEvent('checkout.session.completed', { metadata: {}, client_reference_id: null });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: payment_intent.succeeded con metadata.tenant_id -> ramo reseller (nessun ramo app per questo evento)', () => {
+  const event = stripeEvent('payment_intent.succeeded', { metadata: { tenant_id: 'tenant-3', plan_id: 'starter' } });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-3' });
+});
+
+test('classifyStripeEvent: payment_intent.succeeded senza tenant_id -> unresolved', () => {
+  const event = stripeEvent('payment_intent.succeeded', { metadata: {} });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: invoice.payment_succeeded con subscriptionId risolvibile -> requires-lookup (la classificazione app-vs-reseller resta a chi chiama)', () => {
+  const event = stripeEvent('invoice.payment_succeeded', { subscription: 'sub_xyz' });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'requires-lookup', subscriptionId: 'sub_xyz' });
+});
+
+test('classifyStripeEvent: invoice.payment_failed/customer.subscription.deleted/updated -> requires-lookup con il rispettivo subscriptionId', () => {
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('invoice.payment_failed', { subscription: 'sub_1' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_1' }
+  );
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('customer.subscription.deleted', { id: 'sub_2' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_2' }
+  );
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('customer.subscription.updated', { id: 'sub_3' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_3' }
+  );
+});
+
+test('classifyStripeEvent: evento legato a subscription senza subscriptionId risolvibile -> unresolved', () => {
+  // Caso limite/ambiguo: payload inatteso, nessun campo subscription noto.
+  const event = stripeEvent('invoice.payment_succeeded', {});
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: event type non gestito -> unhandled', () => {
+  const event = stripeEvent('charge.refunded', { id: 'ch_1' });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unhandled' });
+});
+
+test('classifyStripeEvent: payload malformato (event/data/object mancanti) -> non lancia, ritorna un tipo valido', () => {
+  assert.doesNotThrow(() => classifyStripeEvent({}));
+  assert.doesNotThrow(() => classifyStripeEvent({ type: 'checkout.session.completed' }));
+  assert.deepEqual(classifyStripeEvent({ type: 'checkout.session.completed' }), { type: 'unresolved' });
 });
