@@ -7,6 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const Stripe = require('stripe');
 
 const {
   PLAN_RANK,
@@ -17,6 +18,8 @@ const {
   isDuplicateSessionError,
   resolveEventSubscriptionId,
   classifyStripeEvent,
+  verifyWebhookSignature,
+  resolvePlanFromProductName,
 } = require('./stripe-webhook-logic');
 
 // ─── 1. planRank() e guardia anti-downgrade ─────────────────────────────────
@@ -294,4 +297,98 @@ test('classifyStripeEvent: payload malformato (event/data/object mancanti) -> no
   assert.doesNotThrow(() => classifyStripeEvent({}));
   assert.doesNotThrow(() => classifyStripeEvent({ type: 'checkout.session.completed' }));
   assert.deepEqual(classifyStripeEvent({ type: 'checkout.session.completed' }), { type: 'unresolved' });
+});
+
+// ─── 7. verifyWebhookSignature (Fase 3, completamento — caso 3 firma invalida) ──
+// stripe.webhooks.constructEvent/generateTestHeaderString sono verifica HMAC
+// locale (nessuna chiamata di rete): un'istanza Stripe con chiave finta basta.
+
+const testStripe = new Stripe('sk_test_dummy_key_not_real', { apiVersion: '2026-06-24.dahlia' });
+const WEBHOOK_TEST_SECRET = 'whsec_test_secret_for_unit_tests';
+
+function signPayload(payload, secret = WEBHOOK_TEST_SECRET) {
+  return testStripe.webhooks.generateTestHeaderString({ payload, secret });
+}
+
+test('verifyWebhookSignature: firma valida -> ok:true con l\'evento parsato correttamente', () => {
+  const payload = JSON.stringify({ id: 'evt_1', object: 'event', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } });
+  const signature = signPayload(payload);
+  const result = verifyWebhookSignature(testStripe, payload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, true);
+  assert.equal(result.event.type, 'checkout.session.completed');
+  assert.equal(result.event.id, 'evt_1');
+});
+
+test('verifyWebhookSignature: firma mancante -> ok:false, nessun evento', () => {
+  const payload = JSON.stringify({ id: 'evt_2', type: 'checkout.session.completed' });
+  const result = verifyWebhookSignature(testStripe, payload, '', WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+  assert.equal(result.event, undefined);
+  assert.ok(result.error);
+});
+
+test('verifyWebhookSignature: firma palesemente invalida (stringa arbitraria) -> ok:false', () => {
+  const payload = JSON.stringify({ id: 'evt_3', type: 'checkout.session.completed' });
+  const result = verifyWebhookSignature(testStripe, payload, 'firma-non-valida', WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+});
+
+test('verifyWebhookSignature: firma valida ma verificata con un secret diverso -> ok:false', () => {
+  // Simula il caso reale più subdolo: firma tecnicamente ben formata, ma
+  // generata con un secret diverso da quello configurato lato server (es.
+  // secret ambiente test vs produzione).
+  const payload = JSON.stringify({ id: 'evt_4', type: 'checkout.session.completed' });
+  const signature = signPayload(payload, 'whsec_altro_secret');
+  const result = verifyWebhookSignature(testStripe, payload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+});
+
+test('verifyWebhookSignature: payload manomesso dopo la firma -> ok:false', () => {
+  // La firma è calcolata sul payload originale: se il body arriva alterato
+  // (anche di un solo carattere) rispetto a quanto firmato, deve fallire.
+  const originalPayload = JSON.stringify({ id: 'evt_5', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } });
+  const signature = signPayload(originalPayload);
+  const tamperedPayload = originalPayload.replace('cs_1', 'cs_2');
+  const result = verifyWebhookSignature(testStripe, tamperedPayload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+});
+
+test('verifyWebhookSignature: non lancia mai (ok:false su qualunque input malformato)', () => {
+  assert.doesNotThrow(() => verifyWebhookSignature(testStripe, null, null, null));
+  assert.equal(verifyWebhookSignature(testStripe, null, null, null).ok, false);
+});
+
+// ─── 8. resolvePlanFromProductName (Fase 3, completamento — caso 12 piano non valido) ──
+
+test('resolvePlanFromProductName: riconosce i 5 piani noti (case-insensitive, sottostringa)', () => {
+  assert.equal(resolvePlanFromProductName('ShardApps Business'), 'business');
+  assert.equal(resolvePlanFromProductName('VIP Plan'), 'vip');
+  assert.equal(resolvePlanFromProductName('Piano PRO mensile'), 'pro');
+  assert.equal(resolvePlanFromProductName('Starter'), 'starter');
+  assert.equal(resolvePlanFromProductName('Piano Basic'), 'basic');
+  assert.equal(resolvePlanFromProductName('pacchetto base'), 'basic');
+});
+
+test('resolvePlanFromProductName: business ha priorità su altri match parziali', () => {
+  // "Business Pro" contiene sia "business" che "pro": la priorità (prima
+  // business, poi vip, poi pro...) è la stessa già in uso in server.js,
+  // solo ora esplicita e testata.
+  assert.equal(resolvePlanFromProductName('Business Pro'), 'business');
+});
+
+test('resolvePlanFromProductName: nome non riconosciuto -> null (non un fallback muto)', () => {
+  // Prima di questo fix, un nome prodotto non riconosciuto spariva
+  // silenziosamente dentro il fallback a 'starter' senza nessun log che
+  // distinguesse questo caso da un piano regolare. Ora il chiamante
+  // (resolvePlanFromSession in server.js) riceve null e logga esplicitamente
+  // prima di applicare lo stesso fallback — comportamento finale invariato,
+  // visibilità aggiunta.
+  assert.equal(resolvePlanFromProductName('Abbonamento Premium Deluxe'), null);
+});
+
+test('resolvePlanFromProductName: nome mancante/vuoto -> null', () => {
+  assert.equal(resolvePlanFromProductName(null), null);
+  assert.equal(resolvePlanFromProductName(undefined), null);
+  assert.equal(resolvePlanFromProductName(''), null);
 });

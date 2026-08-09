@@ -155,6 +155,39 @@ function classifyStripeEvent(event) {
   }
 }
 
+// ─── Verifica firma webhook (Fase 3, completamento) ─────────────────────────
+// Isolata da backend/server.js per essere testabile: stripe.webhooks.
+// constructEvent è verifica HMAC locale (confronta la firma nell'header
+// contro payload+secret), NON contatta l'API Stripe — può essere chiamata
+// nei test con un'istanza Stripe costruita con una chiave finta, nessun
+// mock/rete necessario. Riceve `stripe` (l'istanza già creata in server.js)
+// invece di crearne una propria: stesso client, stessa configurazione.
+function verifyWebhookSignature(stripe, payload, signature, secret) {
+  try {
+    const event = stripe.webhooks.constructEvent(payload, signature, secret);
+    return { ok: true, event };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ─── Risoluzione piano da nome prodotto Stripe (fallback legacy) ──────────
+// Estratta da resolvePlanFromSession (backend/server.js): solo la parte pura
+// di pattern-matching sul nome, senza le chiamate Stripe (listLineItems/
+// prices.retrieve/products.retrieve) che la precedono. Ritorna null se il
+// nome non corrisponde a nessun piano noto — il chiamante decide come
+// loggare/gestire esplicitamente il fallback, invece che farlo sparire
+// silenziosamente dentro il pattern-matching stesso.
+function resolvePlanFromProductName(productName) {
+  const name = (productName || '').toLowerCase();
+  if (name.includes('business')) return 'business';
+  if (name.includes('vip')) return 'vip';
+  if (name.includes('pro')) return 'pro';
+  if (name.includes('starter')) return 'starter';
+  if (name.includes('basic') || name.includes('base')) return 'basic';
+  return null;
+}
+
 module.exports = {
   PLAN_RANK,
   planRank,
@@ -164,4 +197,6 @@ module.exports = {
   isDuplicateSessionError,
   resolveEventSubscriptionId,
   classifyStripeEvent,
+  verifyWebhookSignature,
+  resolvePlanFromProductName,
 };

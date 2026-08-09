@@ -11,7 +11,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
-const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent, isDuplicateSessionError, classifyStripeEvent } = require('./lib/stripe-webhook-logic');
+const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent, isDuplicateSessionError, classifyStripeEvent, verifyWebhookSignature, resolvePlanFromProductName } = require('./lib/stripe-webhook-logic');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -310,20 +310,25 @@ async function resolvePlanFromSession(stripe, session) {
   try {
     const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
     const priceId = lineItems.data[0]?.price?.id;
-    if (!priceId) return metadataPlan || 'starter';
+    if (!priceId) {
+      console.error(`[resolvePlanFromSession] sessione ${session.id}: nessun line item/price trovato, fallback a '${metadataPlan || 'starter'}'`);
+      return metadataPlan || 'starter';
+    }
     const price = await stripe.prices.retrieve(priceId);
     const productId = typeof price.product === 'string' ? price.product : price.product?.id;
-    if (!productId) return metadataPlan || 'starter';
+    if (!productId) {
+      console.error(`[resolvePlanFromSession] sessione ${session.id}: price ${priceId} senza product associato, fallback a '${metadataPlan || 'starter'}'`);
+      return metadataPlan || 'starter';
+    }
     const product = await stripe.products.retrieve(productId);
-    const name = (product.name || '').toLowerCase();
-    if (name.includes('business')) return 'business';
-    if (name.includes('vip')) return 'vip';
-    if (name.includes('pro')) return 'pro';
-    if (name.includes('starter')) return 'starter';
-    if (name.includes('basic') || name.includes('base')) return 'basic';
-    return metadataPlan || 'starter';
+    const resolvedPlan = resolvePlanFromProductName(product.name);
+    if (!resolvedPlan) {
+      console.error(`[resolvePlanFromSession] sessione ${session.id}: nome prodotto Stripe "${product.name}" non riconosciuto, fallback a '${metadataPlan || 'starter'}'`);
+      return metadataPlan || 'starter';
+    }
+    return resolvedPlan;
   } catch (err) {
-    console.error('[resolvePlanFromSession] errore:', err);
+    console.error(`[resolvePlanFromSession] sessione ${session.id}: errore durante la risoluzione del piano, fallback a '${metadataPlan || 'starter'}'`, err);
     return metadataPlan || 'starter';
   }
 }
@@ -337,13 +342,16 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
   const payload = req.body;
   const signature = req.headers['stripe-signature'] || '';
 
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret);
-  } catch (err) {
-    console.error(`Webhook signature verification failed: ${err.message}`);
+  // Verifica firma isolata in verifyWebhookSignature (lib/stripe-webhook-logic.js,
+  // testata con node:test): 400 immediato, nessuna query/logica downstream
+  // eseguita se la firma non è valida — comportamento invariato, solo reso
+  // testabile in isolamento.
+  const verification = verifyWebhookSignature(stripe, payload, signature, stripeWebhookSecret);
+  if (!verification.ok) {
+    console.error(`Webhook signature verification failed: ${verification.error}`);
     return res.status(400).json({ error: 'Webhook signature verification failed' });
   }
+  const event = verification.event;
 
   const supabase = getSupabase();
 
