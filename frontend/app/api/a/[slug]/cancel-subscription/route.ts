@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { authorizeCancelSubscription } from '@/src/lib/cancel-subscription-authorization';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-06-24.dahlia' as any,
@@ -29,57 +30,55 @@ export async function POST(request: NextRequest) {
     // Fix cross-tenant (audit Fase 3B, caso 15): prima di questo controllo
     // chiunque conoscesse lo slug pubblico di un'app (visibile nell'URL)
     // poteva cancellare l'abbonamento Stripe del suo cliente, senza alcuna
-    // autenticazione. Stesso modello di ownership già usato da
-    // register/route.ts: solo un utente Supabase con una riga app_users
-    // (role 'admin') per QUESTA specifica app può gestirne l'abbonamento.
+    // autenticazione. La decisione (401/403/200) è delegata a
+    // authorizeCancelSubscription (src/lib/cancel-subscription-authorization.js,
+    // Fase 3 Step 1.3) — pura, testata con node:test — mentre qui restano
+    // solo le query, nello stesso ordine/short-circuit di prima: ogni
+    // passaggio successivo viene eseguito solo se il precedente è andato a
+    // buon fine, così una richiesta non autenticata non arriva mai a
+    // interrogare app_users.
     const authHeader = request.headers.get('authorization');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) {
-      return NextResponse.json({ error: 'Autenticazione richiesta' }, { status: 401 });
-    }
 
-    const { data: { user }, error: authError } = await getSupabaseAuth().auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Token non valido' }, { status: 401 });
+    let user: { id: string } | null = null;
+    if (token) {
+      const { data } = await getSupabaseAuth().auth.getUser(token);
+      user = data.user;
     }
 
     const slug = request.nextUrl.pathname.split('/')[3];
-
     const supabase = getSupabaseAdmin();
 
-    // Get app info
-    const { data: app, error: appError } = await supabase
-      .from('apps')
-      .select('id, stripe_subscription_id')
-      .eq('slug', slug)
-      .single();
-
-    if (appError || !app) {
-      return NextResponse.json({ error: 'App non trovata' }, { status: 404 });
+    let app: { id: string; stripe_subscription_id: string | null } | null = null;
+    if (token && user) {
+      const { data } = await supabase
+        .from('apps')
+        .select('id, stripe_subscription_id')
+        .eq('slug', slug)
+        .single();
+      app = data;
     }
 
-    // Ownership: l'utente autenticato deve essere l'admin registrato di
-    // QUESTA app (stesso vincolo imposto alla registrazione), non di un'app
-    // qualsiasi — un 'agent'/'viewer'/'editor' non gestisce la fatturazione.
-    const { data: appUser } = await supabase
-      .from('app_users')
-      .select('id')
-      .eq('app_id', app.id)
-      .eq('user_id', user.id)
-      .eq('role', 'admin')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (!appUser) {
-      return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
+    let appUser: { id: string } | null = null;
+    if (app) {
+      const { data } = await supabase
+        .from('app_users')
+        .select('id')
+        .eq('app_id', app.id)
+        .eq('user_id', user!.id)
+        .eq('role', 'admin')
+        .eq('is_active', true)
+        .maybeSingle();
+      appUser = data;
     }
 
-    if (!app.stripe_subscription_id) {
-      return NextResponse.json({ error: 'Nessun abbonamento attivo' }, { status: 400 });
+    const decision = authorizeCancelSubscription({ token, user, app, appUser });
+    if (!decision.ok) {
+      return NextResponse.json({ error: decision.error }, { status: decision.status });
     }
 
     // Cancel subscription at period end
-    await stripe.subscriptions.update(app.stripe_subscription_id, {
+    await stripe.subscriptions.update(app!.stripe_subscription_id!, {
       cancel_at_period_end: true,
     });
 
