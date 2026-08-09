@@ -1,0 +1,43 @@
+name: Test backend
+
+# Esegue i test unitari di backend/scripts/check_rls_policies.test.js
+# (evaluateTablePolicies/evaluateFunctionPrivileges — logica pura estratta
+# da check_rls_policies.js in occasione della Fase 2 di difesa in profondità,
+# 2026-08-09: una nuova funzione SECURITY DEFINER lasciata con EXECUTE aperto
+# a PUBLIC/anon/authenticated e non ancora in FUNCTION_BASELINE deve far
+# fallire la CI).
+#
+# Workflow separato da rls-check.yml, non un job in più in quel file:
+# rls-check.yml richiede due secret di repository (SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY) per interrogare il database reale — secret che
+# GitHub Actions non espone ai workflow triggerati da una pull request da
+# fork. Questi test invece sono deliberatamente offline (node:test su dati
+# finti, nessuna rete/DB/env — vedi commento in testa al file di test): un
+# workflow dedicato, senza `env:`/`secrets:`, gira in modo identico per
+# qualunque contributor, incluse le PR da fork.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Installa le dipendenze del backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Esegui i test (node:test, nessun secret richiesto)
+        working-directory: backend
+        run: npm test
