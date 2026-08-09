@@ -2,7 +2,7 @@ const express = require('express');
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const { checkoutLimiter } = require('../middleware/rate-limit');
-const { planRank } = require('../lib/stripe-webhook-logic');
+const { planRank, isDuplicateSessionError } = require('../lib/stripe-webhook-logic');
 
 const router = express.Router();
 const STRIPE_API_VERSION = '2025-03-31.basil';
@@ -296,7 +296,7 @@ router.post('/sync-plan', async (req, res) => {
         .from('processed_checkout_sessions')
         .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: slotsToAdd });
 
-      if (insertError && insertError.code !== '23505') {
+      if (insertError && !isDuplicateSessionError(insertError)) {
         console.error('[sync-plan] errore idempotenza (credit_topup):', insertError);
         return res.status(500).json({ error: 'Errore ricarica crediti' });
       }
@@ -392,7 +392,7 @@ router.post('/sync-plan', async (req, res) => {
       .from('processed_checkout_sessions')
       .insert({ session_id: sessionId, tenant_id: tenantId, plan, slots_added: appLimit });
 
-    if (insertError && insertError.code !== '23505') {
+    if (insertError && !isDuplicateSessionError(insertError)) {
       console.error('[sync-plan] errore idempotenza:', insertError);
       return res.status(500).json({ error: 'Errore aggiornamento piano' });
     }

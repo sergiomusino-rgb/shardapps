@@ -58,10 +58,23 @@ function isStaleEvent(eventCreatedAt, rowUpdatedAt) {
   return eventMs < rowMs;
 }
 
+// Idempotenza (Fase 3B, casi 4/17 — webhook duplicato/retry): vero se
+// l'errore Postgres indica un vincolo UNIQUE violato su
+// processed_checkout_sessions(session_id) — la sessione/evento è già stata
+// processata da un altro percorso (webhook, /sync-plan, un retry Stripe
+// dello stesso evento), quindi va trattato come no-op, non come errore reale
+// da propagare. Stessa condizione era duplicata in backend/server.js
+// (applyCheckoutSessionOnce) e due volte in backend/routes/stripe.js
+// (/sync-plan) — unica fonte di verità qui.
+function isDuplicateSessionError(error) {
+  return !!error && error.code === '23505';
+}
+
 module.exports = {
   PLAN_RANK,
   planRank,
   APP_SUBSCRIPTION_STATUS_MAP,
   resolveAppStatusFromStripeStatus,
   isStaleEvent,
+  isDuplicateSessionError,
 };

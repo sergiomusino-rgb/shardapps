@@ -11,7 +11,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
-const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent } = require('./lib/stripe-webhook-logic');
+const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent, isDuplicateSessionError } = require('./lib/stripe-webhook-logic');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -141,7 +141,7 @@ async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slo
     .insert({ session_id: sessionId, tenant_id: tenantId, plan: plan || 'credit_topup', slots_added: slotsToAdd });
 
   if (insertError) {
-    if (insertError.code === '23505') {
+    if (isDuplicateSessionError(insertError)) {
       console.log(`[Stripe Webhook] sessione ${sessionId} già processata, skip`);
       return false;
     }
