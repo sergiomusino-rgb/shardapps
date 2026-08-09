@@ -2,6 +2,7 @@ const express = require('express');
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const { checkoutLimiter } = require('../middleware/rate-limit');
+const { planRank } = require('../lib/stripe-webhook-logic');
 
 const router = express.Router();
 const STRIPE_API_VERSION = '2025-03-31.basil';
@@ -19,16 +20,8 @@ function getStripe() {
   });
 }
 
-// Rango dei piani: gli eventi Stripe (webhook, /sync-plan, banner dashboard)
-// non arrivano garantiti in ordine cronologico. Se un tenant compra business
-// e poi (per un evento in ritardo) arriva l'evento del vecchio acquisto
-// starter, un update incondizionato di tenants.plan lo farebbe retrocedere.
-// Confrontando il rango si applica solo un piano pari o superiore a quello
-// già salvato.
-const PLAN_RANK = { free: 0, starter: 1, basic: 1, pro: 2, business: 3, vip: 3 };
-function planRank(plan) {
-  return PLAN_RANK[plan] ?? 0;
-}
+// planRank ora importato da ../lib/stripe-webhook-logic (Fase 3, Step 3):
+// era duplicato identico qui e in server.js, unica fonte di verità.
 
 // Crediti Vision e slot accreditati da una "Ricarica Extra" (credit_topup),
 // vedi anche PLAN_CREDITS.credit_topup / PLAN_SLOTS.credit_topup in

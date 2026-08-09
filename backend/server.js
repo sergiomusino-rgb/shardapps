@@ -11,6 +11,7 @@ const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
+const { planRank, resolveAppStatusFromStripeStatus, isStaleEvent } = require('./lib/stripe-webhook-logic');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -25,7 +26,7 @@ app.use(cors({
     if (isDevelopment) {
       return callback(null, true);
     }
-
+    
     // In production, controlla la whitelist. Passare un Error al callback
     // (invece di `false`) fa propagare l'errore alla error-handling chain di
     // Express: senza un handler dedicato per gli errori CORS, QUALUNQUE
@@ -118,15 +119,8 @@ const PLAN_SLOTS = { starter: 1, pro: 5, business: 50, basic: 1, vip: 100, credi
 // routes/stripe.js), che oltre ai crediti concede anche 1 slot app.
 const PLAN_CREDITS = { starter: 20, pro: 100, business: 500, credit_topup: 50 };
 
-// Rango dei piani: gli eventi Stripe (checkout.session.completed,
-// payment_intent.succeeded) non arrivano garantiti in ordine cronologico.
-// Se un tenant compra business e poi arriva in ritardo l'evento del vecchio
-// acquisto starter, un update incondizionato di tenants.plan lo farebbe
-// retrocedere. Si applica solo un piano pari o superiore a quello già salvato.
-const PLAN_RANK = { free: 0, starter: 1, basic: 1, pro: 2, business: 3, vip: 3 };
-function planRank(plan) {
-  return PLAN_RANK[plan] ?? 0;
-}
+// planRank ora importato da ./lib/stripe-webhook-logic (Fase 3, Step 3):
+// era duplicato identico qui e in routes/stripe.js, unica fonte di verità.
 
 // Somma slot/crediti e (opzionalmente) aggiorna il piano del tenant una sola
 // volta per checkout session, indipendentemente da quale dei punti di sync
@@ -238,28 +232,51 @@ async function getAppIdBySubscriptionId(supabase, subscriptionId) {
   return data.id;
 }
 
-// Stessa mappa di frontend/app/api/webhooks/stripe/route.ts::handleAppSubscriptionUpdated.
-const APP_SUBSCRIPTION_STATUS_MAP = {
-  active: 'active',
-  trialing: 'active',
-  past_due: 'past_due',
-  unpaid: 'past_due',
-  incomplete: 'past_due',
-  incomplete_expired: 'canceled',
-  canceled: 'canceled',
-};
+// resolveAppStatusFromStripeStatus (mappa stati) ora importata da
+// ./lib/stripe-webhook-logic.
 
 // Un semplice UPDATE di stato è idempotente per costruzione (riapplicare lo
 // stesso status non ha effetti diversi da applicarlo una volta sola): a
 // differenza della grant di slot/crediti del ramo reseller sotto, qui non
 // serve una guardia processed_checkout_sessions.
-async function updateAppStatus(supabase, appId, status, extra = {}) {
+//
+// eventCreatedAt (Fase 3, Step 3 — caso 13, eventi fuori ordine): il campo
+// `created` dell'Event Stripe che ha scatenato questo update. Se la riga ha
+// già un updated_at più recente di questo evento, l'evento è fuori ordine
+// (es. una cancellazione arrivata in ritardo rispetto a un rinnovo già
+// applicato) e viene scartato invece di sovrascrivere uno stato più recente.
+async function updateAppStatus(supabase, appId, status, eventCreatedAt, extra = {}) {
+  const { data: current } = await supabase
+    .from('apps')
+    .select('updated_at')
+    .eq('id', appId)
+    .maybeSingle();
+
+  if (isStaleEvent(eventCreatedAt, current?.updated_at)) {
+    console.log(`[Stripe Webhook] evento fuori ordine ignorato per app ${appId} (status richiesto: ${status})`);
+    return false;
+  }
+
   const { error } = await supabase
     .from('apps')
     .update({ status, updated_at: new Date().toISOString(), ...extra })
     .eq('id', appId);
   if (error) console.error(`[Stripe Webhook] errore aggiornamento apps.status (app ${appId}):`, error);
   return !error;
+}
+
+// Stesso principio di updateAppStatus, per la subscription reseller
+// (tabella subscriptions). Non incapsulata in upsertSubscription: quella
+// resta condivisa anche dai percorsi di PRIMA creazione (fee subscription
+// creata in checkout.session.completed/payment_intent.succeeded), dove
+// "fuori ordine" non si applica — non c'è ancora nulla da sovrascrivere.
+async function isTenantSubscriptionUpdateStale(supabase, tenantId, eventCreatedAt) {
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('updated_at')
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  return isStaleEvent(eventCreatedAt, data?.updated_at);
 }
 
 const KNOWN_PLANS = ['starter', 'pro', 'business', 'basic', 'vip'];
@@ -334,7 +351,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
           const appSubscriptionId = typeof session.subscription === 'string'
             ? session.subscription
             : session.subscription?.id || null;
-          await updateAppStatus(supabase, appId, 'active', appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {});
+          await updateAppStatus(supabase, appId, 'active', event.created, appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {});
           console.log(`[Stripe Webhook] App ${appId} attivata (subscription ${appSubscriptionId || 'n/d'})`);
           break;
         }
@@ -458,7 +475,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
         // stesso stripe_subscription_id.
         const paidAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (paidAppId) {
-          await updateAppStatus(supabase, paidAppId, 'active');
+          await updateAppStatus(supabase, paidAppId, 'active', event.created);
           console.log(`[Stripe Webhook] Rinnovo pagato per app ${paidAppId}`);
           break;
         }
@@ -468,6 +485,11 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         if (!tenantId) {
           console.error(`invoice.payment_succeeded: tenant non trovato per ${subscriptionId}`);
+          break;
+        }
+
+        if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
+          console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (invoice.payment_succeeded)`);
           break;
         }
 
@@ -493,13 +515,18 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         const failedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (failedAppId) {
-          await updateAppStatus(supabase, failedAppId, 'past_due');
+          await updateAppStatus(supabase, failedAppId, 'past_due', event.created);
           console.log(`[Stripe Webhook] Pagamento fallito per app ${failedAppId}`);
           break;
         }
 
         const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
         if (!tenantId) break;
+
+        if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
+          console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (invoice.payment_failed)`);
+          break;
+        }
 
         await supabase
           .from('subscriptions')
@@ -517,13 +544,18 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         const deletedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (deletedAppId) {
-          await updateAppStatus(supabase, deletedAppId, 'canceled');
+          await updateAppStatus(supabase, deletedAppId, 'canceled', event.created);
           console.log(`[Stripe Webhook] Subscription cancellata per app ${deletedAppId}`);
           break;
         }
 
         const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
         if (!tenantId) break;
+
+        if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
+          console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (customer.subscription.deleted)`);
+          break;
+        }
 
         await supabase
           .from('subscriptions')
@@ -541,9 +573,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         const updatedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
         if (updatedAppId) {
-          const newAppStatus = APP_SUBSCRIPTION_STATUS_MAP[subscription.status];
+          const newAppStatus = resolveAppStatusFromStripeStatus(subscription.status);
           if (newAppStatus) {
-            await updateAppStatus(supabase, updatedAppId, newAppStatus);
+            await updateAppStatus(supabase, updatedAppId, newAppStatus, event.created);
             console.log(`[Stripe Webhook] App ${updatedAppId} sincronizzata a '${newAppStatus}'`);
           }
           break;
@@ -551,6 +583,11 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 
         const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
         if (!tenantId) break;
+
+        if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
+          console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (customer.subscription.updated)`);
+          break;
+        }
 
         // current_period_start/end non sono più sulla subscription ma sul
         // subscription item (vedi commento in invoice.payment_succeeded sopra):
@@ -811,7 +848,7 @@ app.post('/api/generate-app', requireAuth, aiLimiter, async (req, res) => {
     // Carica design system per il settore
     const { getDesignSystemForSector } = require('./utils/designSystemLoader');
     const designSystem = getDesignSystemForSector(sector);
-
+    
     const prompt = `Sei un architetto software. Genera un blueprint JSON per un gestionale SaaS per il settore "${sector}".
 
 ${designSystem.designContent ? `## DESIGN SYSTEM DA APPLICARE\n${designSystem.designContent}\n` : ''}
@@ -821,15 +858,15 @@ Il JSON deve contenere:
 - sector: settore normalizzato in kebab-case
 - description: descrizione breve
 - schema: { tables: [{ name, label, labelPlural, icon, fields: [{ id, type, label, required, options, target, targetLabel }] }] }
-- ui: {
+- ui: { 
   primaryColor: "${designSystem.designTokens?.colors?.primary || '#6366f1'}",
   secondaryColor: "${designSystem.designTokens?.colors?.secondary || '#a855f7'}",
   background: "${designSystem.designTokens?.colors?.background || '#ffffff'}",
   surface: "${designSystem.designTokens?.colors?.surface || '#ffffff'}",
   headlineFont: "${designSystem.designTokens?.typography?.headline || 'Inter'}",
   bodyFont: "${designSystem.designTokens?.typography?.body || 'Inter'}",
-  sidebar: [],
-  dashboardCards: [{ type, table, label, field }]
+  sidebar: [], 
+  dashboardCards: [{ type, table, label, field }] 
 }
 
 Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
@@ -852,7 +889,7 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
       sector: parsed.sector || sector.toLowerCase().replace(/\s+/g, '-'),
       description: parsed.description || '',
       schema: parsed.schema || { tables: [] },
-      ui: parsed.ui || {
+      ui: parsed.ui || { 
         primaryColor: designSystem.designTokens?.colors?.primary || '#6366f1',
         secondaryColor: designSystem.designTokens?.colors?.secondary || '#a855f7',
         background: designSystem.designTokens?.colors?.background || '#ffffff',
@@ -860,8 +897,8 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
         sidebarBg: designSystem.designTokens?.colors?.sidebarBg || '#1e293b',
         headlineFont: designSystem.designTokens?.typography?.headline || 'Inter',
         bodyFont: designSystem.designTokens?.typography?.body || 'Inter',
-        sidebar: [],
-        dashboardCards: []
+        sidebar: [], 
+        dashboardCards: [] 
       },
     };
 
