@@ -97,18 +97,17 @@ function isDuplicateSessionError(error) {
 function resolveEventSubscriptionId(eventType, eventObject) {
   switch (eventType) {
     case 'invoice.payment_succeeded':
+    case 'invoice.payment_failed':
       // Dalla ristrutturazione Invoice di Stripe (metà 2025), invoice.subscription
       // non esiste più: l'id sta sotto invoice.parent.subscription_details.subscription.
-      // Il fallback sul campo legacy resta per compatibilità con payload più vecchi.
+      // Il fallback sul campo legacy resta per compatibilità con payload più
+      // vecchi. Corretto qui il 2026-08-09 (audit Fase 3B): invoice.payment_failed
+      // aveva SOLO il campo legacy (asimmetria rispetto a payment_succeeded,
+      // preesistente a questa fase) — un payload Stripe già ristrutturato
+      // avrebbe fatto ignorare silenziosamente l'evento, senza scrittura né
+      // errore visibile. Ora entrambi gli eventi usano lo stesso fallback,
+      // nello stesso ordine (campo nuovo prima, legacy come ripiego).
       return eventObject?.parent?.subscription_details?.subscription || eventObject?.subscription || null;
-    case 'invoice.payment_failed':
-      // Asimmetria preesistente rispetto a invoice.payment_succeeded: questo
-      // ramo, nel codice originale di backend/server.js, non ha mai avuto il
-      // fallback su parent.subscription_details.subscription. Riprodotta
-      // fedelmente qui (nessun comportamento cambiato da questa estrazione),
-      // non è una scelta di design — segnalata perché potrebbe essere un
-      // bug preesistente da verificare a parte.
-      return eventObject?.subscription || null;
     case 'customer.subscription.deleted':
     case 'customer.subscription.updated':
       return eventObject?.id || null;

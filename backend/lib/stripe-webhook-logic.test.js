@@ -186,15 +186,22 @@ test('resolveEventSubscriptionId: invoice.payment_succeeded ricade su subscripti
   assert.equal(resolveEventSubscriptionId('invoice.payment_succeeded', eventObject), 'sub_legacy');
 });
 
-test('resolveEventSubscriptionId: invoice.payment_failed usa SOLO invoice.subscription (asimmetria preesistente, non un fallback nuovo)', () => {
-  // A differenza di payment_succeeded, il codice originale di backend/server.js
-  // non ha mai avuto qui il fallback su parent.subscription_details.subscription
-  // — riprodotto fedelmente, non introdotto da questa estrazione. Se un
-  // payload invoice.payment_failed avesse SOLO la forma nuova (come già può
-  // accadere per payment_succeeded dopo la ristrutturazione Stripe di metà
-  // 2025), questo evento non troverebbe alcun subscriptionId.
-  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } } };
-  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), null);
+test('resolveEventSubscriptionId: invoice.payment_failed usa il fallback parent.subscription_details.subscription (fix asimmetria, 2026-08-09)', () => {
+  // Prima di questo fix, invoice.payment_failed usava SOLO invoice.subscription:
+  // un payload Stripe già ristrutturato (solo forma nuova, come già capita per
+  // payment_succeeded) avrebbe fatto ignorare silenziosamente l'evento. Ora
+  // stesso comportamento, stesso ordine di priorità di invoice.payment_succeeded.
+  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } }, subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), 'sub_new_shape');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed ricade su subscription legacy se manca il campo nuovo', () => {
+  const eventObject = { subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), 'sub_legacy');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed senza alcun campo subscription -> null', () => {
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', {}), null);
 });
 
 test('resolveEventSubscriptionId: customer.subscription.deleted/updated usano l\'id dell\'oggetto stesso', () => {
