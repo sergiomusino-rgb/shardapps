@@ -1,0 +1,394 @@
+// ─── Test della logica pura di billing (Fase 3, Step 4) ────────────────────
+// Stesso pattern di backend/scripts/check_rls_policies.test.js (Fase 2):
+// node:test built-in, zero dipendenze nuove, nessuna chiamata di rete/DB —
+// copre solo backend/lib/stripe-webhook-logic.js.
+//
+// Uso: node --test lib (dalla cartella backend/), o npm test.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const Stripe = require('stripe');
+
+const {
+  PLAN_RANK,
+  planRank,
+  APP_SUBSCRIPTION_STATUS_MAP,
+  resolveAppStatusFromStripeStatus,
+  isStaleEvent,
+  isDuplicateSessionError,
+  resolveEventSubscriptionId,
+  classifyStripeEvent,
+  verifyWebhookSignature,
+  resolvePlanFromProductName,
+} = require('./stripe-webhook-logic');
+
+// ─── 1. planRank() e guardia anti-downgrade ─────────────────────────────────
+
+test('planRank: rango crescente starter < pro < business', () => {
+  assert.ok(planRank('starter') < planRank('pro'));
+  assert.ok(planRank('pro') < planRank('business'));
+});
+
+test('planRank: basic ha lo stesso rango di starter (alias storico)', () => {
+  assert.equal(planRank('basic'), planRank('starter'));
+});
+
+test('planRank: vip ha lo stesso rango di business (alias storico)', () => {
+  assert.equal(planRank('vip'), planRank('business'));
+});
+
+test('planRank: piano sconosciuto o mancante -> 0 (fallback difensivo)', () => {
+  assert.equal(planRank('piano-inventato'), 0);
+  assert.equal(planRank(undefined), 0);
+  assert.equal(planRank(null), 0);
+});
+
+test('planRank: guardia anti-downgrade — un piano pari o superiore passa, uno inferiore no', () => {
+  // Stessa espressione usata nei call site reali (applyCheckoutSessionOnce,
+  // /sync-plan, webhook frontend): planRank(nuovo) >= planRank(attuale).
+  const currentPlan = 'business';
+  assert.equal(planRank('business') >= planRank(currentPlan), true); // stesso piano: applicato
+  assert.equal(planRank('starter') >= planRank(currentPlan), false); // downgrade: bloccato
+  assert.equal(planRank('vip') >= planRank(currentPlan), true); // pari rango (alias): applicato
+});
+
+// ─── 2. Routing/parsing eventi webhook: mappatura stati ────────────────────
+
+test('resolveAppStatusFromStripeStatus: active e trialing -> active', () => {
+  assert.equal(resolveAppStatusFromStripeStatus('active'), 'active');
+  assert.equal(resolveAppStatusFromStripeStatus('trialing'), 'active');
+});
+
+test('resolveAppStatusFromStripeStatus: past_due, unpaid, incomplete -> past_due', () => {
+  assert.equal(resolveAppStatusFromStripeStatus('past_due'), 'past_due');
+  assert.equal(resolveAppStatusFromStripeStatus('unpaid'), 'past_due');
+  assert.equal(resolveAppStatusFromStripeStatus('incomplete'), 'past_due');
+});
+
+test('resolveAppStatusFromStripeStatus: canceled e incomplete_expired -> canceled', () => {
+  assert.equal(resolveAppStatusFromStripeStatus('canceled'), 'canceled');
+  assert.equal(resolveAppStatusFromStripeStatus('incomplete_expired'), 'canceled');
+});
+
+test('resolveAppStatusFromStripeStatus: status Stripe non mappato -> null (l\'handler chiamante deve ignorare, non scrivere)', () => {
+  assert.equal(resolveAppStatusFromStripeStatus('paused'), null);
+  assert.equal(resolveAppStatusFromStripeStatus(undefined), null);
+});
+
+test('APP_SUBSCRIPTION_STATUS_MAP: copre esattamente gli stessi 7 stati Stripe di frontend/.../webhooks/stripe/route.ts::handleAppSubscriptionUpdated', () => {
+  assert.deepEqual(Object.keys(APP_SUBSCRIPTION_STATUS_MAP).sort(), [
+    'active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'trialing', 'unpaid',
+  ]);
+});
+
+// ─── 3. Idempotenza: errore Postgres 23505 (webhook duplicato/retry) ───────
+
+test('isDuplicateSessionError: codice 23505 (violazione UNIQUE) -> true', () => {
+  assert.equal(isDuplicateSessionError({ code: '23505' }), true);
+});
+
+test('isDuplicateSessionError: qualunque altro codice/errore -> false (deve propagare)', () => {
+  assert.equal(isDuplicateSessionError({ code: '23503' }), false); // foreign key violation, diverso
+  assert.equal(isDuplicateSessionError({ code: '42501' }), false); // permission denied
+  assert.equal(isDuplicateSessionError(new Error('errore generico senza code')), false);
+});
+
+test('isDuplicateSessionError: nessun errore -> false (non c\'era nulla da ignorare)', () => {
+  assert.equal(isDuplicateSessionError(null), false);
+  assert.equal(isDuplicateSessionError(undefined), false);
+});
+
+test('isDuplicateSessionError: simula il flusso reale — insert fallito con 23505 viene trattato come no-op, non da rilanciare', () => {
+  // Stessa forma di applyCheckoutSessionOnce/sync-plan: insertError da un
+  // secondo tentativo di scrivere la stessa riga in processed_checkout_sessions
+  // (webhook e /sync-plan che processano la stessa sessione quasi in parallelo).
+  const insertError = { code: '23505', message: 'duplicate key value violates unique constraint' };
+  const shouldSkipAsNoOp = isDuplicateSessionError(insertError);
+  const shouldRethrow = insertError && !isDuplicateSessionError(insertError);
+  assert.equal(shouldSkipAsNoOp, true);
+  assert.equal(shouldRethrow, false);
+});
+
+// ─── 4. Prevenzione eventi fuori ordine (caso 13) ──────────────────────────
+
+test('isStaleEvent: evento più vecchio dell\'ultimo riferimento registrato -> true (va scartato)', () => {
+  const lastAppliedAt = new Date().toISOString();
+  const eventCreatedAt = Math.floor(Date.now() / 1000) - 3600; // 1 ora prima
+  assert.equal(isStaleEvent(eventCreatedAt, lastAppliedAt), true);
+});
+
+test('isStaleEvent: evento più recente dell\'ultimo riferimento -> false (va applicato)', () => {
+  const lastAppliedAt = new Date(Date.now() - 3600 * 1000).toISOString(); // 1 ora fa
+  const eventCreatedAt = Math.floor(Date.now() / 1000); // ora
+  assert.equal(isStaleEvent(eventCreatedAt, lastAppliedAt), false);
+});
+
+test('isStaleEvent: nessun riferimento precedente (lastAppliedAt assente) -> false (niente con cui confrontare, non può essere fuori ordine)', () => {
+  assert.equal(isStaleEvent(Math.floor(Date.now() / 1000), null), false);
+  assert.equal(isStaleEvent(Math.floor(Date.now() / 1000), undefined), false);
+});
+
+test('isStaleEvent: timestamp malformato -> false (difensivo, non blocca l\'evento)', () => {
+  assert.equal(isStaleEvent(Math.floor(Date.now() / 1000), 'non-una-data'), false);
+});
+
+test('isStaleEvent: accetta sia secondi Unix (number) sia Date come eventCreatedAt', () => {
+  const lastAppliedAt = new Date().toISOString();
+  const oneHourAgoSeconds = Math.floor(Date.now() / 1000) - 3600;
+  const oneHourAgoDate = new Date(Date.now() - 3600 * 1000);
+  assert.equal(isStaleEvent(oneHourAgoSeconds, lastAppliedAt), true);
+  assert.equal(isStaleEvent(oneHourAgoDate, lastAppliedAt), true);
+});
+
+test('isStaleEvent: scenario reale caso 13 — un customer.subscription.deleted in ritardo dopo un rinnovo già applicato viene scartato', () => {
+  // T=100: rinnovo (invoice.payment_succeeded) applicato, scrive
+  // subscriptions.updated_at=T100 (ramo reseller: updated_at è un
+  // riferimento sicuro, nessun writer non-Stripe su subscriptions).
+  const renewalAppliedAt = new Date(1700000100 * 1000).toISOString();
+  // T=90: evento di cancellazione, cronologicamente precedente al rinnovo,
+  // ma consegnato in ritardo (arriva DOPO che il rinnovo è già stato scritto).
+  const staleDeletedEventCreated = 1700000090;
+  assert.equal(isStaleEvent(staleDeletedEventCreated, renewalAppliedAt), true);
+});
+
+test('isStaleEvent: falso positivo su apps evitato usando stripe_event_applied_at invece di updated_at', () => {
+  // Regressione dell'indagine Fase 3B (2026-08-09): apps.updated_at viene
+  // bumpato dal trigger DB tr_apps_updated_at su QUALUNQUE update, anche
+  // non legato a Stripe (es. backend/jobs/expiry-check.js, cron
+  // giornaliero). Se isStaleEvent confrontasse contro updated_at, un
+  // evento Stripe legittimo consegnato subito dopo una di quelle scritture
+  // verrebbe scartato per errore.
+  const eventCreatedAt = 1700000100; // evento Stripe legittimo (es. rinnovo pagato)
+
+  // T=105: il cron di scadenza scrive sulla stessa riga per un motivo
+  // estraneo (expiry_warning_sent) - il trigger bumpa updated_at, ma la
+  // colonna stripe_event_applied_at (scritta SOLO da updateAppStatus) resta
+  // quella dell'ultimo evento Stripe realmente applicato, qui mai scritta.
+  const appsUpdatedAtAfterUnrelatedCronWrite = new Date(1700000105 * 1000).toISOString();
+  const appsStripeEventAppliedAtUntouched = null;
+
+  // Comportamento SBAGLIATO (quello che si voleva evitare): confrontando
+  // contro updated_at, l'evento legittimo risulta fuori ordine.
+  assert.equal(isStaleEvent(eventCreatedAt, appsUpdatedAtAfterUnrelatedCronWrite), true);
+
+  // Comportamento CORRETTO (quello che fa ora updateAppStatus): confrontando
+  // contro stripe_event_applied_at, non toccata dalla scrittura non-Stripe,
+  // l'evento legittimo viene applicato normalmente.
+  assert.equal(isStaleEvent(eventCreatedAt, appsStripeEventAppliedAtUntouched), false);
+});
+
+// ─── 5. resolveEventSubscriptionId (Fase 3, Priorità 3) ────────────────────
+
+test('resolveEventSubscriptionId: invoice.payment_succeeded usa il fallback parent.subscription_details.subscription', () => {
+  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } }, subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_succeeded', eventObject), 'sub_new_shape');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_succeeded ricade su subscription legacy se manca il campo nuovo', () => {
+  const eventObject = { subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_succeeded', eventObject), 'sub_legacy');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed usa il fallback parent.subscription_details.subscription (fix asimmetria, 2026-08-09)', () => {
+  // Prima di questo fix, invoice.payment_failed usava SOLO invoice.subscription:
+  // un payload Stripe già ristrutturato (solo forma nuova, come già capita per
+  // payment_succeeded) avrebbe fatto ignorare silenziosamente l'evento. Ora
+  // stesso comportamento, stesso ordine di priorità di invoice.payment_succeeded.
+  const eventObject = { parent: { subscription_details: { subscription: 'sub_new_shape' } }, subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), 'sub_new_shape');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed ricade su subscription legacy se manca il campo nuovo', () => {
+  const eventObject = { subscription: 'sub_legacy' };
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', eventObject), 'sub_legacy');
+});
+
+test('resolveEventSubscriptionId: invoice.payment_failed senza alcun campo subscription -> null', () => {
+  assert.equal(resolveEventSubscriptionId('invoice.payment_failed', {}), null);
+});
+
+test('resolveEventSubscriptionId: customer.subscription.deleted/updated usano l\'id dell\'oggetto stesso', () => {
+  const eventObject = { id: 'sub_abc' };
+  assert.equal(resolveEventSubscriptionId('customer.subscription.deleted', eventObject), 'sub_abc');
+  assert.equal(resolveEventSubscriptionId('customer.subscription.updated', eventObject), 'sub_abc');
+});
+
+test('resolveEventSubscriptionId: event type sconosciuto -> null', () => {
+  assert.equal(resolveEventSubscriptionId('charge.refunded', { id: 'ch_1' }), null);
+});
+
+// ─── 6. classifyStripeEvent (Fase 3, Priorità 3 — routing) ─────────────────
+
+function stripeEvent(type, object, created = 1700000000) {
+  return { type, created, data: { object } };
+}
+
+test('classifyStripeEvent: checkout.session.completed con metadata.app_id -> ramo app', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { app_id: 'app-1' },
+    client_reference_id: 'this-should-be-ignored',
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'app', appId: 'app-1' });
+});
+
+test('classifyStripeEvent: checkout.session.completed con client_reference_id (nessun app_id) -> ramo reseller', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { plan_id: 'pro' },
+    client_reference_id: 'tenant-1',
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-1' });
+});
+
+test('classifyStripeEvent: checkout.session.completed con metadata.tenant_id (nessun client_reference_id) -> ramo reseller', () => {
+  const event = stripeEvent('checkout.session.completed', {
+    metadata: { tenant_id: 'tenant-2' },
+    client_reference_id: null,
+  });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-2' });
+});
+
+test('classifyStripeEvent: checkout.session.completed senza app_id/tenant_id/client_reference_id -> unresolved', () => {
+  const event = stripeEvent('checkout.session.completed', { metadata: {}, client_reference_id: null });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: payment_intent.succeeded con metadata.tenant_id -> ramo reseller (nessun ramo app per questo evento)', () => {
+  const event = stripeEvent('payment_intent.succeeded', { metadata: { tenant_id: 'tenant-3', plan_id: 'starter' } });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'reseller', tenantId: 'tenant-3' });
+});
+
+test('classifyStripeEvent: payment_intent.succeeded senza tenant_id -> unresolved', () => {
+  const event = stripeEvent('payment_intent.succeeded', { metadata: {} });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: invoice.payment_succeeded con subscriptionId risolvibile -> requires-lookup (la classificazione app-vs-reseller resta a chi chiama)', () => {
+  const event = stripeEvent('invoice.payment_succeeded', { subscription: 'sub_xyz' });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'requires-lookup', subscriptionId: 'sub_xyz' });
+});
+
+test('classifyStripeEvent: invoice.payment_failed/customer.subscription.deleted/updated -> requires-lookup con il rispettivo subscriptionId', () => {
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('invoice.payment_failed', { subscription: 'sub_1' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_1' }
+  );
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('customer.subscription.deleted', { id: 'sub_2' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_2' }
+  );
+  assert.deepEqual(
+    classifyStripeEvent(stripeEvent('customer.subscription.updated', { id: 'sub_3' })),
+    { type: 'requires-lookup', subscriptionId: 'sub_3' }
+  );
+});
+
+test('classifyStripeEvent: evento legato a subscription senza subscriptionId risolvibile -> unresolved', () => {
+  // Caso limite/ambiguo: payload inatteso, nessun campo subscription noto.
+  const event = stripeEvent('invoice.payment_succeeded', {});
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unresolved' });
+});
+
+test('classifyStripeEvent: event type non gestito -> unhandled', () => {
+  const event = stripeEvent('charge.refunded', { id: 'ch_1' });
+  assert.deepEqual(classifyStripeEvent(event), { type: 'unhandled' });
+});
+
+test('classifyStripeEvent: payload malformato (event/data/object mancanti) -> non lancia, ritorna un tipo valido', () => {
+  assert.doesNotThrow(() => classifyStripeEvent({}));
+  assert.doesNotThrow(() => classifyStripeEvent({ type: 'checkout.session.completed' }));
+  assert.deepEqual(classifyStripeEvent({ type: 'checkout.session.completed' }), { type: 'unresolved' });
+});
+
+// ─── 7. verifyWebhookSignature (Fase 3, completamento — caso 3 firma invalida) ──
+// stripe.webhooks.constructEvent/generateTestHeaderString sono verifica HMAC
+// locale (nessuna chiamata di rete): un'istanza Stripe con chiave finta basta.
+
+const testStripe = new Stripe('sk_test_dummy_key_not_real', { apiVersion: '2026-06-24.dahlia' });
+const WEBHOOK_TEST_SECRET = 'whsec_test_secret_for_unit_tests';
+
+function signPayload(payload, secret = WEBHOOK_TEST_SECRET) {
+  return testStripe.webhooks.generateTestHeaderString({ payload, secret });
+}
+
+test('verifyWebhookSignature: firma valida -> ok:true con l\'evento parsato correttamente', () => {
+  const payload = JSON.stringify({ id: 'evt_1', object: 'event', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } });
+  const signature = signPayload(payload);
+  const result = verifyWebhookSignature(testStripe, payload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, true);
+  assert.equal(result.event.type, 'checkout.session.completed');
+  assert.equal(result.event.id, 'evt_1');
+});
+
+test('verifyWebhookSignature: firma mancante -> ok:false, nessun evento', () => {
+  const payload = JSON.stringify({ id: 'evt_2', type: 'checkout.session.completed' });
+  const result = verifyWebhookSignature(testStripe, payload, '', WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+  assert.equal(result.event, undefined);
+  assert.ok(result.error);
+});
+
+test('verifyWebhookSignature: firma palesemente invalida (stringa arbitraria) -> ok:false', () => {
+  const payload = JSON.stringify({ id: 'evt_3', type: 'checkout.session.completed' });
+  const result = verifyWebhookSignature(testStripe, payload, 'firma-non-valida', WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+  assert.ok(result.error);
+});
+
+test('verifyWebhookSignature: firma valida ma verificata con un secret diverso -> ok:false', () => {
+  // Simula il caso reale più subdolo: firma tecnicamente ben formata, ma
+  // generata con un secret diverso da quello configurato lato server (es.
+  // secret ambiente test vs produzione).
+  const payload = JSON.stringify({ id: 'evt_4', type: 'checkout.session.completed' });
+  const signature = signPayload(payload, 'whsec_altro_secret');
+  const result = verifyWebhookSignature(testStripe, payload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+});
+
+test('verifyWebhookSignature: payload manomesso dopo la firma -> ok:false', () => {
+  // La firma è calcolata sul payload originale: se il body arriva alterato
+  // (anche di un solo carattere) rispetto a quanto firmato, deve fallire.
+  const originalPayload = JSON.stringify({ id: 'evt_5', type: 'checkout.session.completed', data: { object: { id: 'cs_1' } } });
+  const signature = signPayload(originalPayload);
+  const tamperedPayload = originalPayload.replace('cs_1', 'cs_2');
+  const result = verifyWebhookSignature(testStripe, tamperedPayload, signature, WEBHOOK_TEST_SECRET);
+  assert.equal(result.ok, false);
+});
+
+test('verifyWebhookSignature: non lancia mai (ok:false su qualunque input malformato)', () => {
+  assert.doesNotThrow(() => verifyWebhookSignature(testStripe, null, null, null));
+  assert.equal(verifyWebhookSignature(testStripe, null, null, null).ok, false);
+});
+
+// ─── 8. resolvePlanFromProductName (Fase 3, completamento — caso 12 piano non valido) ──
+
+test('resolvePlanFromProductName: riconosce i 5 piani noti (case-insensitive, sottostringa)', () => {
+  assert.equal(resolvePlanFromProductName('ShardApps Business'), 'business');
+  assert.equal(resolvePlanFromProductName('VIP Plan'), 'vip');
+  assert.equal(resolvePlanFromProductName('Piano PRO mensile'), 'pro');
+  assert.equal(resolvePlanFromProductName('Starter'), 'starter');
+  assert.equal(resolvePlanFromProductName('Piano Basic'), 'basic');
+  assert.equal(resolvePlanFromProductName('pacchetto base'), 'basic');
+});
+
+test('resolvePlanFromProductName: business ha priorità su altri match parziali', () => {
+  // "Business Pro" contiene sia "business" che "pro": la priorità (prima
+  // business, poi vip, poi pro...) è la stessa già in uso in server.js,
+  // solo ora esplicita e testata.
+  assert.equal(resolvePlanFromProductName('Business Pro'), 'business');
+});
+
+test('resolvePlanFromProductName: nome non riconosciuto -> null (non un fallback muto)', () => {
+  // Prima di questo fix, un nome prodotto non riconosciuto spariva
+  // silenziosamente dentro il fallback a 'starter' senza nessun log che
+  // distinguesse questo caso da un piano regolare. Ora il chiamante
+  // (resolvePlanFromSession in server.js) riceve null e logga esplicitamente
+  // prima di applicare lo stesso fallback — comportamento finale invariato,
+  // visibilità aggiunta.
+  assert.equal(resolvePlanFromProductName('Abbonamento Premium Deluxe'), null);
+});
+
+test('resolvePlanFromProductName: nome mancante/vuoto -> null', () => {
+  assert.equal(resolvePlanFromProductName(null), null);
+  assert.equal(resolvePlanFromProductName(undefined), null);
+  assert.equal(resolvePlanFromProductName(''), null);
+});

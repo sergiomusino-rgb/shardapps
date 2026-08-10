@@ -268,8 +268,13 @@ function ComandiLoginForm() {
 
       // Avvia (se non già impostato) il trial di 30 giorni sulla fee di
       // 25€/mese dell'owner — vedi mark-first-login/route.ts. Fire-and-forget:
-      // un fallimento qui non deve mai bloccare il login.
-      fetch(`/api/a/${slug}/mark-first-login`, { method: 'POST' }).catch(() => {});
+      // un fallimento qui non deve mai bloccare il login. Fix Finding #7
+      // (audit Fase 4B): la route ora richiede il token della sessione per
+      // verificare owner/admin del tenant proprietario di questa istanza.
+      fetch(`/api/a/${slug}/mark-first-login`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      }).catch(() => {});
 
       // Dopo il login si atterra sulla dashboard di gestione (non più sulla
       // console operativa/cassa): la console con il microfono resta

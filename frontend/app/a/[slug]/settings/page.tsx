@@ -79,11 +79,18 @@ export default function SettingsPage() {
     
     setActionLoading(true);
     try {
+      // La route ora richiede autenticazione (fix cross-tenant, vedi
+      // cancel-subscription/route.ts): senza il token la chiamata torna 401
+      // anche per il proprietario legittimo.
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/a/${slug}/cancel-subscription`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
       });
-      
+
       const data = await response.json();
       if (data.success) {
         alert('Abbonamento disdetto con successo');

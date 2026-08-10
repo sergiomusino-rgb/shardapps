@@ -24,18 +24,13 @@
 // FUNCTION_BASELINE sotto) non combacia esattamente — pensato per essere
 // lanciato prima di ogni deploy (manualmente per ora; puoi aggiungerlo come
 // step in CI).
+//
+// Test: node --test scripts (vedi check_rls_policies.test.js) — copre solo
+// evaluateTablePolicies/evaluateFunctionPrivileges (logica pura, dati finti),
+// non fa nessuna chiamata di rete: non serve un DB/credenziali per lanciarlo.
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { createClient } = require('@supabase/supabase-js');
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-  throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devono essere impostate in backend/.env');
-}
-
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const COMMANDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 
@@ -372,6 +367,11 @@ const FUNCTION_BASELINE = {
   'get_tenant_slots_available(tenant_id uuid)': ['PUBLIC', 'anon', 'authenticated', 'service_role'],
 };
 
+// Ruoli il cui EXECUTE su una funzione non ancora verificata è un segnale di
+// rischio: un client anonimo o un qualunque utente loggato che può eseguire
+// una funzione mai passata in review.
+const RISKY_GRANTEES = ['PUBLIC', 'anon', 'authenticated'];
+
 function sameSet(a, b) {
   if (a.length !== b.length) return false;
   const sa = [...a].sort();
@@ -379,10 +379,145 @@ function sameSet(a, b) {
   return sa.every((v, i) => v === sb[i]);
 }
 
+// ─── Valutazione pura, senza rete/DB (testabile con dati finti) ────────────
+// Estratta dal vecchio main() monolitico in occasione della Fase 2
+// (2026-08-09, difesa in profondità): main() restava l'unico modo per
+// verificare che il controllo si comporti come atteso, il che significava
+// poterlo testare solo con un vero progetto Supabase collegato — qui invece
+// prende in input le righe già lette (stessa forma restituita dalle RPC
+// list_table_rls_status/list_rls_policies) e restituisce liste di
+// messaggi, senza I/O.
+
+function evaluateTablePolicies(rlsStatus, rows) {
+  const tablesWithoutRls = (rlsStatus || []).filter((t) => !t.rls_enabled);
+
+  // tabella -> comando -> [nomi policy permissive]. Una policy FOR ALL
+  // (command === 'ALL') vale per tutti e 4 i comandi, non solo per uno.
+  const byTableCommand = {};
+  for (const row of rows || []) {
+    if (!row.is_permissive) continue; // le policy RESTRICTIVE si combinano in AND: logica diversa, non gestita qui
+    const commands = row.command === 'ALL' ? COMMANDS : [row.command];
+    for (const cmd of commands) {
+      byTableCommand[row.table_name] = byTableCommand[row.table_name] || {};
+      byTableCommand[row.table_name][cmd] = byTableCommand[row.table_name][cmd] || [];
+      byTableCommand[row.table_name][cmd].push(row.policy_name);
+    }
+  }
+
+  const failures = [];
+  const warnings = [];
+
+  // 0. Tabelle con RLS mai abilitato: sempre un fallimento critico, a
+  // prescindere da qualunque policy scritta.
+  for (const t of tablesWithoutRls) {
+    failures.push(`${t.table_name}: RLS NON abilitato — tabella completamente aperta a chi ha un grant su di essa.`);
+  }
+
+  // 1. Tabelle con un contratto noto e verificato: confronto esatto.
+  for (const [table, expectedByCmd] of Object.entries(BASELINE)) {
+    const actualByCmd = byTableCommand[table] || {};
+    for (const cmd of COMMANDS) {
+      const expected = expectedByCmd[cmd] || [];
+      const actual = actualByCmd[cmd] || [];
+      if (!sameSet(expected, actual)) {
+        failures.push(`${table}.${cmd}: atteso [${expected.join(', ')}], trovato [${actual.join(', ') || 'nessuna policy'}]`);
+      }
+    }
+  }
+
+  // 2. Tutte le altre tabelle: controllo generico "smell", non un contratto
+  // verificato. Più di una policy permissiva sullo stesso comando può essere
+  // voluto, ma è esattamente il pattern che ha causato il bug del
+  // 2026-08-08 (vecchia policy mai rimossa + nuova più restrittiva, unite in
+  // OR): segnalato per revisione manuale, non blocca da solo il deploy.
+  for (const [table, byCmd] of Object.entries(byTableCommand)) {
+    if (BASELINE[table]) continue;
+    for (const cmd of COMMANDS) {
+      const names = byCmd[cmd] || [];
+      if (names.length > 1) {
+        warnings.push(`${table}.${cmd}: ${names.length} policy permissive attive insieme — [${names.join(', ')}]. Verifica che sia intenzionale.`);
+      }
+    }
+  }
+
+  return { failures, warnings };
+}
+
+function evaluateFunctionPrivileges(funcRows) {
+  const byFunctionGrantee = {};
+  const funcMeta = {};
+  for (const row of funcRows || []) {
+    if (row.is_extension_function || row.is_trigger) continue; // rumore: pg_trgm e trigger non richiamabili via RPC
+    if (row.grantee === 'postgres') continue; // privilegio implicito del proprietario, non un grant significativo
+    byFunctionGrantee[row.full_signature] = byFunctionGrantee[row.full_signature] || new Set();
+    byFunctionGrantee[row.full_signature].add(row.grantee);
+    funcMeta[row.full_signature] = { isSecurityDefiner: row.is_security_definer };
+  }
+
+  const failures = [];
+  const warnings = [];
+
+  // 1. Funzioni con un contratto noto e verificato: confronto esatto (come
+  // per le tabelle) — qualunque grantee in più o in meno è un fallimento.
+  for (const [fnSignature, expected] of Object.entries(FUNCTION_BASELINE)) {
+    const actual = [...(byFunctionGrantee[fnSignature] || new Set())];
+    if (!sameSet(expected, actual)) {
+      failures.push(`${fnSignature}: atteso [${expected.join(', ')}], trovato [${actual.join(', ') || 'nessun grant'}]`);
+    }
+    delete byFunctionGrantee[fnSignature];
+  }
+
+  // 2. Funzioni non ancora verificate (non in FUNCTION_BASELINE). Prima
+  // della Fase 2 (2026-08-09) qualunque funzione qui, anche SECURITY
+  // DEFINER con EXECUTE aperto a PUBLIC/anon/authenticated, produceva solo
+  // un warning — lo stesso identico varco di exec_sql/execute_sql sarebbe
+  // potuto tornare in vita con un semplice `CREATE FUNCTION ... SECURITY
+  // DEFINER` senza REVOKE esplicito, senza mai far fallire un deploy.
+  //
+  // Hardening: SECURITY DEFINER bypassa RLS con i privilegi del
+  // proprietario — se non è già stata letta e aggiunta esplicitamente a
+  // FUNCTION_BASELINE, un grant a un ruolo rischioso è ora un fallimento,
+  // non un warning. Le funzioni NON SECURITY DEFINER restano un warning:
+  // girano con i privilegi del chiamante, quindi anche con un grant ampio
+  // restano soggette alla RLS reale delle tabelle che toccano (stesso
+  // ragionamento già verificato per get_tenant_slots_available/
+  // add_tenant_slots, vedi FUNCTION_BASELINE sopra) — non la stessa classe
+  // di rischio, non deve bloccare da sola un deploy.
+  for (const [fnSignature, granteeSet] of Object.entries(byFunctionGrantee)) {
+    const grantees = [...granteeSet];
+    const risky = grantees.filter((g) => RISKY_GRANTEES.includes(g));
+    if (risky.length === 0) continue;
+
+    const isSecurityDefiner = !!funcMeta[fnSignature]?.isSecurityDefiner;
+    if (isSecurityDefiner) {
+      failures.push(
+        `${fnSignature} (SECURITY DEFINER): non è in FUNCTION_BASELINE ed è eseguibile da [${risky.join(', ')}]. ` +
+        `Bypassa RLS con i privilegi del proprietario — revoca il grant o aggiungila a FUNCTION_BASELINE dopo averla letta per intero.`
+      );
+    } else {
+      warnings.push(
+        `${fnSignature} (invoker rights): non ancora verificata, eseguibile da [${risky.join(', ')}]. ` +
+        `Se non ha un controllo interno su auth.uid()/membership, revoca il grant o aggiungila a FUNCTION_BASELINE dopo averla letta.`
+      );
+    }
+  }
+
+  return { failures, warnings };
+}
+
 async function main() {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devono essere impostate in backend/.env');
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
   // Una tabella con RLS mai abilitato (ALTER TABLE ... ENABLE ROW LEVEL
   // SECURITY mai eseguito) non ha bisogno di nessuna policy per essere
-  // completamente aperta a chiunque abbia un grant sulla tabella — un
+  // completamente aperta a chiunque abbia un grant su di essa — un
   // controllo sulle sole policy (sotto) non la vedrebbe mai.
   const { data: rlsStatus, error: rlsError } = await supabase.rpc('list_table_rls_status');
   if (rlsError) {
@@ -391,7 +526,6 @@ async function main() {
     process.exitCode = 2;
     return;
   }
-  const tablesWithoutRls = (rlsStatus || []).filter((t) => !t.rls_enabled);
 
   const { data: rows, error } = await supabase.rpc('list_rls_policies');
   if (error) {
@@ -409,105 +543,27 @@ async function main() {
     return;
   }
 
-  // tabella -> comando -> [nomi policy permissive]. Una policy FOR ALL
-  // (command === 'ALL') vale per tutti e 4 i comandi, non solo per uno.
-  const byTableCommand = {};
-  for (const row of rows || []) {
-    if (!row.is_permissive) continue; // le policy RESTRICTIVE si combinano in AND: logica diversa, non gestita qui
-    const commands = row.command === 'ALL' ? COMMANDS : [row.command];
-    for (const cmd of commands) {
-      byTableCommand[row.table_name] = byTableCommand[row.table_name] || {};
-      byTableCommand[row.table_name][cmd] = byTableCommand[row.table_name][cmd] || [];
-      byTableCommand[row.table_name][cmd].push(row.policy_name);
-    }
-  }
-
-  let hasFailure = false;
-  let hasWarning = false;
-
   console.log('🔍 Controllo policy RLS attive (schema public)\n');
-
-  // 0. Tabelle con RLS mai abilitato: sempre un fallimento critico, a
-  // prescindere da qualunque policy scritta.
-  if (tablesWithoutRls.length > 0) {
-    hasFailure = true;
-    for (const t of tablesWithoutRls) {
-      console.log(`❌ ${t.table_name}: RLS NON abilitato — tabella completamente aperta a chi ha un grant su di essa.`);
-    }
-  }
-
-  // 1. Tabelle con un contratto noto e verificato: confronto esatto.
-  for (const [table, expectedByCmd] of Object.entries(BASELINE)) {
-    const actualByCmd = byTableCommand[table] || {};
-    for (const cmd of COMMANDS) {
-      const expected = expectedByCmd[cmd] || [];
-      const actual = actualByCmd[cmd] || [];
-      if (!sameSet(expected, actual)) {
-        hasFailure = true;
-        console.log(`❌ ${table}.${cmd}: atteso [${expected.join(', ')}], trovato [${actual.join(', ') || 'nessuna policy'}]`);
-      }
-    }
-  }
-
-  // 2. Tutte le altre tabelle: controllo generico "smell", non un contratto
-  // verificato. Più di una policy permissiva sullo stesso comando può essere
-  // voluto, ma è esattamente il pattern che ha causato il bug del
-  // 2026-08-08 (vecchia policy mai rimossa + nuova più restrittiva, unite in
-  // OR): segnalato per revisione manuale, non blocca da solo il deploy.
-  for (const [table, byCmd] of Object.entries(byTableCommand)) {
-    if (BASELINE[table]) continue;
-    for (const cmd of COMMANDS) {
-      const names = byCmd[cmd] || [];
-      if (names.length > 1) {
-        hasWarning = true;
-        console.log(`⚠️  ${table}.${cmd}: ${names.length} policy permissive attive insieme — [${names.join(', ')}]. Verifica che sia intenzionale.`);
-      }
-    }
-  }
+  const { failures: tableFailures, warnings: tableWarnings } = evaluateTablePolicies(rlsStatus, rows);
+  for (const msg of tableFailures) console.log(`❌ ${msg}`);
+  for (const msg of tableWarnings) console.log(`⚠️  ${msg}`);
 
   // 3. Permessi EXECUTE sulle funzioni (schema public). Nato dalla
   // vulnerabilità del 2026-08-09: exec_sql/execute_sql eseguivano SQL
   // arbitrario con EXECUTE ancora aperto a PUBLIC, mai revocato — questo
   // controllo sulle sole policy RLS delle tabelle non l'avrebbe mai vista,
-  // categoria di permesso diversa. Stessa struttura del controllo tabelle:
-  // FUNCTION_BASELINE = contratto verificato, confronto esatto; qualunque
-  // altra funzione custom (non di estensione, non trigger) con un grant ad
-  // anon/authenticated/PUBLIC non ancora verificato è un warning, non un
-  // fallimento — così una nuova funzione RPC scritta domani senza pensare ai
-  // permessi viene segnalata qui invece di scoprirla con un audit a mano.
+  // categoria di permesso diversa.
   console.log('\n🔍 Controllo permessi EXECUTE sulle funzioni (schema public)\n');
+  const { failures: funcFailures, warnings: funcWarnings } = evaluateFunctionPrivileges(funcRows);
+  for (const msg of funcFailures) console.log(`❌ ${msg}`);
+  for (const msg of funcWarnings) console.log(`⚠️  ${msg}`);
 
-  const byFunctionGrantee = {};
-  const funcMeta = {};
-  for (const row of funcRows || []) {
-    if (row.is_extension_function || row.is_trigger) continue; // rumore: pg_trgm e trigger non richiamabili via RPC
-    if (row.grantee === 'postgres') continue; // privilegio implicito del proprietario, non un grant significativo
-    byFunctionGrantee[row.full_signature] = byFunctionGrantee[row.full_signature] || new Set();
-    byFunctionGrantee[row.full_signature].add(row.grantee);
-    funcMeta[row.full_signature] = { isSecurityDefiner: row.is_security_definer };
-  }
-
-  for (const [fnSignature, expected] of Object.entries(FUNCTION_BASELINE)) {
-    const actual = [...(byFunctionGrantee[fnSignature] || new Set())];
-    if (!sameSet(expected, actual)) {
-      hasFailure = true;
-      console.log(`❌ ${fnSignature}: atteso [${expected.join(', ')}], trovato [${actual.join(', ') || 'nessun grant'}]`);
-    }
-    delete byFunctionGrantee[fnSignature];
-  }
-
-  for (const [fnSignature, granteeSet] of Object.entries(byFunctionGrantee)) {
-    const grantees = [...granteeSet];
-    const risky = grantees.filter((g) => g === 'PUBLIC' || g === 'anon' || g === 'authenticated');
-    if (risky.length === 0) continue;
-    hasWarning = true;
-    const tag = funcMeta[fnSignature]?.isSecurityDefiner ? 'SECURITY DEFINER' : 'invoker rights';
-    console.log(`⚠️  ${fnSignature} (${tag}): non ancora verificata, eseguibile da [${risky.join(', ')}]. Se non ha un controllo interno su auth.uid()/membership, revoca il grant o aggiungila a FUNCTION_BASELINE dopo averla letta.`);
-  }
+  const hasFailure = tableFailures.length > 0 || funcFailures.length > 0;
+  const hasWarning = tableWarnings.length > 0 || funcWarnings.length > 0;
 
   console.log();
   if (hasFailure) {
-    console.log('❌ FALLITO: una o più tabelle critiche non hanno il set di policy atteso, o una funzione non combacia col contratto verificato. Vedi sopra.');
+    console.log('❌ FALLITO: una o più tabelle critiche non hanno il set di policy atteso, o una funzione non combacia col contratto verificato (o è SECURITY DEFINER non verificata con grant rischioso). Vedi sopra.');
     process.exitCode = 1;
     return;
   }
@@ -518,12 +574,27 @@ async function main() {
   console.log('✅ Tutte le policy RLS e i permessi sulle funzioni combaciano con quanto atteso.');
 }
 
-// process.exitCode invece di process.exit(): su Windows, chiudere il
-// processo mentre il client Supabase (fetch/keep-alive) ha ancora socket
-// aperti fa crashare Node con un assertion error di libuv, mascherando
-// l'esito reale del controllo. Con exitCode il processo termina da solo a
-// I/O esaurito, con lo stesso codice di uscita.
-main().catch((err) => {
-  console.error('❌ Errore inatteso:', err);
-  process.exitCode = 2;
-});
+// require.main === module: main() (rete + credenziali reali) gira solo
+// quando il file è eseguito direttamente (`node check_rls_policies.js`),
+// non quando viene require()'d da un test — che deve poter importare
+// BASELINE/FUNCTION_BASELINE/evaluate* senza un progetto Supabase collegato.
+if (require.main === module) {
+  // process.exitCode invece di process.exit(): su Windows, chiudere il
+  // processo mentre il client Supabase (fetch/keep-alive) ha ancora socket
+  // aperti fa crashare Node con un assertion error di libuv, mascherando
+  // l'esito reale del controllo. Con exitCode il processo termina da solo a
+  // I/O esaurito, con lo stesso codice di uscita.
+  main().catch((err) => {
+    console.error('❌ Errore inatteso:', err);
+    process.exitCode = 2;
+  });
+}
+
+module.exports = {
+  BASELINE,
+  FUNCTION_BASELINE,
+  RISKY_GRANTEES,
+  sameSet,
+  evaluateTablePolicies,
+  evaluateFunctionPrivileges,
+};

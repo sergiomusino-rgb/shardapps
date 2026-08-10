@@ -2180,7 +2180,14 @@ function SubscriptionSection({ slug }: { slug: string }) {
     setCancelling(true);
     setError(null);
     try {
-      const res = await fetch(`/api/a/${slug}/cancel-subscription`, { method: 'POST' });
+      // La route ora richiede autenticazione (fix cross-tenant, vedi
+      // cancel-subscription/route.ts): senza il token la chiamata torna 401
+      // anche per il proprietario legittimo.
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/a/${slug}/cancel-subscription`, {
+        method: 'POST',
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      });
       const data = await res.json().catch(() => ({ error: t('comandi_dashboard_subscription_error_generic') }));
       if (!res.ok || !data.success) {
         setError(data.error || t('comandi_dashboard_subscription_error_generic'));

@@ -1,4 +1,4 @@
-name: Build & Lint frontend
+name: Build, Lint & Test frontend
 
 # Nato dal report dello stress test del 7 agosto: un errore di tipo che
 # bloccava ogni deploy Vercel (un replace_all aveva aggiornato solo uno dei
@@ -22,6 +22,16 @@ name: Build & Lint frontend
 # fermerebbe ogni PR futura per debito non correlato. Resta visibile nei
 # check della PR per chi vuole guardarlo, e pronto a diventare bloccante
 # il giorno in cui quel debito viene ripagato.
+#
+# Job "test" (Fase 3, audit Stripe/billing): esegue i test node:test del
+# frontend (src/lib/**/*.test.js — logica pura, es. l'autorizzazione di
+# cancel-subscription, vedi frontend/src/lib/cancel-subscription-
+# authorization.test.js), fin qui eseguibili solo a mano. Job separato da
+# build/lint invece che uno step in più su uno di quelli: un fallimento dei
+# test deve essere un check distinto e bloccante di suo, non nascosto dentro
+# l'esito di build o lint (quest'ultimo già non bloccante di proposito).
+# Nessuna env richiesta: sono funzioni pure, senza Next.js/Supabase/Stripe
+# reali — non riusa il blocco `env:` sotto (quello serve solo a next build).
 
 on:
   push:
@@ -98,3 +108,22 @@ jobs:
         working-directory: frontend
         continue-on-error: true
         run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installa le dipendenze del frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Esegui i test (node:test, nessun secret richiesto)
+        working-directory: frontend
+        run: npm test

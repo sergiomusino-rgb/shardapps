@@ -2,6 +2,8 @@ const express = require('express');
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const { checkoutLimiter } = require('../middleware/rate-limit');
+const { planRank, isDuplicateSessionError } = require('../lib/stripe-webhook-logic');
+const { authorizeUpdateAppFee, authorizeSyncPlan } = require('../lib/stripe-route-authorization');
 
 const router = express.Router();
 const STRIPE_API_VERSION = '2025-03-31.basil';
@@ -19,16 +21,8 @@ function getStripe() {
   });
 }
 
-// Rango dei piani: gli eventi Stripe (webhook, /sync-plan, banner dashboard)
-// non arrivano garantiti in ordine cronologico. Se un tenant compra business
-// e poi (per un evento in ritardo) arriva l'evento del vecchio acquisto
-// starter, un update incondizionato di tenants.plan lo farebbe retrocedere.
-// Confrontando il rango si applica solo un piano pari o superiore a quello
-// già salvato.
-const PLAN_RANK = { free: 0, starter: 1, basic: 1, pro: 2, business: 3, vip: 3 };
-function planRank(plan) {
-  return PLAN_RANK[plan] ?? 0;
-}
+// planRank ora importato da ../lib/stripe-webhook-logic (Fase 3, Step 3):
+// era duplicato identico qui e in server.js, unica fonte di verità.
 
 // Crediti Vision e slot accreditati da una "Ricarica Extra" (credit_topup),
 // vedi anche PLAN_CREDITS.credit_topup / PLAN_SLOTS.credit_topup in
@@ -131,25 +125,33 @@ function ensureComandiProvisioned(accessToken) {
 
 // POST /api/stripe/update-app-fee
 router.post('/update-app-fee', checkoutLimiter, async (req, res) => {
-  const user = await getUser(req);
-  if (!user) return res.status(401).json({ error: 'Non autorizzato' });
-
   try {
+    // Fase 3, Priorità 2: decisione (401/400/403) delegata a
+    // authorizeUpdateAppFee (lib/stripe-route-authorization.js, testata con
+    // node:test), stesso ordine/short-circuit di prima — la query su
+    // tenant_members viene eseguita solo se utente/tenantId/action sono
+    // già presenti.
+    const user = await getUser(req);
     const { tenantId, action } = req.body; // action: 'increment' o 'decrement'
-    if (!tenantId || !action) return res.status(400).json({ error: 'tenantId e action obbligatori' });
-
     const supabase = getSupabase();
+
+    let membership = null;
+    if (user && tenantId && action) {
+      const { data } = await supabase
+        .from('tenant_members')
+        .select('tenant_id')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', user.id)
+        .single();
+      membership = data;
+    }
+
+    const decision = authorizeUpdateAppFee({ user, tenantId, action, membership });
+    if (!decision.ok) {
+      return res.status(decision.status).json({ error: decision.error });
+    }
+
     const stripe = getStripe();
-
-    // Verifica membership
-    const { data: membership } = await supabase
-      .from('tenant_members')
-      .select('tenant_id')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!membership) return res.status(403).json({ error: 'Non autorizzato' });
 
     // Recupera subscription
     const { data: subData } = await supabase
@@ -234,48 +236,60 @@ router.post('/update-app-fee', checkoutLimiter, async (req, res) => {
 
 // POST /api/sync-plan
 router.post('/sync-plan', async (req, res) => {
-  const user = await getUser(req);
-  if (!user) return res.status(401).json({ error: 'Non autorizzato' });
-
   try {
+    // Fase 3, Priorità 2: decisione (401/400/403) delegata a
+    // authorizeSyncPlan (lib/stripe-route-authorization.js, testata con
+    // node:test), stesso ordine/short-circuit di prima: la sessione Stripe
+    // viene recuperata solo se utente+sessionId sono già presenti, e la
+    // query di fallback su tenants (owner_id) solo se la membership non è
+    // stata trovata.
+    const user = await getUser(req);
     const { sessionId } = req.body || {};
-    if (!sessionId) return res.status(400).json({ error: 'sessionId mancante' });
 
     const supabase = getSupabase();
     const stripe = getStripe();
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    const tenantId = session.client_reference_id || session.metadata?.tenant_id;
-
-    if (!tenantId) return res.status(400).json({ error: 'tenant_id mancante nella sessione' });
-
-    const { data: membership } = await supabase
-      .from('tenant_members')
-      .select('tenant_id')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    let authorized = !!membership;
-    if (!authorized) {
-      // Stesso ordine di risoluzione di create-checkout-session (frontend):
-      // un tenant trovato per owner_id non ha sempre una riga tenant_members
-      // corrispondente — viene creata solo quando il tenant stesso viene
-      // creato al momento del checkout, non quando esisteva già con
-      // owner_id impostato in altro modo. Senza questo fallback, /sync-plan
-      // rifiuta con 403 un pagamento legittimo: il piano viene comunque
-      // aggiornato dal webhook (che risolve il tenant solo dal metadata),
-      // ma l'utente non lo vede mai confermato/sincronizzato in app.
-      const { data: tenantByOwner } = await supabase
-        .from('tenants')
-        .select('id')
-        .eq('id', tenantId)
-        .eq('owner_id', user.id)
-        .maybeSingle();
-      authorized = !!tenantByOwner;
+    let tenantId = null;
+    let session = null;
+    if (user && sessionId) {
+      session = await stripe.checkout.sessions.retrieve(sessionId);
+      tenantId = session.client_reference_id || session.metadata?.tenant_id;
     }
 
-    if (!authorized) return res.status(403).json({ error: 'Tenant non autorizzato' });
+    let membership = null;
+    let tenantByOwner = null;
+    if (tenantId) {
+      const { data } = await supabase
+        .from('tenant_members')
+        .select('tenant_id')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      membership = data;
+
+      if (!membership) {
+        // Stesso ordine di risoluzione di create-checkout-session (frontend):
+        // un tenant trovato per owner_id non ha sempre una riga tenant_members
+        // corrispondente — viene creata solo quando il tenant stesso viene
+        // creato al momento del checkout, non quando esisteva già con
+        // owner_id impostato in altro modo. Senza questo fallback, /sync-plan
+        // rifiuta con 403 un pagamento legittimo: il piano viene comunque
+        // aggiornato dal webhook (che risolve il tenant solo dal metadata),
+        // ma l'utente non lo vede mai confermato/sincronizzato in app.
+        const { data: ownerData } = await supabase
+          .from('tenants')
+          .select('id')
+          .eq('id', tenantId)
+          .eq('owner_id', user.id)
+          .maybeSingle();
+        tenantByOwner = ownerData;
+      }
+    }
+
+    const decision = authorizeSyncPlan({ user, sessionId, tenantId, membership, tenantByOwner });
+    if (!decision.ok) {
+      return res.status(decision.status).json({ error: decision.error });
+    }
 
     if (session.payment_status !== 'paid') {
       return res.json({ paid: false, plan: 'free', appLimit: 0, creditsAdded: 0 });
@@ -303,7 +317,7 @@ router.post('/sync-plan', async (req, res) => {
         .from('processed_checkout_sessions')
         .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: slotsToAdd });
 
-      if (insertError && insertError.code !== '23505') {
+      if (insertError && !isDuplicateSessionError(insertError)) {
         console.error('[sync-plan] errore idempotenza (credit_topup):', insertError);
         return res.status(500).json({ error: 'Errore ricarica crediti' });
       }
@@ -399,7 +413,7 @@ router.post('/sync-plan', async (req, res) => {
       .from('processed_checkout_sessions')
       .insert({ session_id: sessionId, tenant_id: tenantId, plan, slots_added: appLimit });
 
-    if (insertError && insertError.code !== '23505') {
+    if (insertError && !isDuplicateSessionError(insertError)) {
       console.error('[sync-plan] errore idempotenza:', insertError);
       return res.status(500).json({ error: 'Errore aggiornamento piano' });
     }

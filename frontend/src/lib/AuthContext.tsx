@@ -13,8 +13,15 @@ const supabase = supabaseBrowser;
 // Avvia (se non già impostato) il trial di 30 giorni sulla fee di 25€/mese
 // dell'owner per questa app — vedi api/a/[slug]/mark-first-login/route.ts.
 // Fire-and-forget: un fallimento qui non deve mai bloccare il login.
-function markFirstLogin(slug: string) {
-  fetch(`/api/a/${slug}/mark-first-login`, { method: 'POST' }).catch(() => {});
+//
+// Fix Finding #7 (audit Fase 4B): la route ora richiede il token della
+// sessione Supabase per verificare owner/admin del tenant proprietario —
+// va inoltrato come Authorization: Bearer, non basta più lo slug.
+function markFirstLogin(slug: string, accessToken: string) {
+  fetch(`/api/a/${slug}/mark-first-login`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }).catch(() => {});
 }
 
 // ============================================================================
@@ -82,7 +89,7 @@ export function AuthProvider({
       if (!error && appUser) {
         setUser(appUser);
         setRole(appUser.role);
-        if (slug) markFirstLogin(slug);
+        if (slug) markFirstLogin(slug, session.access_token);
       }
     } else {
       // Controlla la sessione locale (per accesso con password)
@@ -146,7 +153,7 @@ export function AuthProvider({
       if (appUser) {
         setUser(appUser);
         setRole(appUser.role);
-        if (slug) markFirstLogin(slug);
+        if (slug) markFirstLogin(slug, data.session.access_token);
       }
     }
 
