@@ -6,8 +6,12 @@ import { Loader2, CheckCircle2, AlertCircle, Construction } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
-const apiUrl = process.env.NEXT_PUBLIC_TOTALUM_API_URL || 'https://api-accounts.totalum.app';
-const apiKey = process.env.NEXT_PUBLIC_TOTALUM_API_KEY || '';
+// Fase 5B (fix esposizione chiave Totalum, audit Fase 5A): questa pagina
+// chiamava Totalum DIRETTAMENTE dal browser con una chiave duplicata in
+// NEXT_PUBLIC_TOTALUM_API_KEY, quindi presente in chiaro nel bundle
+// pubblico. Ora passa da due proxy server-side, autenticati e con verifica
+// di ownership (vedi api/generate/status/route.ts e
+// api/generate/project/route.ts) — nessuna chiave Totalum lato client.
 
 export default function WaitingPage() {
   const params = useParams();
@@ -65,8 +69,8 @@ export default function WaitingPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           return;
         }
-        const headers: Record<string, string> = { 'api-key': apiKey, 'Authorization': `Bearer ${session.access_token}` };
-        const r = await fetch(`${apiUrl}/api/v1/vcaas/projects/${projectId}/agent/status`, { headers });
+        const headers: Record<string, string> = { 'Authorization': `Bearer ${session.access_token}` };
+        const r = await fetch(`/api/generate/status?projectId=${encodeURIComponent(projectId)}`, { headers });
         if (!r.ok) {
           const errorText = await r.text();
           console.error('[WaitingPage] Failed:', r.status, errorText);
@@ -82,7 +86,7 @@ export default function WaitingPage() {
         if (a.status==='done') {
           setStatus('done');
           try {
-            const pr = await fetch(`${apiUrl}/api/v1/vcaas/projects/${projectId}`, { headers });
+            const pr = await fetch(`/api/generate/project?projectId=${encodeURIComponent(projectId)}`, { headers });
             if (pr.ok) {
               const pd = await pr.json();
               const saveResponse = await fetch('/api/generate/save', {

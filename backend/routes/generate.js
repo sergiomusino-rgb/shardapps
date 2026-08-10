@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { randomBytes } = require('crypto');
 const { getDesignSystemForSector } = require('../utils/designSystemLoader');
 
 // Configurazione Totalum
@@ -127,10 +128,16 @@ router.post('/generate', async (req, res) => {
 
     const token = authHeader.slice(7);
     console.log('[AUTH] Token estratto (primi 20 caratteri):', token.substring(0, 20) + '...');
-    
+
+    // Bug di scope preesistente (segnalato in Fase 5B): "user" era
+    // dichiarato con "const" dentro questo blocco try, quindi non
+    // raggiungibile dal resto della funzione (getUserTenant(user.id) poco
+    // sotto lanciava ReferenceError -> 500 su ogni chiamata reale).
+    // Dichiarato qui fuori scope, nessun'altra modifica alla logica.
+    let user;
     try {
-      const user = await getUserFromToken(token);
-      
+      user = await getUserFromToken(token);
+
       if (!user) {
         console.error('[AUTH] Utente non autenticato - token non valido o scaduto');
         return res.status(401).json({
@@ -182,9 +189,13 @@ router.post('/generate', async (req, res) => {
     }
 
     // ─── GENERAZIONE PROGETTO ───────────────────────────────────────────────────────
-    // Genera projectId univoco (max 35 caratteri per API Totalum)
+    // Genera projectId univoco (max 35 caratteri per API Totalum). Suffisso
+    // da crypto.randomBytes (Fase 5B, audit Fase 5A): Math.random() non è
+    // pensato per essere imprevedibile, e il projectId resta parte
+    // dell'URL pubblico della pagina di attesa lato frontend — non deve
+    // essere facilmente indovinabile da chi non lo possiede già.
     const ts = Date.now().toString(36).slice(-4);
-    const rnd = Math.random().toString(36).substring(2, 6);
+    const rnd = randomBytes(4).toString('hex');
     const sectorValue = sector || 'app';
     const appNameValue = appName || 'Gestionale';
     const base = `zeusx-${sectorValue}-${ts}${rnd}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
@@ -255,6 +266,23 @@ router.post('/generate', async (req, res) => {
           code: errorCode,
           details: errorData
         });
+      }
+    }
+
+    // Registra SUBITO l'ownership del progetto (Fase 5B, audit Fase 5A):
+    // frontend/app/api/generate/status e /project (i due proxy server-side
+    // usati per il polling dalla pagina di attesa) devono poter verificare
+    // che il projectId richiesto appartenga a chi lo interroga — vedi
+    // supabase/migrations/20260810000000_totalum_generation_requests.sql.
+    // Best-effort: un fallimento qui non deve bloccare una generazione già
+    // avviata (e già a pagamento) su Totalum, ma senza questa riga il
+    // polling risponderà 404.
+    if (supabase) {
+      const { error: ownershipError } = await supabase
+        .from('totalum_generation_requests')
+        .insert({ project_id: projectId, user_id: user.id, tenant_id: tenant.id });
+      if (ownershipError) {
+        console.error('[Totalum] Errore registrazione ownership progetto:', ownershipError);
       }
     }
 

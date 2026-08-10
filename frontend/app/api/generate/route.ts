@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes } from 'node:crypto';
 import type { Database } from '@/types/database';
 
 // Configurazione Totalum
@@ -161,9 +162,14 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── GENERAZIONE PROGETTO ───────────────────────────────────────────────────────
-    // Genera projectId univoco
+    // Genera projectId univoco. Suffisso da crypto.randomBytes (Fase 5B,
+    // audit Fase 5A): Math.random() non è pensato per essere
+    // imprevedibile — con la chiave Totalum ora sempre server-side questo
+    // non è più l'unica difesa, ma il projectId resta comunque parte
+    // dell'URL pubblico della pagina di attesa, quindi non deve essere
+    // facilmente indovinabile da chi non lo possiede già.
     const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 8);
+    const random = randomBytes(6).toString('hex');
     const projectId = `zeusx-${appName || sector || 'app'}-${timestamp}-${random}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     
     // Assicura che il projectId inizi con una lettera (requisito Totalum)
@@ -241,6 +247,23 @@ export async function POST(request: NextRequest) {
         code: errorData?.errors?.errorCode || 'CREATE_PROJECT_ERROR',
         details: errorData
       }, { status: createProjectResponse.status });
+    }
+
+    // Registra SUBITO l'ownership del progetto (Fase 5B, audit Fase 5A):
+    // generate/status e generate/project (i due proxy server-side che la
+    // pagina di attesa usa per il polling) devono poter verificare che il
+    // projectId richiesto appartenga a chi lo interroga — vedi
+    // supabase/migrations/20260810000000_totalum_generation_requests.sql.
+    // tenant può essere null solo per il bypass ADMIN_USER_ID sopra: in
+    // quel caso l'ownership si verifica comunque per user_id (vedi
+    // totalum-generation-authorization.js). Best-effort: un fallimento qui
+    // non deve bloccare una generazione già avviata (e già a pagamento) su
+    // Totalum, ma senza questa riga il polling risponderà 404.
+    const { error: ownershipError } = await supabase
+      .from('totalum_generation_requests')
+      .insert({ project_id: finalProjectId, user_id: user.id, tenant_id: tenant?.id ?? null });
+    if (ownershipError) {
+      console.error('[Totalum] Errore registrazione ownership progetto:', ownershipError);
     }
 
     // Step 2: Avvia l'agente su Totalum (con retry per BRIDGE_ERROR)
