@@ -163,7 +163,7 @@ export default function ManagementLayout({
             href="/dashboard"
             className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-lg font-black tracking-wider text-transparent"
           >
-            ⚡ ZEUSX
+            ⚡ ShardApps
           </Link>
           <LanguageSelector />
         </header>

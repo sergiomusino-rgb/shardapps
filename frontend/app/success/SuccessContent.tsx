@@ -104,7 +104,7 @@ export default function SuccessPage() {
         <p className="mb-6 text-sm leading-relaxed text-slate-400">
           {appSlug
             ? "L'app è stata creata con successo! Verrai reindirizzato ai dettagli dell'app a breve..."
-            : "Grazie per aver acquistato i crediti ZEUSX. Il tuo account è stato aggiornato. Verrai reindirizzato alla dashboard a breve..."
+            : "Grazie per aver acquistato i crediti ShardApps. Il tuo account è stato aggiornato. Verrai reindirizzato alla dashboard a breve..."
           }
         </p>
 

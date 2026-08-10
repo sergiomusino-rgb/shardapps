@@ -30,7 +30,7 @@ export default function SignIn() {
         {/* Logo ed Header Card */}
         <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 hover:opacity-90 transition">
-            ⚡ ZEUSX
+            ⚡ ShardApps
           </Link>
           <p className="text-slate-400 mt-2 text-sm">
             {isSignUp ? 'Crea il tuo account definitivo 2.0' : 'Accedi al motore del tuo SaaS AI'}

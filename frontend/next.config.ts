@@ -42,6 +42,10 @@ const cspHeader = `
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
+  // Non esporre il framework via header HTTP (X-Powered-By: Next.js):
+  // informazione gratuita per un attacker in fase di ricognizione, senza
+  // alcun beneficio per il client legittimo.
+  poweredByHeader: false,
   // ffmpeg-static espone il path del binario tramite require.resolve interno:
   // va escluso dal bundling dei Server Components (che altrimenti prova a
   // riscriverne il path) e caricato con require() nativo di Node. Vedi uso in

@@ -464,7 +464,10 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       }
 
       const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
-      if (!tenantId) break;
+      if (!tenantId) {
+        console.warn(`[Stripe Webhook] Webhook received for non-existent or unresolved entity ID: ${subscriptionId} (invoice.payment_failed)`);
+        break;
+      }
 
       if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
         console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (invoice.payment_failed)`);
@@ -494,7 +497,10 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       }
 
       const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
-      if (!tenantId) break;
+      if (!tenantId) {
+        console.warn(`[Stripe Webhook] Webhook received for non-existent or unresolved entity ID: ${subscriptionId} (customer.subscription.deleted)`);
+        break;
+      }
 
       if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
         console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (customer.subscription.deleted)`);
@@ -528,7 +534,10 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       }
 
       const tenantId = await getTenantIdBySubscriptionId(supabase, subscriptionId);
-      if (!tenantId) break;
+      if (!tenantId) {
+        console.warn(`[Stripe Webhook] Webhook received for non-existent or unresolved entity ID: ${subscriptionId} (customer.subscription.updated)`);
+        break;
+      }
 
       if (await isTenantSubscriptionUpdateStale(supabase, tenantId, event.created)) {
         console.log(`[Stripe Webhook] evento fuori ordine ignorato per tenant ${tenantId} (customer.subscription.updated)`);
