@@ -4,6 +4,7 @@
 // qui per evitare di duplicare auth/slot-check/slug-gen tra le due route.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { randomBytes } from 'node:crypto';
 import type { Table } from '@/src/lib/blueprint-schema';
 import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
@@ -145,13 +146,16 @@ export async function getTenantWhiteLabel(
   };
 }
 
+// Suffisso da crypto.randomBytes (Fase 6B, audit Fase 6): Math.random() non
+// è pensato per essere imprevedibile — stesso intervento già fatto per il
+// projectId Totalum in Fase 5B.
 export function generateCreatorSlug(name: string, sector: string): string {
   const base = `${sector || 'app'}-${name}`
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 40);
-  const suffix = Math.random().toString(36).substring(2, 6);
+  const suffix = randomBytes(3).toString('hex');
   return `${base}-${suffix}`;
 }
 

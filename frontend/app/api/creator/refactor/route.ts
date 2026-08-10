@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
 import { getUserFromToken } from '@/src/lib/creator-server';
+import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 import {
   sanitizeSiteBlueprint,
   type SiteBlueprintJSON,
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
     const user = await getUserFromToken(supabase, token);
     if (!user) {
       return NextResponse.json({ success: false, error: 'Utente non autenticato', code: 'UNAUTHORIZED' }, { status: 401 });
+    }
+
+    // Rate limit (Fase 6B): a differenza di create/publish/generate, questa
+    // route non è gated da canCreateApp (nessuno slot da consumare, edit via
+    // chat su uno schema non ancora persistito) — senza un limite, qualunque
+    // account autenticato può richiamarla senza freno, ciascuna chiamata è
+    // una generazione AI reale a pagamento. Chiave utente+IP: stesso pattern
+    // di chat/route.ts (`chat:${userId}`), con l'IP in più per non fidarsi
+    // del solo userId se lo stesso account viene condiviso/compromesso.
+    const { allowed } = await checkRateLimit(`creator-refactor:${user.id}:${getClientIp(request)}`, 60, 15);
+    if (!allowed) {
+      return NextResponse.json({ success: false, error: 'Troppe richieste, riprova tra poco.', code: 'RATE_LIMITED' }, { status: 429 });
     }
 
     // Non fidarsi del JSON ricevuto dal client come "verità": è lo stesso

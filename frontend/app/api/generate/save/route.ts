@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes, randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -12,13 +13,15 @@ function getSupabaseAdmin() {
   return createClient<Database>(supabaseUrl, supabaseServiceKey);
 }
 
-// Genera slug univoco
+// Genera slug univoco. Suffisso da crypto.randomBytes (Fase 6B, audit Fase
+// 6): Math.random() non è pensato per essere imprevedibile — stesso
+// intervento già fatto per il projectId Totalum in Fase 5B.
 function generateSlug(name: string): string {
   const slugBase = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  const randomSuffix = Math.random().toString(36).slice(-6);
+  const randomSuffix = randomBytes(4).toString('hex');
   return `${slugBase}-${randomSuffix}`;
 }
 
@@ -132,10 +135,12 @@ export async function POST(request: NextRequest) {
 
       clientEmail = ownerEmail || `client-${Date.now()}@zeusx.app`;
       
-      // Genera password casuale di 12 caratteri
+      // Genera password casuale di 12 caratteri. crypto.randomInt (Fase 6B,
+      // audit Fase 6) al posto di Math.random(): questa è la password reale
+      // di primo accesso del cliente finale, non solo un suffisso di slug.
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-      clientPassword = Array.from({ length: 12 }, () => 
-        chars[Math.floor(Math.random() * chars.length)]
+      clientPassword = Array.from({ length: 12 }, () =>
+        chars[randomInt(chars.length)]
       ).join('');
       
       console.log('[save-generated-app] Credenziali generate per:', clientEmail);

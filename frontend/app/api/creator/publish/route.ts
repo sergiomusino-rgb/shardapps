@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
 import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
@@ -31,9 +32,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
+// crypto.randomInt (Fase 6B, audit Fase 6) al posto di Math.random(): è la
+// password reale di primo accesso del cliente finale (auth_mode:'legacy').
 function generateClientPassword(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  return Array.from({ length: 12 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join('');
+  return Array.from({ length: 12 }, () => chars.charAt(randomInt(chars.length))).join('');
 }
 
 export async function POST(request: NextRequest) {
