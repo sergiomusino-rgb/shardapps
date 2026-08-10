@@ -3,7 +3,7 @@ export default function BlockedPage() {
     <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center px-4">
       <div className="w-full max-w-md text-center space-y-6">
         <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 to-purple-500 bg-clip-text text-transparent">
-          ZEUSX
+          ShardApps
         </h1>
 
         <div className="text-6xl">&#x26D4;</div>
