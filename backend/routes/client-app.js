@@ -5,7 +5,13 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
 const Groq = require('groq-sdk');
-const { aiLimiter } = require('../middleware/rate-limit');
+const { aiLimiter, loginLimiter, changePasswordLimiter } = require('../middleware/rate-limit');
+const {
+  getClientCredentials,
+  verifyLegacyPassword,
+  resolveClientIdentity,
+  clientAuthMiddleware,
+} = require('../lib/client-auth');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -19,22 +25,8 @@ function getSupabase() {
   );
 }
 
-// Le credenziali client vivono ormai in app_credentials (mai esposta alla
-// Data API pubblica, vedi 20260808000004_app_credentials_table.sql):
-// apps.client_password/initial_password restano popolate solo come
-// fallback finché la migration di pulizia finale non le azzera.
-async function getClientCredentials(supabase, appId, fallback) {
-  const { data } = await supabase
-    .from('app_credentials')
-    .select('client_password, initial_password')
-    .eq('app_id', appId)
-    .maybeSingle();
-
-  return {
-    client_password: data?.client_password ?? fallback?.client_password ?? null,
-    initial_password: data?.initial_password ?? fallback?.initial_password ?? null,
-  };
-}
+// getClientCredentials ora vive in ../lib/client-auth.js (FASE 4B, Finding
+// #6): stessa identica logica, prima duplicata qui e in custom-tables.js.
 
 async function setClientPassword(supabase, appId, clientPassword, initialPassword) {
   const payload = { app_id: appId, updated_at: new Date().toISOString() };
@@ -54,7 +46,9 @@ async function setClientPassword(supabase, appId, clientPassword, initialPasswor
 
 // POST /a/:slug - Client login with password
 // Supporta sia slug che totalum_app_id come identificatore
-router.post('/a/:slug', async (req, res) => {
+// FASE 4B, Finding #5: loginLimiter dedicato (IP+slug) contro il brute-force
+// della password condivisa dell'app, vedi middleware/rate-limit.js.
+router.post('/a/:slug', loginLimiter, async (req, res) => {
   try {
     const { slug } = req.params;
     const { password } = req.body;
@@ -143,74 +137,10 @@ router.post('/a/:slug', async (req, res) => {
   }
 });
 
-// Client auth middleware - dual-mode:
-// - auth_mode='legacy' (app esistenti): Bearer è la password in chiaro, invariato.
-// - auth_mode='supabase' (nuove app): Bearer è un vero JWT Supabase Auth,
-//   verificato con supabase.auth.getUser() + membership attiva su app_users.
-async function clientAuthMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Autenticazione mancante' });
-  }
-
-  const token = authHeader.substring(7);
-  const { appId } = req.params;
-
-  const supabase = getSupabase();
-
-  const { data: app, error } = await supabase
-    .from('apps')
-    .select('id, tenant_id, client_password, client_active, expires_at, auth_mode')
-    .eq('id', appId)
-    .single();
-
-  if (error || !app) {
-    return res.status(404).json({ error: 'App non trovata' });
-  }
-
-  if (app.client_active === false) {
-    return res.status(403).json({ error: 'App bloccata' });
-  }
-
-  if (app.expires_at && new Date(app.expires_at) < new Date()) {
-    return res.status(403).json({ error: 'App scaduta' });
-  }
-
-  if (app.auth_mode === 'supabase') {
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) {
-      return res.status(401).json({ error: 'Utente non autenticato' });
-    }
-
-    const { data: appUser, error: appUserError } = await supabase
-      .from('app_users')
-      .select('role, is_active')
-      .eq('user_id', user.id)
-      .eq('app_id', appId)
-      .eq('is_active', true)
-      .single();
-
-    if (appUserError || !appUser) {
-      return res.status(403).json({ error: 'Utente non autorizzato per questa app' });
-    }
-
-    req.tenantId = app.tenant_id;
-    req.appId = appId;
-    req.appUserRole = appUser.role;
-    return next();
-  }
-
-  // Legacy: confronto password in chiaro, comportamento invariato
-  const creds = await getClientCredentials(supabase, app.id, app);
-  if (creds.client_password !== token) {
-    return res.status(401).json({ error: 'Password errata' });
-  }
-
-  req.tenantId = app.tenant_id;
-  req.appId = appId;
-  req.clientPassword = token;
-  next();
-}
+// clientAuthMiddleware ora vive in ../lib/client-auth.js (FASE 4B, Finding
+// #6): stessa identica logica dual-mode (legacy/supabase) prima duplicata
+// qui e in custom-tables.js, più il ramo app_type='comandi_ai' che qui non
+// era mai stato gestito (vedi report Finding #6 per l'analisi completa).
 
 // GET /client/apps/:appId/records?table=clients
 router.get('/client/apps/:appId/records', clientAuthMiddleware, async (req, res) => {
@@ -823,45 +753,20 @@ async function findAppBySlugOrTotalum(supabase, identifier) {
 // Verifica che il Bearer token autentichi davvero il titolare di `app` prima
 // di lasciare scrivere sui suoi dati (branding, credenziali...): stesso
 // schema dual-mode di clientAuthMiddleware (password in chiaro per le app
-// legacy, JWT Supabase + membership per le nuove), ma per slug invece che
-// per appId (queste route non passano da clientAuthMiddleware).
+// legacy, JWT Supabase + membership per le nuove, JWT+tenant_members per
+// comandi_ai), ma per slug invece che per appId (queste route non passano da
+// clientAuthMiddleware). FASE 4B, Finding #6: ora delega a
+// resolveClientIdentity (../lib/client-auth.js) per i controlli veri e
+// propri — stessa identica logica di prima, solo condivisa. Comportamento
+// invariato: resta un booleano, nessun controllo client_active/expires_at
+// qui (mai stato presente, preservato così com'era).
 async function verifyClientAuth(supabase, app, req) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
   if (!token) return false;
 
-  // Comandi AI: gli operatori sono membri del tenant proprietario
-  // (tenant_members), non di app_users — stesso schema del gate in
-  // frontend/app/a/[slug]/layout.tsx.
-  if (app.app_type === 'comandi_ai') {
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) return false;
-
-    const { data: membership } = await supabase
-      .from('tenant_members')
-      .select('tenant_id')
-      .eq('user_id', user.id)
-      .eq('tenant_id', app.tenant_id)
-      .maybeSingle();
-    return !!membership;
-  }
-
-  if (app.auth_mode === 'supabase') {
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) return false;
-
-    const { data: appUser } = await supabase
-      .from('app_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('app_id', app.id)
-      .eq('is_active', true)
-      .maybeSingle();
-    return !!appUser;
-  }
-
-  const creds = await getClientCredentials(supabase, app.id, app);
-  return creds.client_password === token;
+  const result = await resolveClientIdentity(supabase, app, app.id, token);
+  return result.ok;
 }
 
 // POST /a/:slug/settings - Save admin settings (branding)
@@ -921,7 +826,11 @@ router.post('/a/:slug/settings', async (req, res) => {
 
 // POST /a/:slug/change-password - Change client password
 // Supporta sia slug che totalum_app_id come identificatore
-router.post('/a/:slug/change-password', async (req, res) => {
+// FASE 4B, Finding #5: changePasswordLimiter dedicato (IP+slug) contro
+// tentativi automatizzati ripetuti, vedi middleware/rate-limit.js. Minimo
+// password portato da 6 a 8 caratteri: riguarda solo le nuove password
+// impostate qui, non tocca password già esistenti.
+router.post('/a/:slug/change-password', changePasswordLimiter, async (req, res) => {
   try {
     const { slug } = req.params;
     const { oldPassword, newPassword } = req.body;
@@ -930,8 +839,8 @@ router.post('/a/:slug/change-password', async (req, res) => {
       return res.status(400).json({ error: 'Password vecchia e nuova richieste' });
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'La nuova password deve avere almeno 6 caratteri' });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'La nuova password deve avere almeno 8 caratteri' });
     }
 
     const supabase = getSupabase();
@@ -943,9 +852,12 @@ router.post('/a/:slug/change-password', async (req, res) => {
       return res.status(404).json({ error: 'App non trovata' });
     }
 
-    // Verify old password
-    const creds = await getClientCredentials(supabase, app.id, app);
-    if (creds.client_password !== oldPassword) {
+    // Verify old password. FASE 4B, Finding #6: usa verifyLegacyPassword
+    // condivisa (../lib/client-auth.js), stessa identica logica di prima.
+    // Resta legacy-only, invariato: nessun Bearer/JWT qui (la prova di
+    // possesso è la vecchia password nel body), quindi nessun branching per
+    // auth_mode/app_type — vedi report Finding #6 per il perché.
+    if (!(await verifyLegacyPassword(supabase, app, oldPassword))) {
       return res.status(401).json({ error: 'Password attuale errata' });
     }
 

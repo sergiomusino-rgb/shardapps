@@ -235,6 +235,38 @@ export type Database = {
           },
         ]
       }
+      app_password_reset_tokens: {
+        Row: {
+          app_id: string
+          created_at: string
+          expires_at: string
+          token_hash: string
+          used_at: string | null
+        }
+        Insert: {
+          app_id: string
+          created_at?: string
+          expires_at: string
+          token_hash: string
+          used_at?: string | null
+        }
+        Update: {
+          app_id?: string
+          created_at?: string
+          expires_at?: string
+          token_hash?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "app_password_reset_tokens_app_id_fkey"
+            columns: ["app_id"]
+            isOneToOne: false
+            referencedRelation: "apps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_push_subscriptions: {
         Row: {
           app_id: string

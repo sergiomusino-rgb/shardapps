@@ -343,9 +343,6 @@ app.use('/api', require('./routes/invoices'));
 // --- GENERATE ROUTE (Totalium Dynamic UI) ---
 app.use('/api', require('./routes/generate'));
 
-// --- APP REGISTRY ROUTES (Management Console) ---
-app.use('/api', require('./routes/app-registry'));
-
 // --- ERROR HANDLER ---
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);

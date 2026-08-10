@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { clientAuthMiddleware } = require('../lib/client-auth');
 
 function getSupabase() {
   return createClient(
@@ -9,89 +10,13 @@ function getSupabase() {
   );
 }
 
-// Vedi backend/routes/client-app.js::getClientCredentials — stessa logica,
-// duplicata qui perché questo router ha il proprio clientAuthMiddleware.
-async function getClientCredentials(supabase, appId, fallback) {
-  const { data } = await supabase
-    .from('app_credentials')
-    .select('client_password, initial_password')
-    .eq('app_id', appId)
-    .maybeSingle();
-
-  return {
-    client_password: data?.client_password ?? fallback?.client_password ?? null,
-    initial_password: data?.initial_password ?? fallback?.initial_password ?? null,
-  };
-}
-
-// Client auth middleware (copiato da routes/client-app.js) - dual-mode:
-// - auth_mode='legacy' (app esistenti): Bearer è la password in chiaro, invariato.
-// - auth_mode='supabase' (nuove app): Bearer è un vero JWT Supabase Auth,
-//   verificato con supabase.auth.getUser() + membership attiva su app_users.
-async function clientAuthMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Autenticazione mancante' });
-  }
-
-  const token = authHeader.substring(7);
-  const { appId } = req.params;
-
-  const supabase = getSupabase();
-
-  const { data: app, error } = await supabase
-    .from('apps')
-    .select('id, tenant_id, client_password, client_active, expires_at, auth_mode')
-    .eq('id', appId)
-    .single();
-
-  if (error || !app) {
-    return res.status(404).json({ error: 'App non trovata' });
-  }
-
-  if (app.client_active === false) {
-    return res.status(403).json({ error: 'App bloccata' });
-  }
-
-  if (app.expires_at && new Date(app.expires_at) < new Date()) {
-    return res.status(403).json({ error: 'App scaduta' });
-  }
-
-  if (app.auth_mode === 'supabase') {
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) {
-      return res.status(401).json({ error: 'Utente non autenticato' });
-    }
-
-    const { data: appUser, error: appUserError } = await supabase
-      .from('app_users')
-      .select('role, is_active')
-      .eq('user_id', user.id)
-      .eq('app_id', appId)
-      .eq('is_active', true)
-      .single();
-
-    if (appUserError || !appUser) {
-      return res.status(403).json({ error: 'Utente non autorizzato per questa app' });
-    }
-
-    req.tenantId = app.tenant_id;
-    req.appId = appId;
-    req.appUserRole = appUser.role;
-    return next();
-  }
-
-  // Legacy: confronto password in chiaro, comportamento invariato
-  const creds = await getClientCredentials(supabase, app.id, app);
-  if (creds.client_password !== token) {
-    return res.status(401).json({ error: 'Password errata' });
-  }
-
-  req.tenantId = app.tenant_id;
-  req.appId = appId;
-  req.clientPassword = token;
-  next();
-}
+// getClientCredentials e clientAuthMiddleware ora vivono in
+// ../lib/client-auth.js (FASE 4B, Finding #6): prima erano una copia
+// letterale di backend/routes/client-app.js (verificato con diff), qui
+// consolidate in un'unica implementazione condivisa — stesso identico
+// comportamento per i modi legacy/supabase già gestiti, più il ramo
+// app_type='comandi_ai' che qui non era mai stato gestito (vedi report
+// Finding #6 per l'analisi completa e perché è security-neutral).
 
 // ─── CUSTOM TABLE SCHEMAS ─────────────────────────────────────────────────────
 

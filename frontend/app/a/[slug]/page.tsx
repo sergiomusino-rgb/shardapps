@@ -512,7 +512,10 @@ function LegacyLoginGate() {
         return;
       }
 
-      setResetMessage(`${t('login_new_password')}: ${data.new_password}`);
+      // Risposta sempre generica: l'endpoint non rivela più se l'email
+      // corrisponde né restituisce alcuna password, invia un link di reset
+      // via email (vedi api/a/[slug]/reset-password/route.ts).
+      setResetMessage(t('login_reset_email_sent'));
       setResetting(false);
     } catch {
       setResetMessage(t('login_error_connection'));
