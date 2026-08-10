@@ -15,6 +15,7 @@ import {
   getOrCreateTenant,
   canCreateApp,
 } from '@/src/lib/creator-server';
+import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 
 // Duplicato intenzionalmente da src/lib/LanguageContext.tsx (SUPPORTED_LOCALES):
 // quel modulo è 'use client' e importarlo da una route API server-side
@@ -367,6 +368,15 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Utente non autenticato', code: 'UNAUTHORIZED' }, { status: 401 });
       }
 
+      // Rate limit (Fase 6C): stesso meccanismo/chiave di creator/refactor
+      // (userId+IP) — questa route non consuma slot (è solo anteprima),
+      // quindi senza un limite un tenant con slot residui può generare
+      // anteprime AI illimitate.
+      const { allowed: rateAllowed } = await checkRateLimit(`creator-generate:${user.id}:${getClientIp(request)}`, 60, 15);
+      if (!rateAllowed) {
+        return NextResponse.json({ success: false, error: 'Troppe richieste, riprova tra poco.', code: 'RATE_LIMITED' }, { status: 429 });
+      }
+
       const tenantId = await getOrCreateTenant(supabase, user, token);
       const { allowed, reason } = await canCreateApp(supabase, tenantId, user.id);
       if (!allowed) {
@@ -434,6 +444,18 @@ export async function POST(request: NextRequest) {
         error: 'Utente non autenticato',
         code: 'UNAUTHORIZED'
       }, { status: 401 });
+    }
+
+    // Rate limit (Fase 6C): stesso meccanismo/chiave di creator/refactor
+    // (userId+IP) — ramo storico sector-based, stessa esposizione del ramo
+    // Sito/PWA sopra (anteprima non gated da slot).
+    const { allowed: rateAllowed } = await checkRateLimit(`creator-generate:${user.id}:${getClientIp(request)}`, 60, 15);
+    if (!rateAllowed) {
+      return NextResponse.json({
+        success: false,
+        error: 'Troppe richieste, riprova tra poco.',
+        code: 'RATE_LIMITED'
+      }, { status: 429 });
     }
 
     // Verifica slot PRIMA di chiamare l'AI, per non sprecare budget se il
