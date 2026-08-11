@@ -132,34 +132,26 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img src="/favicon.png" alt="ShardApps" className="h-8 w-8 rounded-lg object-cover" />
-            <span className="text-lg font-black tracking-tight">
-              SHARD<span className="text-indigo-400">APPS</span>
-            </span>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
             <FullscreenToggle color="#ffffff" hoverBackground="rgba(255,255,255,0.12)" />
             <LanguageSelector />
-            <Link
-              href="/login"
-              className="inline-flex items-center gap-1.5 bg-white text-slate-900 hover:bg-slate-200 font-semibold text-sm px-4 py-2 rounded-full transition"
-            >
-              {t('start')}
-            </Link>
           </div>
         </div>
       </header>
 
       {/* ─── HERO (quasi tutto above-the-fold) ─────────────────────────── */}
       <main className="pt-16">
-        <section className="px-4 sm:px-6 min-h-[calc(100vh-4rem)] flex items-center py-10">
+        <section className="px-4 sm:px-6 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-10">
+          <div className="max-w-6xl mx-auto mb-8 text-center w-full">
+            <span className="text-6xl sm:text-7xl lg:text-8xl font-black tracking-tight">
+              SHARD<span className="text-indigo-400">APPS</span>
+            </span>
+          </div>
+
           <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-14 items-center w-full">
             <div className="text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 mb-5 backdrop-blur">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
-                <span className="text-xs font-semibold text-slate-300 tracking-wide">AI App Builder</span>
-              </div>
-
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.05] mb-5">
                 La tua idea.
                 <br />

@@ -29,8 +29,8 @@ export default function SignIn() {
       <div className="w-full max-w-md z-10">
         {/* Logo ed Header Card */}
         <div className="text-center mb-8">
-          <Link href="/" className="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 hover:opacity-90 transition">
-            ⚡ ShardApps
+          <Link href="/" className="text-3xl font-black tracking-tight text-white hover:opacity-90 transition">
+            SHARD<span className="text-indigo-400">APPS</span>
           </Link>
           <p className="text-slate-400 mt-2 text-sm">
             {isSignUp ? 'Crea il tuo account definitivo 2.0' : 'Accedi al motore del tuo SaaS AI'}
