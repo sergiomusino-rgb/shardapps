@@ -2,27 +2,45 @@ const express = require('express');
 const Stripe = require('stripe');
 const { createClient } = require('@supabase/supabase-js');
 const { checkoutLimiter } = require('../middleware/rate-limit');
-const { planRank, isDuplicateSessionError } = require('../lib/stripe-webhook-logic');
+const { PLAN_RANK } = require('../lib/stripe-webhook-logic');
 const { authorizeUpdateAppFee, authorizeSyncPlan } = require('../lib/stripe-route-authorization');
 
 const router = express.Router();
 const STRIPE_API_VERSION = '2025-03-31.basil';
 
+// Seam di test (audit /sync-plan, 2026-08-11): getSupabase/getStripe
+// costruiscono client reali leggendo le env var ad ogni chiamata —
+// comportamento invariato in produzione, dove __setTestClients non viene
+// mai invocato. lib/stripe-webhook-handler.js riceve supabase/stripe come
+// parametri di handleStripeWebhookEvent(...) proprio per essere testabile
+// end-to-end senza rete reale; qui la route li costruisce internamente
+// (Express non passa dipendenze ai singoli handler), quindi l'unico punto
+// di innesto minimale per lo stesso tipo di test è un override esplicito.
+let _testSupabaseOverride = null;
+let _testStripeOverride = null;
+function __setTestClients({ supabase = null, stripe = null } = {}) {
+  _testSupabaseOverride = supabase;
+  _testStripeOverride = stripe;
+}
+
 function getSupabase() {
-  return createClient(
+  return _testSupabaseOverride || createClient(
     process.env.SUPABASE_URL || '',
     process.env.SUPABASE_SERVICE_ROLE_KEY || ''
   );
 }
 
 function getStripe() {
-  return new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  return _testStripeOverride || new Stripe(process.env.STRIPE_SECRET_KEY || '', {
     apiVersion: STRIPE_API_VERSION,
   });
 }
 
-// planRank ora importato da ../lib/stripe-webhook-logic (Fase 3, Step 3):
-// era duplicato identico qui e in server.js, unica fonte di verità.
+// PLAN_RANK ora importato da ../lib/stripe-webhook-logic (Fase 3, Step 3 +
+// audit /sync-plan 2026-08-11): era duplicato identico qui e in server.js,
+// unica fonte di verità — passato così com'è a apply_checkout_session_atomic
+// (vedi sotto), che lo usa per lo stesso confronto anti-downgrade prima
+// fatto qui in JS con planRank().
 
 // Crediti Vision e slot accreditati da una "Ricarica Extra" (credit_topup),
 // vedi anche PLAN_CREDITS.credit_topup / PLAN_SLOTS.credit_topup in
@@ -313,37 +331,33 @@ router.post('/sync-plan', async (req, res) => {
       const creditsToAdd = CREDIT_TOPUP_CREDITS * quantity;
       const slotsToAdd = CREDIT_TOPUP_SLOTS * quantity;
 
-      const { error: insertError } = await supabase
-        .from('processed_checkout_sessions')
-        .insert({ session_id: sessionId, tenant_id: tenantId, plan: 'credit_topup', slots_added: slotsToAdd });
+      // Marca processata + accredita crediti + somma slot come un'unica
+      // transazione atomica (stessa RPC del webhook Stripe, vedi
+      // backend/lib/stripe-webhook-handler.js::applyCheckoutSessionOnce e
+      // supabase/migrations/20260811000000_atomic_checkout_session_
+      // processing.sql). Prima erano 3 scritture separate: se grant_credits
+      // falliva dopo l'INSERT di marcatura, l'errore veniva propagato qui
+      // (500), MA la sessione restava comunque marcata come processata —
+      // condividendo la stessa riga processed_checkout_sessions(session_id)
+      // usata dal webhook, questo disinnescava anche il fix del webhook
+      // (che vedeva la sessione "già processata" e faceva no-op, pur non
+      // avendo mai davvero completato l'accredito). Ora, chiunque dei due
+      // percorsi arrivi per primo su questa session_id, o completa TUTTO
+      // atomicamente o non marca nulla — l'altro percorso può sempre
+      // ritentare con successo.
+      const { error: applyError } = await supabase.rpc('apply_checkout_session_atomic', {
+        p_session_id: sessionId,
+        p_tenant_id: tenantId,
+        p_plan: null,
+        p_slots_to_add: slotsToAdd,
+        p_credits_to_add: creditsToAdd,
+        p_user_id: supabaseUserId,
+        p_plan_rank_map: PLAN_RANK,
+      });
 
-      if (insertError && !isDuplicateSessionError(insertError)) {
-        console.error('[sync-plan] errore idempotenza (credit_topup):', insertError);
+      if (applyError) {
+        console.error('[sync-plan] errore apply_checkout_session_atomic (credit_topup):', applyError);
         return res.status(500).json({ error: 'Errore ricarica crediti' });
-      }
-
-      if (!insertError) {
-        const { error: creditsError } = await supabase.rpc('grant_credits', {
-          p_user_id: supabaseUserId,
-          p_amount: creditsToAdd,
-          p_type: 'purchase',
-          p_description: 'Ricarica Extra crediti Vision',
-          p_reference_id: sessionId,
-          p_metadata: { plan_id: 'credit_topup', session_id: sessionId },
-        });
-        if (creditsError) {
-          console.error('[sync-plan] errore grant_credits:', creditsError);
-          return res.status(500).json({ error: 'Errore ricarica crediti' });
-        }
-
-        const { error: slotsError } = await supabase.rpc('add_tenant_slots', {
-          tenant_id: tenantId,
-          slots_to_add: slotsToAdd,
-        });
-        if (slotsError) {
-          console.error('[sync-plan] errore add_tenant_slots (credit_topup):', slotsError);
-          return res.status(500).json({ error: 'Errore ricarica crediti' });
-        }
       }
 
       const { data: tenantRow } = await supabase
@@ -403,63 +417,39 @@ router.post('/sync-plan', async (req, res) => {
       }
     }
 
-    // Modello slot cumulativo: questa sessione può già essere stata
-    // processata dal webhook Stripe (fonte autoritativa) o da un'altra
-    // chiamata a questo stesso endpoint (es. refresh della pagina). La riga
-    // in processed_checkout_sessions fa da guardia di idempotenza: solo chi
-    // riesce a inserirla per primo somma gli slot, gli altri leggono soltanto
-    // lo stato attuale del tenant.
-    const { error: insertError } = await supabase
-      .from('processed_checkout_sessions')
-      .insert({ session_id: sessionId, tenant_id: tenantId, plan, slots_added: appLimit });
+    // Marca processata + accredita crediti + somma slot + aggiorna piano
+    // come un'unica transazione atomica (stessa RPC del webhook Stripe, vedi
+    // backend/lib/stripe-webhook-handler.js::applyCheckoutSessionOnce e
+    // supabase/migrations/20260811000000_atomic_checkout_session_
+    // processing.sql). Prima erano 4 scritture separate su questa stessa
+    // guardia di idempotenza (processed_checkout_sessions), condivisa con il
+    // webhook: se grant_credits falliva qui, l'errore veniva SOLO loggato
+    // (mai propagato, mai un 500) e la sessione restava comunque marcata
+    // come processata — non solo un cliente pagante restava senza crediti,
+    // ma la stessa riga session_id impediva anche al webhook (già corretto
+    // e atomico) di completare l'operazione più tardi, perché la trovava
+    // "già processata" e faceva no-op. Ora, chiunque dei due percorsi arrivi
+    // per primo, o completa TUTTO atomicamente o non marca nulla — l'altro
+    // percorso può sempre ritentare con successo. `applied` sostituisce il
+    // vecchio `!insertError` come guardia per il blocco sotto (fee
+    // subscription): va eseguito solo la prima volta che QUESTA chiamata
+    // processa davvero la sessione, non su un retry/duplicato.
+    const { data: applied, error: applyError } = await supabase.rpc('apply_checkout_session_atomic', {
+      p_session_id: sessionId,
+      p_tenant_id: tenantId,
+      p_plan: plan,
+      p_slots_to_add: appLimit,
+      p_credits_to_add: creditsToAdd,
+      p_user_id: supabaseUserId,
+      p_plan_rank_map: PLAN_RANK,
+    });
 
-    if (insertError && !isDuplicateSessionError(insertError)) {
-      console.error('[sync-plan] errore idempotenza:', insertError);
+    if (applyError) {
+      console.error('[sync-plan] errore apply_checkout_session_atomic:', applyError);
       return res.status(500).json({ error: 'Errore aggiornamento piano' });
     }
 
-    if (!insertError) {
-      if (creditsToAdd > 0) {
-        const { error: creditsError } = await supabase.rpc('grant_credits', {
-          p_user_id: supabaseUserId,
-          p_amount: creditsToAdd,
-          p_type: 'purchase',
-          p_description: `Acquisto piano ${plan}`,
-          p_reference_id: sessionId,
-          p_metadata: { plan_id: plan, session_id: sessionId },
-        });
-        if (creditsError) console.error('[sync-plan] errore grant_credits:', creditsError);
-      }
-
-      const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
-        tenant_id: tenantId,
-        slots_to_add: appLimit,
-      });
-      if (rpcError) {
-        console.error('[sync-plan] errore add_tenant_slots:', rpcError);
-        return res.status(500).json({ error: 'Errore aggiornamento piano' });
-      }
-
-      const { data: currentTenant } = await supabase
-        .from('tenants')
-        .select('plan')
-        .eq('id', tenantId)
-        .single();
-
-      if (planRank(plan) >= planRank(currentTenant?.plan)) {
-        const { error: planError } = await supabase
-          .from('tenants')
-          .update({ plan, updated_at: new Date().toISOString() })
-          .eq('id', tenantId);
-
-        if (planError) {
-          console.error('[sync-plan] errore update piano:', planError);
-          return res.status(500).json({ error: 'Errore aggiornamento piano' });
-        }
-      } else {
-        console.log(`[sync-plan] piano ${plan} non applicato: tenant ${tenantId} ha già ${currentTenant?.plan}`);
-      }
-
+    if (applied) {
       // Crea la fee subscription (25€/app, quantity incrementata da
       // /update-app-fee man mano che il tenant attiva app). Le sessioni di
       // checkout sono in mode:'payment' (Managed Payments), quindi non hanno
@@ -538,3 +528,6 @@ router.post('/sync-plan', async (req, res) => {
 });
 
 module.exports = router;
+// Esposto solo per i test E2E (backend/lib/stripe-sync-plan-route.test.js) —
+// mai chiamato da codice di produzione.
+module.exports.__setTestClients = __setTestClients;

@@ -343,6 +343,11 @@ const FUNCTION_BASELINE = {
   'deduct_credits(p_user_id uuid, p_amount integer, p_type text, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
   'grant_credits(p_user_id uuid, p_amount integer, p_type text, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
   'refund_credits(p_user_id uuid, p_amount integer, p_description text, p_reference_id text, p_metadata jsonb)': ['service_role'],
+  // Marca processata + accredita crediti + somma slot + aggiorna piano come
+  // un'unica transazione atomica (fix consistenza crediti Vision, vedi
+  // 20260811000000_atomic_checkout_session_processing.sql) — invocabile solo
+  // dal webhook Stripe (service_role), stesso principio di grant_credits.
+  'apply_checkout_session_atomic(p_session_id text, p_tenant_id uuid, p_plan text, p_slots_to_add integer, p_credits_to_add integer, p_user_id uuid, p_plan_rank_map jsonb)': ['service_role'],
   // Slot app: RPC atomica anti race-condition, chiamata solo da route server
   // già su service_role (api/creator/create, api/apps) — non ha bisogno di
   // essere raggiungibile dal client.

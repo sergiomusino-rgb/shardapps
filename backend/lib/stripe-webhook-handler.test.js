@@ -15,13 +15,47 @@ const assert = require('node:assert/strict');
 
 const { handleStripeWebhookEvent } = require('./stripe-webhook-handler');
 
+// ─── Mutex per-chiave ────────────────────────────────────────────────────
+// Riproduce, lato fake, la garanzia che in Postgres dà gratis il vincolo
+// UNIQUE su processed_checkout_sessions(session_id): una seconda esecuzione
+// di apply_checkout_session_atomic per la STESSA session_id si blocca finché
+// la prima non è terminata (successo o rollback), invece di poter
+// interleave a metà. Senza questo mutex, il fake sotto — che fa passi
+// asincroni reali (grantCreditsImpl può essere async) — potrebbe far
+// eseguire due chiamate concorrenti "a cavallo" l'una dell'altra e mascherare
+// esattamente la race condition che il Caso 5 deve verificare non esista.
+function createKeyedMutex() {
+  const tail = new Map(); // key -> promise dell'ultima esecuzione in coda
+  return function withLock(key, fn) {
+    const prev = tail.get(key) || Promise.resolve();
+    const run = prev.then(fn, fn); // esegue fn dopo prev, indipendentemente dal suo esito
+    // In coda anche se fn rigetta: altrimenti un'esecuzione fallita
+    // lascerebbe la lock "sporca" e la successiva partirebbe comunque dopo
+    // la promise rigettata (comportamento corretto), ma serve evitare che
+    // un reject non gestito nella catena `tail` faccia esplodere un altro
+    // ramo — .catch(() => {}) qui è solo per tenere pulita la catena interna,
+    // il risultato/errore vero viene comunque ritornato/propagato da `run`.
+    tail.set(key, run.catch(() => {}));
+    return run;
+  };
+}
+
 // ─── Fake Supabase client in-memory ─────────────────────────────────────────
 // Copre solo la superficie usata dall'handler: .from(table).select().eq()
 // .single()/.maybeSingle()/.insert()/.update()/.upsert(), più .rpc(). Ogni
 // tabella è una Map di righe keyed by id (o da una unique key sintetica per
 // processed_checkout_sessions, per riprodurre il vincolo UNIQUE(session_id)
 // che isDuplicateSessionError si aspetta di veder violato).
-function createFakeSupabase(seed = {}) {
+//
+// `options.grantCreditsImpl(ctx)`: sostituisce il comportamento di
+// grant_credits() dentro la simulazione di apply_checkout_session_atomic
+// (RPC introdotta dal fix di consistenza crediti Vision, 2026-08-11, vedi
+// supabase/migrations/20260811000000_atomic_checkout_session_processing.sql).
+// Di default ha sempre successo; i test sui casi 2/3/5 lo sovrascrivono per
+// simulare un fallimento (una tantum o permanente). Ritorna `{ error }` per
+// far fallire il "passo crediti" oppure un valore qualunque per farlo
+// riuscire — stesso contratto di `supabase.rpc('grant_credits', ...)`.
+function createFakeSupabase(seed = {}, options = {}) {
   const db = {
     tenants: new Map(),
     apps: new Map(),
@@ -29,6 +63,68 @@ function createFakeSupabase(seed = {}) {
     processed_checkout_sessions: new Map(), // keyed by session_id (UNIQUE)
     ...Object.fromEntries(Object.entries(seed).map(([table, rows]) => [table, new Map(rows)])),
   };
+
+  const grantCreditsImpl = options.grantCreditsImpl || (async () => ({ ok: true }));
+  const withSessionLock = createKeyedMutex();
+  const creditGrants = []; // { userId, amount, sessionId } — solo quelli effettivamente committati
+  const slotGrants = []; // { tenantId, amount } — solo quelli effettivamente committati
+  let grantCreditsCallCount = 0;
+
+  // ─── Simulazione di apply_checkout_session_atomic (RPC Postgres reale) ──
+  // Replica fedelmente le garanzie della funzione SQL: marca processata +
+  // crediti + slot + piano vengono scritti SOLO se ogni passo riesce
+  // (nessun effetto collaterale parziale se grant_credits fallisce — stesso
+  // "rollback" della transazione reale), e un mutex per-session_id riproduce
+  // il blocco della UNIQUE INSERT reale su due esecuzioni concorrenti della
+  // stessa sessione (vedi createKeyedMutex sopra).
+  function applyCheckoutSessionAtomic(args) {
+    return withSessionLock(args.p_session_id, async () => {
+      if (db.processed_checkout_sessions.has(args.p_session_id)) {
+        return { data: false, error: null }; // già processata: no-op, stesso comportamento di ON CONFLICT DO NOTHING
+      }
+
+      if (args.p_credits_to_add > 0 && args.p_user_id) {
+        grantCreditsCallCount++;
+        const result = await grantCreditsImpl({
+          userId: args.p_user_id,
+          amount: args.p_credits_to_add,
+          sessionId: args.p_session_id,
+          callCount: grantCreditsCallCount,
+        });
+        if (result?.error) {
+          // Nessun effetto collaterale scritto: simula il rollback
+          // dell'intera transazione Postgres (nessuna riga in
+          // processed_checkout_sessions, nessun credito, nessuno slot,
+          // nessun aggiornamento piano).
+          return { data: null, error: result.error };
+        }
+        creditGrants.push({ userId: args.p_user_id, amount: args.p_credits_to_add, sessionId: args.p_session_id });
+      }
+
+      if (args.p_slots_to_add > 0) {
+        slotGrants.push({ tenantId: args.p_tenant_id, amount: args.p_slots_to_add });
+      }
+
+      if (args.p_plan) {
+        const tenant = db.tenants.get(args.p_tenant_id);
+        const rankMap = args.p_plan_rank_map || {};
+        const currentRank = rankMap[tenant?.plan] ?? 0;
+        const newRank = rankMap[args.p_plan] ?? 0;
+        if (newRank >= currentRank) {
+          db.tenants.set(args.p_tenant_id, { ...tenant, plan: args.p_plan, updated_at: new Date().toISOString() });
+        }
+      }
+
+      db.processed_checkout_sessions.set(args.p_session_id, {
+        session_id: args.p_session_id,
+        tenant_id: args.p_tenant_id,
+        plan: args.p_plan || 'credit_topup',
+        slots_added: args.p_slots_to_add,
+      });
+
+      return { data: true, error: null };
+    });
+  }
 
   function matchesFilters(row, filters) {
     return filters.every(([col, val]) => row[col] === val);
@@ -139,13 +235,18 @@ function createFakeSupabase(seed = {}) {
       qb.update = (patch) => wrapUpdateChain(table, patch);
       return qb;
     },
-    async rpc(fnName, _args) {
-      // add_tenant_slots / grant_credits: nei test E2E interessa solo che
-      // vengano chiamate senza errore, non il loro effetto (sono funzioni
-      // Postgres, fuori dallo scope di questo handler).
+    async rpc(fnName, args) {
+      if (fnName === 'apply_checkout_session_atomic') {
+        return applyCheckoutSessionAtomic(args);
+      }
+      // Nessun'altra RPC è chiamata da questo handler dopo il fix di
+      // consistenza crediti Vision (grant_credits/add_tenant_slots ora
+      // vivono SOLO dentro apply_checkout_session_atomic, lato Postgres).
       return { data: null, error: null };
     },
     _db: db, // esposto per le asserzioni nei test
+    _creditGrants: creditGrants, // crediti effettivamente committati (non quelli tentati e poi "rollback-ati")
+    _slotGrants: slotGrants, // slot effettivamente committati
   };
 
   return supabase;
@@ -372,4 +473,168 @@ test('E2E credit_topup: checkout.session.completed usa payment_intent come chiav
   assert.equal(supabase._db.tenants.get('tenant-3').plan, 'starter');
   // Nessuna fee subscription per un topup di crediti.
   assert.equal(stripe._created.length, 0);
+});
+
+// ─── Consistenza crediti Vision (fix 2026-08-11) ───────────────────────────
+// I 6 casi richiesti dal fix di consistenza applyCheckoutSessionOnce ->
+// apply_checkout_session_atomic (supabase/migrations/20260811000000_atomic_
+// checkout_session_processing.sql). Il fake rpc('apply_checkout_session_
+// atomic', ...) in createFakeSupabase replica le garanzie della funzione
+// Postgres reale: marcatura+crediti+slot+piano vengono scritti SOLO se ogni
+// passo riesce (nessun effetto parziale se grant_credits fallisce), e un
+// mutex per-session_id riproduce il blocco della UNIQUE INSERT reale su due
+// esecuzioni concorrenti della stessa sessione — vedi commenti su
+// createKeyedMutex/applyCheckoutSessionAtomic sopra.
+
+test('Caso 1 — successo: grant_credits riesce, la sessione viene processata e i crediti assegnati una sola volta', async () => {
+  const supabase = createFakeSupabase({
+    tenants: [['tenant-c1', { id: 'tenant-c1', plan: 'free' }]],
+  });
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso1',
+    metadata: { tenant_id: 'tenant-c1', plan_id: 'starter', supabase_user_id: 'user-c1' },
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  assert.ok(supabase._db.processed_checkout_sessions.has('cs_caso1'), 'la sessione deve risultare processata');
+  assert.equal(supabase._creditGrants.length, 1, 'i crediti devono essere assegnati esattamente una volta');
+  assert.equal(supabase._creditGrants[0].amount, 20, 'PLAN_CREDITS.starter = 20');
+  assert.equal(supabase._creditGrants[0].userId, 'user-c1');
+  assert.equal(supabase._db.tenants.get('tenant-c1').plan, 'starter');
+});
+
+test('Caso 2 — errore crediti: grant_credits fallisce, il webhook deve fallire (throw) e la sessione NON deve restare marcata come processata', async () => {
+  const supabase = createFakeSupabase(
+    { tenants: [['tenant-c2', { id: 'tenant-c2', plan: 'free' }]] },
+    { grantCreditsImpl: async () => ({ error: { message: 'boom: grant_credits fallita' } }) }
+  );
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso2',
+    metadata: { tenant_id: 'tenant-c2', plan_id: 'starter', supabase_user_id: 'user-c2' },
+  });
+
+  // handleStripeWebhookEvent deve propagare l'errore: è quello che fa
+  // rispondere 500 a server.js, il segnale che dice a Stripe di ritentare.
+  await assert.rejects(() => handleStripeWebhookEvent(supabase, stripe, event));
+
+  assert.equal(
+    supabase._db.processed_checkout_sessions.has('cs_caso2'),
+    false,
+    'la sessione NON deve restare marcata come processata: altrimenti un retry di Stripe la salterebbe per sempre (il bug originale)'
+  );
+  assert.equal(supabase._creditGrants.length, 0);
+  assert.equal(supabase._slotGrants.length, 0, 'nessun effetto parziale: anche gli slot non devono essere stati sommati');
+  assert.equal(supabase._db.tenants.get('tenant-c2').plan, 'free', 'il piano non deve essere stato aggiornato');
+});
+
+test('Caso 3 — retry dopo errore: il primo tentativo fallisce, il secondo (stesso evento) riesce, crediti assegnati una sola volta', async () => {
+  let attempt = 0;
+  const supabase = createFakeSupabase(
+    { tenants: [['tenant-c3', { id: 'tenant-c3', plan: 'free' }]] },
+    {
+      grantCreditsImpl: async () => {
+        attempt++;
+        if (attempt === 1) return { error: { message: 'errore transitorio' } };
+        return { ok: true };
+      },
+    }
+  );
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso3',
+    metadata: { tenant_id: 'tenant-c3', plan_id: 'starter', supabase_user_id: 'user-c3' },
+  });
+
+  await assert.rejects(() => handleStripeWebhookEvent(supabase, stripe, event));
+  assert.equal(supabase._db.processed_checkout_sessions.has('cs_caso3'), false);
+
+  // Stripe ritenta la consegna dello stesso evento.
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  assert.ok(supabase._db.processed_checkout_sessions.has('cs_caso3'));
+  assert.equal(supabase._creditGrants.length, 1, 'i crediti devono essere stati assegnati esattamente una volta, non due, nonostante due tentativi');
+  assert.equal(attempt, 2, 'grant_credits deve essere stato chiamato due volte (fallito + riuscito)');
+});
+
+test('Caso 4 — webhook duplicato: due eventi identici dopo un successo non accreditano due volte', async () => {
+  const supabase = createFakeSupabase({
+    tenants: [['tenant-c4', { id: 'tenant-c4', plan: 'free' }]],
+  });
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso4',
+    metadata: { tenant_id: 'tenant-c4', plan_id: 'starter', supabase_user_id: 'user-c4' },
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+  await handleStripeWebhookEvent(supabase, stripe, event); // Stripe re-invia lo stesso evento (retry o duplicato)
+
+  assert.equal(supabase._creditGrants.length, 1, 'nessun doppio accredito su un evento duplicato dopo un successo');
+});
+
+test('Caso 5 — concorrenza: due elaborazioni contemporanee della stessa checkout session -> una sola elaborazione effettiva', async () => {
+  const supabase = createFakeSupabase(
+    { tenants: [['tenant-c5', { id: 'tenant-c5', plan: 'free' }]] },
+    {
+      // Introduce un vero yield asincrono dentro il "passo crediti": senza il
+      // mutex per-session_id (che riproduce il blocco della UNIQUE INSERT
+      // reale) le due esecuzioni concorrenti interleaverebbero proprio qui,
+      // ed entrambe finirebbero per accreditare/sommare — esponendo la race
+      // condition che questo caso deve verificare assente.
+      grantCreditsImpl: async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+        return { ok: true };
+      },
+    }
+  );
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso5',
+    metadata: { tenant_id: 'tenant-c5', plan_id: 'starter', supabase_user_id: 'user-c5' },
+  });
+
+  await Promise.all([
+    handleStripeWebhookEvent(supabase, stripe, event),
+    handleStripeWebhookEvent(supabase, stripe, event),
+  ]);
+
+  assert.equal(supabase._creditGrants.length, 1, 'solo una delle due elaborazioni concorrenti deve accreditare i crediti');
+  assert.equal(supabase._slotGrants.length, 1, 'solo una delle due elaborazioni concorrenti deve sommare gli slot');
+  assert.equal(supabase._db.processed_checkout_sessions.size, 1);
+});
+
+test('Caso 6 — slot: non vengono duplicati né da un retry dopo successo, né lasciati parzialmente sommati da un errore', async () => {
+  const supabase = createFakeSupabase({
+    tenants: [['tenant-c6', { id: 'tenant-c6', plan: 'free' }]],
+  });
+  const stripe = createFakeStripe();
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_caso6',
+    metadata: { tenant_id: 'tenant-c6', plan_id: 'pro', supabase_user_id: 'user-c6' },
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+  await handleStripeWebhookEvent(supabase, stripe, event); // retry/duplicato dopo successo
+
+  assert.equal(supabase._slotGrants.length, 1, 'gli slot vanno sommati una sola volta');
+  assert.equal(supabase._slotGrants[0].amount, 5, 'PLAN_SLOTS.pro = 5');
+  assert.equal(supabase._db.processed_checkout_sessions.get('cs_caso6').slots_added, 5);
+
+  // Stesso caso, ma con un fallimento crediti: gli slot non devono restare
+  // sommati "a metà" se il passo successivo (crediti, nell'ordine reale
+  // della migration: crediti PRIMA degli slot) fallisce — qui verifichiamo
+  // il caso simmetrico, slot dopo un errore a monte, restano a zero.
+  const supabase2 = createFakeSupabase(
+    { tenants: [['tenant-c6b', { id: 'tenant-c6b', plan: 'free' }]] },
+    { grantCreditsImpl: async () => ({ error: { message: 'boom' } }) }
+  );
+  const event2 = makeCheckoutSessionEvent({
+    id: 'cs_caso6b',
+    metadata: { tenant_id: 'tenant-c6b', plan_id: 'pro', supabase_user_id: 'user-c6b' },
+  });
+  await assert.rejects(() => handleStripeWebhookEvent(supabase2, stripe, event2));
+  assert.equal(supabase2._slotGrants.length, 0, 'nessuno slot sommato se il passo crediti (a monte) fallisce');
 });

@@ -11,10 +11,9 @@
 // chiama handleStripeWebhookEvent(supabase, stripe, event) qui sotto.
 
 const {
-  planRank,
+  PLAN_RANK,
   resolveAppStatusFromStripeStatus,
   isStaleEvent,
-  isDuplicateSessionError,
   classifyStripeEvent,
   resolvePlanFromProductName,
 } = require('./stripe-webhook-logic');
@@ -83,69 +82,49 @@ const PLAN_CREDITS = { starter: 20, pro: 100, business: 500, credit_topup: 50 };
 // volte.
 // `creditsToAdd`/`userId`: i crediti Vision sono legati all'utente che ha
 // pagato (profiles.user_id), non al tenant/workspace — coerenti con come
-// vengono spesi in frontend/app/api/generate-video. Se creditsToAdd > 0 ma
-// userId manca (non dovrebbe succedere: create-checkout-session imposta
-// sempre supabase_user_id nei metadata) si salta solo l'accredito invece di
-// far fallire l'intera sincronizzazione di slot/piano.
+// vengono spesi in frontend/app/api/generate-video.
+//
+// Firma/comportamento verso il chiamante INVARIATI (throw se fallisce per un
+// errore reale, false se già processata, true se applicata ora) — cambia
+// solo l'implementazione. Prima marcatura/crediti/slot/piano erano 4
+// scritture SEPARATE: se grant_credits falliva, l'errore veniva solo
+// loggato (mai propagato) e la sessione restava comunque marcata come
+// processata — un retry Stripe la trovava già "fatta" e non riprovava mai
+// più l'accredito (bug: cliente pagante senza crediti Vision). Ora l'intera
+// operazione è un'UNICA funzione Postgres
+// (apply_checkout_session_atomic, 20260811000000_atomic_checkout_session_
+// processing.sql) eseguita come singola transazione: se un qualunque passo
+// fallisce, Postgres annulla anche l'INSERT di marcatura — il retry di
+// Stripe ritrova la sessione libera e riesegue l'intera operazione da capo,
+// non solo il pezzo fallito. Vedi commenti nella migration per i dettagli
+// su idempotenza/concorrenza (ON CONFLICT DO NOTHING + FOR UPDATE).
 async function applyCheckoutSessionOnce(supabase, sessionId, tenantId, plan, slotsToAdd, creditsToAdd = 0, userId = null) {
-  const { error: insertError } = await supabase
-    .from('processed_checkout_sessions')
-    .insert({ session_id: sessionId, tenant_id: tenantId, plan: plan || 'credit_topup', slots_added: slotsToAdd });
+  const { data: applied, error } = await supabase.rpc('apply_checkout_session_atomic', {
+    p_session_id: sessionId,
+    p_tenant_id: tenantId,
+    p_plan: plan,
+    p_slots_to_add: slotsToAdd,
+    p_credits_to_add: creditsToAdd,
+    p_user_id: userId,
+    p_plan_rank_map: PLAN_RANK,
+  });
 
-  if (insertError) {
-    if (isDuplicateSessionError(insertError)) {
-      console.log(`[Stripe Webhook] sessione ${sessionId} già processata, skip`);
-      return false;
-    }
-    throw insertError;
+  if (error) {
+    // Propagato al chiamante (handleStripeWebhookEvent -> server.js), che
+    // risponde 500: Stripe interpreta la mancata consegna come fallita e
+    // ritenta l'evento più tardi. Nessuna riga resta marcata come
+    // processata (rollback atomico lato DB — vedi migration), quindi il
+    // retry rieseguirà l'intera operazione, non solo il pezzo fallito.
+    console.error(`[Stripe Webhook] errore applicazione sessione ${sessionId}:`, error);
+    throw error;
   }
 
-  if (creditsToAdd > 0) {
-    if (userId) {
-      const { error: creditsError } = await supabase.rpc('grant_credits', {
-        p_user_id: userId,
-        p_amount: creditsToAdd,
-        p_type: 'purchase',
-        p_description: `Acquisto piano ${plan || 'credit_topup'}`,
-        p_reference_id: sessionId,
-        p_metadata: { plan_id: plan || 'credit_topup', session_id: sessionId },
-      });
-      if (creditsError) {
-        console.error('[Stripe Webhook] errore accredito crediti Vision:', creditsError);
-      } else {
-        console.log(`[Stripe Webhook] accreditati ${creditsToAdd} crediti Vision a utente ${userId}`);
-      }
-    } else {
-      console.error(`[Stripe Webhook] impossibile accreditare crediti: supabase_user_id mancante nei metadata (session ${sessionId})`);
-    }
+  if (!applied) {
+    console.log(`[Stripe Webhook] sessione ${sessionId} già processata, skip`);
+    return false;
   }
 
-  if (slotsToAdd > 0) {
-    const { error: rpcError } = await supabase.rpc('add_tenant_slots', {
-      tenant_id: tenantId,
-      slots_to_add: slotsToAdd,
-    });
-    if (rpcError) throw rpcError;
-  }
-
-  if (plan) {
-    const { data: currentTenant } = await supabase
-      .from('tenants')
-      .select('plan')
-      .eq('id', tenantId)
-      .single();
-
-    if (planRank(plan) >= planRank(currentTenant?.plan)) {
-      const { error: planError } = await supabase
-        .from('tenants')
-        .update({ plan, updated_at: new Date().toISOString() })
-        .eq('id', tenantId);
-      if (planError) throw planError;
-    } else {
-      console.log(`[Stripe Webhook] piano ${plan} non applicato: tenant ${tenantId} ha già ${currentTenant?.plan}`);
-    }
-  }
-
+  console.log(`[Stripe Webhook] sessione ${sessionId} applicata: plan=${plan || 'n/d'}, +${slotsToAdd} slot, +${creditsToAdd} crediti`);
   return true;
 }
 
@@ -590,17 +569,20 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       }
 
       // Handle "Ricarica Extra" (ex slot extra) - accredita crediti Vision,
-      // idempotente su paymentIntent.id
+      // idempotente su paymentIntent.id. Niente try/catch qui (rimosso
+      // 2026-08-11, fix consistenza crediti Vision): un errore di
+      // applyCheckoutSessionOnce deve propagarsi fino a server.js e far
+      // rispondere 500, esattamente come nel branch reseller di
+      // checkout.session.completed sopra — altrimenti l'errore veniva
+      // solo loggato, il webhook rispondeva comunque 200 e Stripe non
+      // ritentava mai più questo evento (stesso bug della sessione marcata
+      // come processata nonostante grant_credits fallito).
       if (planId === 'credit_topup') {
-        try {
-          const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
-          const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
-          const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
-          if (applied) {
-            console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
-          }
-        } catch (err) {
-          console.error(`[Stripe Webhook] errore accredito crediti per credit_topup`, err);
+        const creditsToAdd = (PLAN_CREDITS.credit_topup || 0) * quantity;
+        const slotsToAdd = (PLAN_SLOTS.credit_topup || 0) * quantity;
+        const applied = await applyCheckoutSessionOnce(supabase, paymentIntent.id, tenantId, null, slotsToAdd, creditsToAdd, supabaseUserId);
+        if (applied) {
+          console.log(`[Stripe Webhook] +${creditsToAdd} crediti Vision e +${slotsToAdd} slot (ricarica extra) per tenant ${tenantId}`);
         }
       } else {
         // Regular plan upgrade - create subscription (stesso guard idempotente
