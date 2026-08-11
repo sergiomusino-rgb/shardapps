@@ -229,8 +229,9 @@ export default function Sidebar({
         {/* ── Mobile Close Button ────────────────────────────────────────── */}
         {onClose && (
           <div className="flex items-center justify-between border-b border-slate-800/60 px-5 py-4 md:hidden">
-            <span className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-lg font-black tracking-wider text-transparent">
-              ⚡ SHARDAPPS
+            <span className="text-lg font-black tracking-wider">
+              <span className="text-white">SHARD</span>
+              <span className="text-blue-400">APPS</span>
             </span>
             <button
               onClick={onClose}
@@ -246,9 +247,10 @@ export default function Sidebar({
         <div className="hidden h-16 items-center gap-2 border-b border-slate-800/60 px-5 md:flex">
           <Link
             href="/dashboard"
-            className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-xl font-black tracking-wider text-transparent"
+            className="text-xl font-black tracking-wider"
           >
-            ⚡ SHARDAPPS
+            <span className="text-white">SHARD</span>
+            <span className="text-blue-400">APPS</span>
           </Link>
           {appId && (
             <span className="ml-auto rounded-md bg-indigo-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-400">

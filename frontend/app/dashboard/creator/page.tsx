@@ -175,7 +175,12 @@ export default function CreatorPage() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Creator AI</h1>
+        <div className="flex items-center gap-2">
+          <Sparkles size={28} className="text-blue-400" />
+          <h1 className="text-3xl font-bold">
+            <span className="text-white">Creator</span> <span className="text-blue-400">AI</span>
+          </h1>
+        </div>
         {schema && (
           <button
             onClick={() => { setSchema(null); setError(null); }}

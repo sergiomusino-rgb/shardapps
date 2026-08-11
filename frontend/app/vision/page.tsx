@@ -845,7 +845,9 @@ export default function VisionStudioPage() {
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-fuchsia-600">
               <Clapperboard size={14} />
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">{t('vision_page_title')}</h1>
+            <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+              <span className="text-white">Vision</span> <span className="text-blue-400">AI</span>
+            </h1>
           </div>
           <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
             {modeConfig.subtitle}
