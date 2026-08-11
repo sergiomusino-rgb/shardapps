@@ -161,9 +161,9 @@ export default function ManagementLayout({
           </button>
           <Link
             href="/dashboard"
-            className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-lg font-black tracking-wider text-transparent"
+            className="text-lg font-black tracking-tight text-white"
           >
-            ⚡ ShardApps
+            SHARD<span className="text-indigo-400">APPS</span>
           </Link>
           <LanguageSelector />
         </header>

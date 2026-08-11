@@ -20,7 +20,7 @@ export default function InfoPage() {
     {
       name: t('info_plan_starter'),
       setup: '€10',
-      monthly: '25€/mese per app',
+      monthly: `25€${t('info_per_month')}`,
       slots: 1,
       features: [
         t('info_feature_starter_1'),
@@ -33,7 +33,7 @@ export default function InfoPage() {
     {
       name: t('info_plan_pro'),
       setup: '€79',
-      monthly: '25€/mese per app',
+      monthly: `25€${t('info_per_month')}`,
       slots: 5,
       features: [
         t('info_feature_pro_1'),
@@ -46,7 +46,7 @@ export default function InfoPage() {
     {
       name: t('info_plan_business'),
       setup: '€299',
-      monthly: '25€/mese per app',
+      monthly: `25€${t('info_per_month')}`,
       slots: 50,
       features: [
         t('info_feature_business_1'),
@@ -66,8 +66,8 @@ export default function InfoPage() {
         <Link href="/" className="text-sm font-medium text-slate-400 transition-colors hover:text-white">
           {t('info_back_to_home')}
         </Link>
-        <Link href="/" className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-2xl font-black tracking-wider text-transparent">
-          ⚡ ZEUSX
+        <Link href="/" className="text-2xl font-black tracking-tight text-white">
+          SHARD<span className="text-indigo-400">APPS</span>
         </Link>
         <LanguageSelector />
       </header>
@@ -92,7 +92,7 @@ export default function InfoPage() {
               <div className="mb-4">
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-bold">{plan.setup}</span>
-                  <span className="text-slate-400 text-sm">setup</span>
+                  <span className="text-slate-400 text-sm">{t('info_setup')}</span>
                 </div>
                 <div className="text-sm text-slate-400 mt-1">+ {plan.monthly}</div>
               </div>
