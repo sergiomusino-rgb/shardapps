@@ -83,7 +83,7 @@
   "dashboard_create_app_desc": "Generate your complete app with a public Showcase, Supabase Auth, and dynamic Dashboard",
   "dashboard_projects_title": "Created Apps",
   "dashboard_projects_desc": "Manage and monitor your existing apps",
-  "dashboard_comandi_title": "Voice Orders AI",
+  "dashboard_comandi_title": "ComandAI",
   "dashboard_comandi_desc": "Collect voice orders and manage your warehouse with AI",
   "comandi_page_title": "Voice Order Collection (ComandAI)",
   "comandi_page_subtitle": "Dictate the customer's order: the AI reconciles it with the catalog before saving it.",

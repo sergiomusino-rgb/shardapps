@@ -81,7 +81,7 @@
   "dashboard_create_app_desc": "Générez votre application complète avec Vitrine publique, Supabase Auth et Tableau de bord dynamique",
   "dashboard_projects_title": "Apps créées",
   "dashboard_projects_desc": "Gérez et surveillez vos applications existantes",
-  "dashboard_comandi_title": "Commandes Vocales AI",
+  "dashboard_comandi_title": "ComandAI",
   "dashboard_comandi_desc": "Collectez les commandes vocales et gérez votre entrepôt avec l'IA",
   "comandi_page_title": "Collecte de Commandes Vocales (ComandAI)",
   "comandi_page_subtitle": "Dictez la commande du client : l'IA la réconcilie avec le catalogue avant de l'enregistrer.",
