@@ -263,7 +263,7 @@ export default function ComandiLandingPage() {
 
       {/* FOOTER */}
       <div className="flex flex-col items-center gap-2 pb-10">
-        <img src="/favicon.png" alt="Comand AI" className="h-10 w-10 rounded-full object-cover" />
+        <img src="/favicon.png" alt="ComandAI" className="h-10 w-10 rounded-full object-cover" />
         <p className="text-xs text-slate-600">{t('login_footer').replace('{year}', String(new Date().getFullYear()))}</p>
       </div>
 
@@ -288,7 +288,7 @@ export default function ComandiLandingPage() {
 
             <div className="text-center mb-6">
               <p className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-2xl font-black tracking-tight text-transparent">
-                Comand AI
+                ComandAI
               </p>
               <p className="mt-2 text-sm text-slate-400">
                 {isLogin ? t('login_title_login') : t('login_title_register')}

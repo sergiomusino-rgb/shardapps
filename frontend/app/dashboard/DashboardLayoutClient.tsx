@@ -149,11 +149,7 @@ export default function DashboardLayoutClient({
                 >
                   ← {t('header_back_to_dashboard')}
                 </Link>
-              ) : (
-                  <span className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-xl font-black tracking-wider text-transparent">
-                    ⚡ {t('header_dashboard_title')}
-                  </span>
-              )}
+              ) : null}
             </div>
 
            <div className="flex items-center gap-4">

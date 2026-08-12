@@ -170,19 +170,19 @@ export default function DashboardPage() {
       showCredits: true,
     },
     {
-      title: t('dashboard_projects_title'),
-      desc: t('dashboard_projects_desc'),
-      link: "/dashboard/projects",
-      color: "bg-blue-600",
-      icon: "📁",
-      highlighted: false
-    },
-    {
       title: t('dashboard_comandi_title'),
       desc: t('dashboard_comandi_desc'),
       link: "/dashboard/comandi",
       color: "bg-gradient-to-br from-amber-600 to-orange-600",
       icon: "🎙️",
+      highlighted: false
+    },
+    {
+      title: t('dashboard_projects_title'),
+      desc: t('dashboard_projects_desc'),
+      link: "/dashboard/projects",
+      color: "bg-blue-600",
+      icon: "📁",
       highlighted: false
     },
     {
