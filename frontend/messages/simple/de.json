@@ -81,7 +81,7 @@
   "dashboard_create_app_desc": "Generieren Sie Ihre komplette App mit öffentlichem Showcase, Supabase Auth und dynamischem Dashboard",
   "dashboard_projects_title": "Erstellte Apps",
   "dashboard_projects_desc": "Verwalten und überwachen Sie Ihre vorhandenen Apps",
-  "dashboard_comandi_title": "Sprachbestellungen AI",
+  "dashboard_comandi_title": "ComandAI",
   "dashboard_comandi_desc": "Erfassen Sie Sprachbestellungen und verwalten Sie Ihr Lager mit KI",
   "comandi_page_title": "Sprachbestellungen erfassen (ComandAI)",
   "comandi_page_subtitle": "Diktieren Sie die Bestellung des Kunden: die KI gleicht sie vor dem Speichern mit dem Katalog ab.",
