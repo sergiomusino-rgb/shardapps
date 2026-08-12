@@ -145,7 +145,7 @@ export default function Home() {
       <main className="pt-16">
         <section className="px-4 sm:px-6 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-10">
           <div className="max-w-6xl mx-auto mb-8 text-center w-full">
-            <span className="inline-block text-6xl sm:text-7xl lg:text-8xl font-black tracking-tight -translate-x-2 sm:translate-x-0">
+            <span className="inline-block text-4xl sm:text-7xl lg:text-8xl font-black tracking-tight">
               SHARD<span className="text-indigo-400">APPS</span>
             </span>
           </div>
