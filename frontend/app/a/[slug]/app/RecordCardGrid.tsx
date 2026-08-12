@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
-import { TableDef, fieldName, pickIdentityFields } from './table-definitions';
+import { TableDef, TableAction, fieldName, pickIdentityFields } from './table-definitions';
 import { getPlaceholderImageUrl, type PlaceholderCategory } from '@/lib/recordPlaceholderImages';
 
 interface AppRecord {
@@ -31,6 +31,29 @@ interface RecordCardGridProps {
   colors: ThemeVars;
   onEdit: (record: AppRecord) => void;
   onDelete: (recordId: string) => void;
+  /** Ruolo dell'utente loggato (Fase 3/4). Assente = nessun concetto di
+   * ruolo (app legacy): accesso pieno, comportamento invariato. 'viewer' =
+   * nasconde Modifica/Elimina. */
+  role?: string;
+  /** Esegue un'azione di entità (table.actions) su un record. */
+  onExecuteAction?: (recordId: string, actionId: string) => void;
+}
+
+// Stessa identica logica di getVisibleActions in DynamicDataTable.tsx —
+// duplicata (non importata) perché RecordCardGrid è un renderer alternativo
+// indipendente, non un wrapper di DynamicDataTable.
+function getVisibleActions(table: TableDef, record: Record<string, unknown>, role?: string): TableAction[] {
+  if (!table.actions?.length || role === 'viewer') return [];
+  const stateField = table.fields.find((f) => f.type === 'state');
+  const currentState = stateField ? String(record[fieldName(stateField)] ?? '') : undefined;
+  return table.actions.filter((action) => {
+    if (action.requiredRole === 'admin' && role && role !== 'admin') return false;
+    if (action.type !== 'change_state') return true;
+    if (!stateField || !action.targetState) return false;
+    const allowed = stateField.allowedTransitions;
+    if (!allowed || !currentState || !allowed[currentState]) return true;
+    return allowed[currentState].includes(action.targetState);
+  });
 }
 
 function formatValue(val: unknown, type: string): string {
@@ -51,7 +74,7 @@ function formatValue(val: unknown, type: string): string {
 // di immagine — foto reale del record se presente, altrimenti un placeholder
 // Unsplash contestuale — badge, titolo e prezzo in evidenza, in linea con lo
 // stile "vetrina invitante" richiesto invece delle "semplici caselle".
-export default function RecordCardGrid({ table, records, category, colors, onEdit, onDelete }: RecordCardGridProps) {
+export default function RecordCardGrid({ table, records, category, colors, onEdit, onDelete, role, onExecuteAction }: RecordCardGridProps) {
   const { imageField, titleField, badgeField, priceField, subtitleFields } = pickIdentityFields(table.fields);
 
   if (records.length === 0) {
@@ -110,34 +133,38 @@ export default function RecordCardGrid({ table, records, category, colors, onEdi
                   {badgeValue}
                 </span>
               )}
-              <div style={{
-                position: 'absolute', top: '8px', right: '8px',
-                display: 'flex', gap: '6px', opacity: 0,
-                transition: 'opacity 0.15s',
-              }}
-                className="group-hover:opacity-100"
-              >
-                <button
-                  onClick={() => onEdit(record)}
-                  title="Modifica"
-                  style={{
-                    background: 'rgba(15,23,42,0.75)', border: 'none', borderRadius: '8px',
-                    padding: '6px', cursor: 'pointer', color: '#fff', display: 'flex',
-                  }}
+              {/* Fase 4: Modifica/Elimina nascosti per il ruolo 'viewer' (sola
+                  lettura) — evita che l'utente li scopra bloccati al submit. */}
+              {role !== 'viewer' && (
+                <div style={{
+                  position: 'absolute', top: '8px', right: '8px',
+                  display: 'flex', gap: '6px', opacity: 0,
+                  transition: 'opacity 0.15s',
+                }}
+                  className="group-hover:opacity-100"
                 >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => onDelete(record.id)}
-                  title="Elimina"
-                  style={{
-                    background: 'rgba(15,23,42,0.75)', border: 'none', borderRadius: '8px',
-                    padding: '6px', cursor: 'pointer', color: '#f87171', display: 'flex',
-                  }}
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+                  <button
+                    onClick={() => onEdit(record)}
+                    title="Modifica"
+                    style={{
+                      background: 'rgba(15,23,42,0.75)', border: 'none', borderRadius: '8px',
+                      padding: '6px', cursor: 'pointer', color: '#fff', display: 'flex',
+                    }}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(record.id)}
+                    title="Elimina"
+                    style={{
+                      background: 'rgba(15,23,42,0.75)', border: 'none', borderRadius: '8px',
+                      padding: '6px', cursor: 'pointer', color: '#f87171', display: 'flex',
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
@@ -155,6 +182,25 @@ export default function RecordCardGrid({ table, records, category, colors, onEdi
               {priceValue && (
                 <div style={{ marginTop: 'auto', paddingTop: '6px', fontSize: '17px', fontWeight: 800, color: colors.primary }}>
                   {priceValue}
+                </div>
+              )}
+              {/* Fase 3/4: azioni di entità (cambio stato ecc.), filtrate per ruolo/transizione. */}
+              {getVisibleActions(table, record, role).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', paddingTop: '6px' }}>
+                  {getVisibleActions(table, record, role).map((action) => (
+                    <button
+                      key={action.id}
+                      onClick={() => onExecuteAction?.(String(record.id), action.id)}
+                      title={action.label}
+                      style={{
+                        background: colors.cardBg, border: `1px solid ${colors.border}`,
+                        borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
+                        color: colors.text, fontSize: '11px', fontWeight: 600,
+                      }}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>

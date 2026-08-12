@@ -11,7 +11,7 @@ export interface FieldDef {
   id?: string;
   label: string;
   type: 'text' | 'number' | 'email' | 'tel' | 'date' | 'datetime' | 'select' | 'multiselect'
-    | 'textarea' | 'checkbox' | 'currency' | 'image' | 'file' | 'relation';
+    | 'textarea' | 'checkbox' | 'currency' | 'image' | 'file' | 'relation' | 'state';
   required?: boolean;
   options?: string[];
   /** Se true, questo campo non può essere rinominato o rimosso dall'utente */
@@ -20,6 +20,23 @@ export interface FieldDef {
   targetTable?: string;
   /** Campo label del record target (es. 'ragione_sociale') */
   targetLabel?: string;
+  /** Per campi type:'state' (Fase 3): vocabolario completo degli stati ammessi. */
+  states?: string[];
+  /** Per campi type:'state': mappa {stato_partenza: [stati_arrivo_ammessi]} —
+   * assente = tutte le transizioni tra `states` ammesse (vedi site-schema.ts). */
+  allowedTransitions?: Record<string, string[]>;
+}
+
+/** Azione eseguibile su un record di un'entità (Fase 3), stesso vocabolario
+ * chiuso di frontend/src/lib/site-schema.ts::EntityActionSchema — copiato qui
+ * (non importato) perché table-definitions.ts è puramente client-side e non
+ * deve tirarsi dietro Zod/il resto dello schema del motore Sito/PWA. */
+export interface TableAction {
+  id: string;
+  label: string;
+  type: 'change_state' | 'trigger_webhook' | 'send_notification';
+  targetState?: string;
+  requiredRole?: 'admin' | 'operator';
 }
 
 export interface TableDef {
@@ -30,6 +47,9 @@ export interface TableDef {
   fields: FieldDef[];
   /** Colore badge per la tabella */
   color?: string;
+  /** Azioni disponibili sui record di questa tabella (Fase 3, facoltativo —
+   * assente per le tabelle senza flusso di lavoro, la stragrande maggioranza). */
+  actions?: TableAction[];
 }
 
 /**

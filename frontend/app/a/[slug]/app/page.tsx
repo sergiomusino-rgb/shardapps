@@ -28,6 +28,7 @@ import {
   import { generateMockRecord } from './mockDataGenerator';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
+  import UserManagementModal from './UserManagementModal';
   import { tenantThemeVars } from './tenant-theme';
   import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
   import { Button } from '@/components/ui/button';
@@ -64,7 +65,7 @@ const V2_TO_V1_FIELD_TYPE: Record<string, FieldDef['type']> = {
   text: 'text', number: 'number', email: 'email', tel: 'tel', phone: 'tel',
   date: 'date', datetime: 'datetime', select: 'select', multiselect: 'multiselect',
   textarea: 'textarea', checkbox: 'checkbox', boolean: 'checkbox', currency: 'currency',
-  image: 'image', file: 'file', relation: 'relation',
+  image: 'image', file: 'file', relation: 'relation', state: 'state',
 };
 
 // Un array vuoto è truthy in JS: usato con `||` per scegliere il primo
@@ -102,7 +103,25 @@ function adaptAdminEntitiesToTables(entities: AdminEntity[]): TableDef[] {
         type: V2_TO_V1_FIELD_TYPE[f.type] || 'text',
         options: f.options?.length ? f.options : undefined,
         required: f.required,
+        // Relazione 1:N (type:'relation', già validata/risolta lato server da
+        // resolveEntityRelations in site-schema.ts — un targetEntity rotto
+        // non arriva mai fin qui, è già stato degradato a testo semplice):
+        // targetTable/targetLabel sono gli stessi nomi che
+        // DynamicRecordModal.getTargetRecords legge per popolare il menu a
+        // tendina di record correlati, vedi generalizzazione lì.
+        ...(f.type === 'relation' && (f.targetEntity || f.target)
+          ? { targetTable: f.targetEntity || f.target, targetLabel: f.displayField || f.targetLabel }
+          : {}),
+        // Macchina a stati (type:'state', Fase 3): states/allowedTransitions
+        // già validati/risolti lato server (resolveEntityStatesAndActions in
+        // site-schema.ts) — un campo con vocabolario di stati rotto non
+        // arriva mai fin qui, è già stato degradato a testo semplice.
+        ...(f.type === 'state' ? { states: f.states, allowedTransitions: f.allowedTransitions } : {}),
       })),
+    // Azioni sui record di questa entità (Fase 3): stessa forma di
+    // adminPanel.entities[].actions (site-schema.ts::EntityActionSchema),
+    // già filtrate lato server per riferirsi solo a stati/campi reali.
+    actions: e.actions?.length ? e.actions : undefined,
   }));
 }
 
@@ -178,14 +197,23 @@ interface AppConfig {
 interface AppSession {
   slug: string;
   // Legacy: password condivisa in chiaro. Supabase: stringa vuota, non usata
-  // (l'autenticazione vera passa da accessToken, vedi getAuthToken).
+  // (l'autenticazione vera passa da accessToken, vedi getAuthToken). Rbac:
+  // token composito "email:password" restituito dal login (vedi
+  // backend/routes/client-app.js), getAuthToken lo tratta come 'legacy'
+  // (stesso branch, nessuna modifica lì necessaria).
   password: string;
   appInfo: AppConfig;
   // Assente/'legacy' per le app esistenti (comportamento invariato).
   // 'supabase' per le nuove app: la sessione arriva da dashboard/page.tsx
-  // con un vero access token Supabase Auth.
-  mode?: 'legacy' | 'supabase';
+  // con un vero access token Supabase Auth. 'rbac' (Fase 3): più
+  // utenti/ruoli, vedi authConfig in site-schema.ts.
+  mode?: 'legacy' | 'supabase' | 'rbac';
   accessToken?: string;
+  // Solo per mode 'rbac': ruolo dell'utente loggato, usato per il gating UI
+  // (sola lettura per 'viewer', azioni riservate per 'admin'/'operator') —
+  // vedi requireWriteRole lato server per l'enforcement reale, questo è solo
+  // per non mostrare controlli che il server rifiuterebbe comunque.
+  role?: 'admin' | 'operator' | 'viewer';
 }
 
 interface AppRecord {
@@ -401,9 +429,12 @@ interface DashboardProps {
   appId?: string;
   authToken?: string;
   onQuickAdd: (tableName: string) => void;
+  /** Fase 4: 'viewer' nasconde le "Azioni Rapide" (quick-add) — l'utente non
+   * deve scoprire il blocco solo al submit del form che aprirebbero. */
+  role?: string;
 }
 
-function Dashboard({ companyName, tables, appId, authToken, onQuickAdd }: DashboardProps) {
+function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: DashboardProps) {
   const { t } = useLanguage();
   const [totalRecords, setTotalRecords] = useState(0);
   const [tableCounts, setTableCounts] = useState<Record<string, number>>({});
@@ -529,18 +560,20 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd }: Dashbo
           </div>
 
           {/* Azioni rapide */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Azioni Rapide</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2.5 pt-0">
-              {tables.slice(0, 4).map((table) => (
-                <Button key={table.name} variant="soft" onClick={() => onQuickAdd(table.name)}>
-                  <Plus size={14} /> Nuovo {table.label}
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
+          {role !== 'viewer' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Azioni Rapide</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2.5 pt-0">
+                {tables.slice(0, 4).map((table) => (
+                  <Button key={table.name} variant="soft" onClick={() => onQuickAdd(table.name)}>
+                    <Plus size={14} /> Nuovo {table.label}
+                  </Button>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] items-start gap-5">
             {/* Tables overview con breakdown record per tabella */}
@@ -1124,10 +1157,14 @@ interface LoginScreenProps {
   appName: string;
   logoUrl: string;
   primaryColor: string;
-  onLogin: (password: string) => Promise<void>;
+  // Fase 3: email opzionale, richiesta solo dalle app auth_mode='rbac' (il
+  // backend risponde 400 "Email richiesta" se manca e serve — vedi
+  // handleLogin sotto). Le app legacy la ignorano, comportamento invariato.
+  onLogin: (password: string, email?: string) => Promise<void>;
 }
 
 function LoginScreen({ appName, logoUrl, primaryColor, onLogin }: LoginScreenProps) {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1141,7 +1178,7 @@ function LoginScreen({ appName, logoUrl, primaryColor, onLogin }: LoginScreenPro
     }
     setLoading(true);
     try {
-      await onLogin(password);
+      await onLogin(password, email.trim() || undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Password errata');
     } finally {
@@ -1162,6 +1199,17 @@ function LoginScreen({ appName, logoUrl, primaryColor, onLogin }: LoginScreenPro
         <p className="mb-7 text-sm text-slate-400">Inserisci la password per accedere</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {/* Facoltativo per la maggior parte delle app (password condivisa):
+              richiesto solo se l'app ha più utenti con ruoli diversi — in quel
+              caso il messaggio d'errore del backend lo segnala esplicitamente. */}
+          <Input
+            type="email"
+            placeholder="Email (solo se richiesta)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="username"
+            className="border-white/10 bg-[#0f172a] text-white placeholder:text-slate-500"
+          />
           <Input
             type="password"
             placeholder="Password"
@@ -1235,6 +1283,8 @@ export function ViewerProFinal() {
   const [saving, setSaving] = useState(false);
   const [generatingMock, setGeneratingMock] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Fase 4: pannello "Gestione Team", solo per admin di un'app auth_mode='rbac'.
+  const [showUserManagement, setShowUserManagement] = useState(false);
   // Motore Sito/PWA (Creator v2): rispecchia l'ultimo salvataggio riuscito di
   // businessConfig senza un refetch completo della sessione (sito pubblico e
   // Area Riservata leggono lo stesso apps.config).
@@ -1244,10 +1294,12 @@ export function ViewerProFinal() {
   const [businessConfigSaved, setBusinessConfigSaved] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  // Record per relazioni tra tabelle
-  const [clientiRecords, setClientiRecords] = useState<AppRecord[]>([]);
-  const [prodottiRecords, setProdottiRecords] = useState<AppRecord[]>([]);
-  const [ordiniRecords, setOrdiniRecords] = useState<AppRecord[]>([]);
+  // Record per relazioni tra tabelle: mappa nome-tabella -> record, popolata
+  // dinamicamente scandendo `tables` per ogni field.targetTable referenziato
+  // (vedi effetto più sotto) — non più hardcoded a clienti/prodotti/ordini
+  // (le 3 tabelle demo del motore v1), così funziona anche per le entità
+  // relazionate generate da CreatorAI (adminPanel.entities, type:'relation').
+  const [relationRecords, setRelationRecords] = useState<Record<string, AppRecord[]>>({});
   // Tabelle personalizzate create dall'utente
   const [customTables, setCustomTables] = useState<CustomTableDef[]>([]);
   // Re-login helper to refresh session after table edit
@@ -1640,35 +1692,42 @@ export function ViewerProFinal() {
     setSearchQuery('');
   }, [activeTable, session, loadRecords]);
 
-  // ─── Carica i record delle tabelle di relazione (clienti/prodotti/ordini) ─
-  // DynamicRecordModal usa queste liste per popolare i menu a tendina dei
+  // ─── Carica i record delle tabelle target di una relazione ──────────────
+  // DynamicRecordModal usa questa mappa per popolare i menu a tendina dei
   // campi di relazione (getTargetRecords, "cliente collegato" ecc.): senza
-  // questo effetto i tre setter non venivano mai chiamati e quei menu
-  // restavano sempre vuoti, indipendentemente dai dati presenti nell'app.
+  // questo effetto i menu restano sempre vuoti, indipendentemente dai dati
+  // presenti nell'app. Generico su QUALUNQUE targetTable referenziato da
+  // QUALUNQUE tabella disponibile — non più i 3 nomi fissi delle tabelle demo
+  // del motore v1 (clienti/prodotti/ordini): funziona anche per le entità
+  // relazionate generate da CreatorAI (adminPanel.entities, type:'relation').
   useEffect(() => {
-    // Stessa motivazione degli effetti di fetch sopra: sincronizza queste
-    // liste con sessione/tabelle disponibili.
+    // Stessa motivazione degli effetti di fetch sopra: sincronizza questa
+    // mappa con sessione/tabelle disponibili.
     if (!session || session.appInfo.id.startsWith('demo-')) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setClientiRecords([]);
-      setProdottiRecords([]);
-      setOrdiniRecords([]);
+      setRelationRecords({});
       return;
     }
-    const targets: [string, (records: AppRecord[]) => void][] = [
-      ['clienti', setClientiRecords],
-      ['prodotti', setProdottiRecords],
-      ['ordini', setOrdiniRecords],
-    ];
-    for (const [name, setter] of targets) {
-      if (!tables.some((t) => t.name === name)) {
-        setter([]);
-        continue;
-      }
-      fetchTableRecords(name, getAuthToken(session), session.appInfo.id)
-        .then(setter)
-        .catch(() => setter([]));
+
+    const targetNames = Array.from(new Set(
+      tables.flatMap((t) => t.fields.map((f) => f.targetTable).filter((n): n is string => !!n))
+    )).filter((name) => tables.some((t) => t.name === name));
+
+    if (targetNames.length === 0) {
+      setRelationRecords({});
+      return;
     }
+
+    let cancelled = false;
+    Promise.all(targetNames.map((name) =>
+      fetchTableRecords(name, getAuthToken(session), session.appInfo.id)
+        .then((records) => [name, records] as const)
+        .catch(() => [name, []] as const)
+    )).then((entries) => {
+      if (!cancelled) setRelationRecords(Object.fromEntries(entries));
+    });
+
+    return () => { cancelled = true; };
   }, [session, tables, fetchTableRecords]);
 
   // ─── Load custom tables from backend ────────────────────────────────────
@@ -1883,17 +1942,17 @@ export function ViewerProFinal() {
 
   // ─── Login handler ──────────────────────────────────────────────────────
 
-  const handleLogin = useCallback(async (password: string) => {
+  const handleLogin = useCallback(async (password: string, email?: string) => {
     // Fetch app config from backend to validate password
     const res = await fetch(`/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, email }),
     });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Password errata');
+      throw new Error(err.error || err.message || 'Password errata');
     }
 
     const data = await res.json();
@@ -1903,10 +1962,15 @@ export function ViewerProFinal() {
       return;
     }
 
+    // Fase 3: app auth_mode='rbac' — il backend restituisce role+authToken
+    // (token composito "email:password", vedi backend/routes/client-app.js).
+    // Assenti per le app legacy: appSession.password resta la password nuda
+    // come sempre, comportamento invariato.
     const appSession: AppSession = {
       slug,
-      password,
+      password: data.authToken || password,
       appInfo: data.appInfo || data,
+      ...(data.role ? { mode: 'rbac' as const, role: data.role } : {}),
     };
 
     localStorage.setItem(sessionKey, JSON.stringify(appSession));
@@ -1918,6 +1982,14 @@ export function ViewerProFinal() {
 
   const handleCreateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable) return;
+    // Fase 3: guardia centralizzata invece che sparsa in ogni componente UI
+    // che può innescare una creazione (Dashboard quick-add, DynamicDataTable,
+    // RecordCardGrid, layout di settore...) — l'enforcement reale resta
+    // comunque lato server (requireWriteRole in backend/routes/client-app.js).
+    if (session.role === 'viewer') {
+      alert('Il tuo ruolo (viewer) non consente questa operazione');
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/client/apps/${session.appInfo.id}/records`, {
@@ -1974,6 +2046,10 @@ export function ViewerProFinal() {
 
   const handleUpdateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable || !modalRecord || modalRecord === 'new') return;
+    if (session.role === 'viewer') {
+      alert('Il tuo ruolo (viewer) non consente questa operazione');
+      return;
+    }
     if (!modalRecord.id) {
       // Senza id la richiesta finirebbe su /records/ (slash finale) invece
       // di /records/{id}: quella rotta supporta solo GET/POST, quindi un
@@ -2005,6 +2081,10 @@ export function ViewerProFinal() {
 
   const handleDeleteRecord = useCallback(async (recordId: string) => {
     if (!session || !activeTable) return;
+    if (session.role === 'viewer') {
+      alert('Il tuo ruolo (viewer) non consente questa operazione');
+      return;
+    }
     if (!recordId) {
       alert('Impossibile eliminare: record senza id valido. Ricarica la pagina e riprova.');
       return;
@@ -2021,6 +2101,33 @@ export function ViewerProFinal() {
     } catch (err) {
       console.error('[DeleteRecord] Error:', err);
       alert(err instanceof Error ? err.message : 'Errore durante l\'eliminazione');
+    }
+  }, [session, activeTable, loadRecords]);
+
+  // ─── Fase 3: esecuzione azioni di entità (cambio stato, ecc.) ────────────
+  // L'enforcement reale (ruolo, transizione ammessa) è lato server (vedi
+  // backend/routes/client-app.js, POST .../records/:recordId/actions/:actionId)
+  // — qui solo la chiamata e il refresh dei record per riflettere il nuovo stato.
+  const handleExecuteAction = useCallback(async (recordId: string, actionId: string) => {
+    if (!session || !activeTable) return;
+    try {
+      const res = await fetch(`/api/client/apps/${session.appInfo.id}/records/${recordId}/actions/${actionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getAuthToken(session)}`,
+        },
+        body: JSON.stringify({ table: activeTable.name }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(result.error || 'Errore durante l\'esecuzione dell\'azione');
+        return;
+      }
+      await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+    } catch (err) {
+      console.error('[ExecuteAction] Error:', err);
+      alert('Errore di connessione durante l\'esecuzione dell\'azione');
     }
   }, [session, activeTable, loadRecords]);
 
@@ -2181,6 +2288,7 @@ export function ViewerProFinal() {
           onLogout={handleLogout}
           showSettings={showSettings}
           setShowSettings={setShowSettings}
+          onOpenUserManagement={session?.mode === 'rbac' && session?.role === 'admin' ? () => setShowUserManagement(true) : undefined}
           session={session}
           customTables={customTables}
           activeCustomTable={activeCustomTable}
@@ -2191,6 +2299,7 @@ export function ViewerProFinal() {
           onEdit={isCustomTableActive ? (r) => setCustomModalRecord(r) : (r) => setModalRecord(r)}
           onDelete={isCustomTableActive ? handleDeleteCustomRecord : handleDeleteRecord}
           onAddNew={isCustomTableActive ? () => setCustomModalRecord('new') : () => setModalRecord('new')}
+          onExecuteAction={handleExecuteAction}
           loadRecords={(t) => loadRecords(t, getAuthToken(session), session.appInfo.id)}
           onEditTable={(table) => setEditTable(table)}
         />
@@ -2204,9 +2313,20 @@ export function ViewerProFinal() {
             onClose={() => setModalRecord(null)}
             saving={saving}
             colors={colors}
-            clientiRecords={clientiRecords}
-            prodottiRecords={prodottiRecords}
-            ordiniRecords={ordiniRecords}
+            relationRecords={relationRecords}
+            readOnly={session?.role === 'viewer'}
+          />
+        )}
+
+        {/* Fase 4: "Gestione Team", solo admin di un'app auth_mode='rbac' — la
+            voce in sidebar (onOpenUserManagement sopra) esiste solo per
+            quel caso, ma ri-verifichiamo qui invece di fidarci solo del
+            fatto che il pulsante non fosse visibile. */}
+        {showUserManagement && session?.mode === 'rbac' && session?.role === 'admin' && (
+          <UserManagementModal
+            appId={session.appInfo.id}
+            authToken={getAuthToken(session)}
+            onClose={() => setShowUserManagement(false)}
           />
         )}
 
@@ -2296,6 +2416,7 @@ export function ViewerProFinal() {
         onEditTable={setEditTable}
         onCreateTable={() => setShowCreateCustomTable(true)}
         onOpenSettings={() => setShowSettings(true)}
+        onOpenUserManagement={session?.mode === 'rbac' && session?.role === 'admin' ? () => setShowUserManagement(true) : undefined}
         onLogout={handleLogout}
         logoUrl={logoUrl}
         companyName={companyName}
@@ -2325,6 +2446,7 @@ export function ViewerProFinal() {
                 appId={session?.appInfo?.id}
                 authToken={session ? getAuthToken(session) : undefined}
                 onQuickAdd={(tableName) => { setActiveView(tableName); setModalRecord('new'); }}
+                role={session?.role}
               />
             ) : activeTable ? (
               <DynamicDataTable
@@ -2341,6 +2463,9 @@ export function ViewerProFinal() {
                 colors={colors}
                 radius={layoutCfg.radius}
                 shadow={layoutCfg.shadow}
+                relationRecords={relationRecords}
+                role={session?.role}
+                onExecuteAction={handleExecuteAction}
               />
             ) : activeCustomTable ? (
               <CustomTableRenderer
@@ -2383,9 +2508,17 @@ export function ViewerProFinal() {
           onClose={() => setModalRecord(null)}
           saving={saving}
           colors={colors}
-          clientiRecords={clientiRecords}
-          prodottiRecords={prodottiRecords}
-          ordiniRecords={ordiniRecords}
+          relationRecords={relationRecords}
+          readOnly={session?.role === 'viewer'}
+        />
+      )}
+
+      {/* Fase 4: pannello "Gestione Team", solo admin di un'app auth_mode='rbac'. */}
+      {showUserManagement && session?.mode === 'rbac' && session?.role === 'admin' && (
+        <UserManagementModal
+          appId={session.appInfo.id}
+          authToken={getAuthToken(session)}
+          onClose={() => setShowUserManagement(false)}
         />
       )}
 

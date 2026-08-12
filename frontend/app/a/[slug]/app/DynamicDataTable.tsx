@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { TableDef, fieldName, extractDynamicKeys, pickIdentityFields } from './table-definitions';
+import { TableDef, TableAction, fieldName, extractDynamicKeys, pickIdentityFields } from './table-definitions';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
 import RecordCardGrid from './RecordCardGrid';
 import { renderCellValue } from './cellRenderers';
@@ -34,6 +34,18 @@ interface DynamicDataTableProps {
   colors: ThemeColors;
   radius: string;
   shadow: string;
+  /** Record disponibili per risolvere le colonne di relazione (field.targetTable)
+   * nell'id salvato -> etichetta leggibile del record correlato, chiave = nome
+   * tabella target. Assente/vuota = le colonne di relazione mostrano l'id grezzo. */
+  relationRecords?: Record<string, Array<{ id: string; [key: string]: unknown }>>;
+  /** Ruolo dell'utente loggato (Fase 3, app auth_mode='rbac'/'supabase').
+   * Assente = nessun concetto di ruolo per questa app (legacy): accesso
+   * pieno, comportamento invariato. 'viewer' = sola lettura (nessun
+   * Nuovo/Modifica/Elimina/azione). */
+  role?: 'admin' | 'operator' | 'viewer';
+  /** Esegue un'azione dell'entità (table.actions) su un record — l'enforcement
+   * reale di ruolo/transizione è lato server, qui solo l'invocazione. */
+  onExecuteAction?: (recordId: string, actionId: string) => void;
 }
 
 /** Sottoinsieme di `colors` usato solo da RecordCardGrid (non ancora migrato ai token tenant). */
@@ -49,8 +61,43 @@ interface ThemeColors {
 export default function DynamicDataTable({
   table, records, loading, searchQuery, onSearchChange,
   onEdit, onDelete, onAddNew, onGenerateMock, generatingMock, colors,
+  relationRecords = {}, role, onExecuteAction,
 }: DynamicDataTableProps) {
   const [showDynamicCols, setShowDynamicCols] = useState(false);
+  const isViewer = role === 'viewer';
+
+  // Azioni (table.actions, Fase 3) visibili per QUESTO record: filtrate per
+  // ruolo (requiredRole) e, per le change_state, per la transizione ammessa
+  // dallo stato corrente del record — mai mostrare un pulsante che il server
+  // rifiuterebbe comunque con un 409. Un'azione senza vincoli noti (nessuna
+  // allowedTransitions configurata, o stato corrente non riconosciuto) resta
+  // visibile: stessa convenzione "permissiva se non specificato" del server.
+  const getVisibleActions = (record: AppRecord): TableAction[] => {
+    if (!table.actions?.length || isViewer) return [];
+    const stateField = table.fields.find((f) => f.type === 'state');
+    const currentState = stateField ? String(record[fieldName(stateField)] ?? '') : undefined;
+    return table.actions.filter((action) => {
+      if (action.requiredRole === 'admin' && role && role !== 'admin') return false;
+      if (action.type !== 'change_state') return true;
+      if (!stateField || !action.targetState) return false;
+      const allowed = stateField.allowedTransitions;
+      if (!allowed || !currentState || !allowed[currentState]) return true;
+      return allowed[currentState].includes(action.targetState);
+    });
+  };
+
+  // Per un campo di relazione (targetTable impostato), risolve l'id salvato
+  // nel record nell'etichetta leggibile del record correlato (targetLabel),
+  // invece di lasciare che la colonna mostri l'id grezzo (es. un UUID).
+  // undefined = non è un campo di relazione, renderCellValue userà il
+  // trattamento normale per il suo `type`.
+  const resolveRelationLabel = (field: { targetTable?: string; targetLabel?: string }, value: unknown): string | undefined => {
+    if (!field.targetTable) return undefined; // non è un campo di relazione
+    if (value == null || value === '') return '';
+    const related = (relationRecords[field.targetTable] || []).find((r) => String(r.id) === String(value));
+    if (!related) return '—'; // id salvato ma nessun record corrispondente (rimosso?)
+    return String((field.targetLabel ? related[field.targetLabel] : undefined) ?? related.id ?? '');
+  };
 
   // Tabelle "vetrina" (veicoli, immobili, prodotti, piatti) partono in vista
   // a griglia fotografica invece della tabella piatta — coerente con la
@@ -159,15 +206,17 @@ export default function DynamicDataTable({
               </button>
             </div>
           )}
-          {onGenerateMock && records.length === 0 && (
+          {!isViewer && onGenerateMock && records.length === 0 && (
             <Button variant="outline" onClick={onGenerateMock} disabled={generatingMock}>
               {generatingMock ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
               {generatingMock ? 'Generazione...' : 'Genera 5 di esempio'}
             </Button>
           )}
-          <Button onClick={onAddNew}>
-            <Plus size={16} /> Nuovo
-          </Button>
+          {!isViewer && (
+            <Button onClick={onAddNew}>
+              <Plus size={16} /> Nuovo
+            </Button>
+          )}
         </div>
       </div>
 
@@ -215,6 +264,8 @@ export default function DynamicDataTable({
           colors={colors}
           onEdit={onEdit}
           onDelete={onDelete}
+          role={role}
+          onExecuteAction={onExecuteAction}
         />
       ) : (
         <Card className="overflow-hidden">
@@ -294,7 +345,12 @@ export default function DynamicDataTable({
                               </div>
                               {identitySubtitleField && (
                                 <div className="truncate text-xs text-tenant-text-secondary">
-                                  {renderCellValue(record, fieldName(identitySubtitleField), identitySubtitleField.type)}
+                                  {renderCellValue(
+                                    record,
+                                    fieldName(identitySubtitleField),
+                                    identitySubtitleField.type,
+                                    resolveRelationLabel(identitySubtitleField, record[fieldName(identitySubtitleField)])
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -307,7 +363,7 @@ export default function DynamicDataTable({
                           key={fieldName(field)}
                           className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap px-4 py-3 text-sm text-tenant-text"
                         >
-                          {renderCellValue(record, fieldName(field), field.type)}
+                          {renderCellValue(record, fieldName(field), field.type, resolveRelationLabel(field, record[fieldName(field)]))}
                         </td>
                       ))}
                       {/* Valori colonne dinamiche */}
@@ -322,15 +378,32 @@ export default function DynamicDataTable({
                           </td>
                         );
                       })}
-                      {/* Pulsanti azioni */}
+                      {/* Pulsanti azioni: azioni di entità (Fase 3, cambio stato ecc.)
+                          + modifica/elimina, quest'ultime nascoste per il ruolo 'viewer'
+                          (sola lettura — l'enforcement reale resta comunque lato server). */}
                       <td className="px-4 py-3 text-center">
-                        <div className="flex justify-center gap-2">
-                          <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica">
-                            <Pencil size={15} />
-                          </Button>
-                          <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina">
-                            <Trash2 size={15} />
-                          </Button>
+                        <div className="flex flex-wrap items-center justify-center gap-1.5">
+                          {getVisibleActions(record).map((action) => (
+                            <Button
+                              key={action.id}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => onExecuteAction?.(String(record.id), action.id)}
+                              title={action.label}
+                            >
+                              {action.label}
+                            </Button>
+                          ))}
+                          {!isViewer && (
+                            <>
+                              <Button variant="soft" size="icon" onClick={() => onEdit(record)} title="Modifica">
+                                <Pencil size={15} />
+                              </Button>
+                              <Button variant="destructive" size="icon" onClick={() => onDelete(record.id)} title="Elimina">
+                                <Trash2 size={15} />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -5,13 +5,15 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
 const Groq = require('groq-sdk');
-const { aiLimiter, loginLimiter, changePasswordLimiter } = require('../middleware/rate-limit');
+const { aiLimiter, loginLimiter, changePasswordLimiter, actionLimiter, userManagementLimiter } = require('../middleware/rate-limit');
 const {
   getClientCredentials,
+  getRbacCredential,
   verifyLegacyPassword,
   resolveClientIdentity,
   clientAuthMiddleware,
 } = require('../lib/client-auth');
+const { dispatchAppAction } = require('../lib/action-dispatcher');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -51,7 +53,7 @@ async function setClientPassword(supabase, appId, clientPassword, initialPasswor
 router.post('/a/:slug', loginLimiter, async (req, res) => {
   try {
     const { slug } = req.params;
-    const { password } = req.body;
+    const { password, email } = req.body;
 
     if (!password) {
       return res.status(400).json({ error: 'Password richiesta' });
@@ -93,10 +95,31 @@ router.post('/a/:slug', loginLimiter, async (req, res) => {
       return res.json({ blocked: true });
     }
 
-    // Check password
-    const creds = await getClientCredentials(supabase, app.id, app);
-    if (creds.client_password !== password) {
-      return res.status(401).json({ error: 'Password errata' });
+    // Check credentials: auth_mode='rbac' verifica email+password contro
+    // app_rbac_users (più utenti per app, ciascuno col proprio ruolo, vedi
+    // migration 20260812000000); altrimenti (legacy, e supabase se mai
+    // richiamasse questo endpoint) stesso confronto storico contro la
+    // password condivisa dell'app — comportamento invariato.
+    let role;
+    let rbacAuthToken;
+    if (app.auth_mode === 'rbac') {
+      if (!email) {
+        return res.status(400).json({ error: 'Email richiesta per questa app' });
+      }
+      const credential = await getRbacCredential(supabase, app.id, email);
+      if (!credential || credential.client_password !== password) {
+        return res.status(401).json({ error: 'Credenziali errate' });
+      }
+      role = credential.role;
+      // Token composito per le richieste dati successive (stesso formato
+      // atteso da resolveClientIdentity in lib/client-auth.js): il frontend
+      // lo salva al posto della sola password come Bearer.
+      rbacAuthToken = `${credential.client_email}:${password}`;
+    } else {
+      const creds = await getClientCredentials(supabase, app.id, app);
+      if (creds.client_password !== password) {
+        return res.status(401).json({ error: 'Password errata' });
+      }
     }
 
     // Return app info with blueprint/config
@@ -130,6 +153,11 @@ router.post('/a/:slug', loginLimiter, async (req, res) => {
       },
     };
 
+    // role/authToken presenti SOLO per auth_mode='rbac': la risposta per le
+    // app legacy/supabase resta identica a prima, nessun campo in più.
+    if (app.auth_mode === 'rbac') {
+      return res.json({ appInfo, role, authToken: rbacAuthToken });
+    }
     return res.json({ appInfo });
   } catch (err) {
     console.error('[/api/a/:slug] error:', err);
@@ -171,9 +199,22 @@ router.get('/client/apps/:appId/records', clientAuthMiddleware, async (req, res)
   }
 });
 
+// FASE 3 — CreatorAI: ruolo 'viewer' (auth_mode='rbac'/'supabase', vedi
+// clientAuthMiddleware) è sola lettura sui dati delle entità — nessun
+// concetto di ruolo per le app legacy (req.appUserRole resta undefined lì),
+// quindi questo guard non le tocca in alcun modo.
+function requireWriteRole(req, res) {
+  if (req.appUserRole === 'viewer') {
+    res.status(403).json({ error: 'Il tuo ruolo (viewer) consente solo la lettura dei dati' });
+    return false;
+  }
+  return true;
+}
+
 // POST /client/apps/:appId/records
 router.post('/client/apps/:appId/records', clientAuthMiddleware, async (req, res) => {
   try {
+    if (!requireWriteRole(req, res)) return;
     const { table, data } = req.body;
     if (!table || !data) {
       return res.status(400).json({ error: 'table e data obbligatori' });
@@ -206,6 +247,7 @@ router.post('/client/apps/:appId/records', clientAuthMiddleware, async (req, res
 // PUT /client/apps/:appId/records/:recordId
 router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async (req, res) => {
   try {
+    if (!requireWriteRole(req, res)) return;
     const { recordId } = req.params;
     const { data } = req.body;
     if (!data) {
@@ -241,6 +283,7 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
 // DELETE /client/apps/:appId/records/:recordId
 router.delete('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async (req, res) => {
   try {
+    if (!requireWriteRole(req, res)) return;
     const { recordId } = req.params;
     const supabase = getSupabase();
 
@@ -259,6 +302,297 @@ router.delete('/client/apps/:appId/records/:recordId', clientAuthMiddleware, asy
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE client record exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
+// ─── FASE 3 — CreatorAI: esecuzione azioni di entità ────────────────────────
+// POST /client/apps/:appId/records/:recordId/actions/:actionId
+// Body: { table } — nome dell'entità (table_name di app_records), l'azione
+// stessa vive nella config dell'app (adminPanel.entities[].actions, vedi
+// site-schema.ts), non nel record. Unico punto che applica insieme:
+// - enforcement del ruolo (requiredRole dell'azione, gerarchia admin>operator,
+//   mai concesso a 'viewer');
+// - validazione della transizione di stato (field.allowedTransitions) per le
+//   azioni "change_state", l'unico tipo con un effetto reale oggi.
+// "trigger_webhook"/"send_notification" (Fase 4): dispatchate tramite
+// backend/lib/action-dispatcher.js — una POST asincrona verso action.webhookUrl
+// se configurato (altrimenti solo registrate) per i webhook, un log
+// strutturato pronto per un provider futuro (Resend/Novu) per le notifiche.
+// Non più un 501: entrambe rispondono 200 con { dispatched, actionType }.
+//
+// Security Audit Fase 4 (fix HIGH/WARNING):
+// - actionLimiter: 40 richieste/minuto per app+IP (era senza alcun rate
+//   limit, sfruttabile sia per DoS interno sia — combinato con un webhookUrl
+//   — come proxy di HTTP flood verso terzi, vedi lib/ssrf-guard.js per la
+//   parte SSRF del fix).
+// - Verifica di esistenza/appartenenza del record ora eseguita PRIMA del
+//   branch per tipo, quindi anche per trigger_webhook/send_notification
+//   (prima solo change_state la faceva): un'azione non può più essere
+//   invocata su un recordId arbitrario/inesistente.
+router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAuthMiddleware, actionLimiter, async (req, res) => {
+  try {
+    const { recordId, actionId } = req.params;
+    const { table } = req.body;
+    if (!table) {
+      return res.status(400).json({ error: 'table obbligatorio' });
+    }
+
+    const supabase = getSupabase();
+
+    const { data: app, error: appError } = await supabase
+      .from('apps')
+      .select('config')
+      .eq('id', req.appId)
+      .single();
+    if (appError || !app) {
+      return res.status(404).json({ error: 'App non trovata' });
+    }
+
+    const entities = app.config?.adminPanel?.entities || [];
+    const entity = entities.find((e) => e.name === table);
+    const action = entity?.actions?.find((a) => a.id === actionId);
+    if (!entity || !action) {
+      return res.status(404).json({ error: 'Azione non trovata' });
+    }
+
+    // Enforcement ruolo: le azioni sono mutazioni, mai concesse a 'viewer'
+    // nemmeno senza requiredRole esplicito sull'azione. req.appUserRole è
+    // undefined per le app legacy (nessun concetto di ruolo): in quel caso
+    // chiunque sia autenticato (l'unico accesso possibile, la password
+    // condivisa) può eseguire l'azione — comportamento invariato, mai
+    // regredito da "poteva farlo" a "non può più".
+    if (req.appUserRole === 'viewer') {
+      return res.status(403).json({ error: 'Il tuo ruolo (viewer) non consente di eseguire azioni' });
+    }
+    if (action.requiredRole === 'admin' && req.appUserRole && req.appUserRole !== 'admin') {
+      return res.status(403).json({ error: 'Azione riservata al ruolo amministratore' });
+    }
+
+    // Il record deve esistere e appartenere a questa app/tenant/entità PRIMA
+    // di eseguire qualunque tipo di azione — vale ora anche per
+    // trigger_webhook/send_notification (fix Security Audit Fase 4, Focus 2:
+    // prima un recordId arbitrario/inesistente veniva accettato per questi
+    // due tipi, l'unica verifica di ownership era su change_state).
+    const { data: record, error: recordError } = await supabase
+      .from('app_records')
+      .select('id, data')
+      .eq('id', recordId)
+      .eq('app_id', req.appId)
+      .eq('tenant_id', req.tenantId)
+      .eq('table_name', table)
+      .single();
+    if (recordError || !record) {
+      return res.status(404).json({ error: 'Record non trovato' });
+    }
+
+    if (action.type === 'trigger_webhook' || action.type === 'send_notification') {
+      const result = await dispatchAppAction(supabase, {
+        appId: req.appId,
+        tenantId: req.tenantId,
+        recordId,
+        entity: table,
+        action,
+        // Attribution (Security Audit Fase 4, Focus 5): chi ha eseguito
+        // l'azione, salvato in app_action_logs — mai nel payload esterno.
+        actorRole: req.appUserRole,
+        actorEmail: req.appUserEmail,
+      });
+      return res.json({ success: true, dispatched: result.dispatched, actionType: action.type });
+    }
+
+    // type === 'change_state' (unico altro valore ammesso da EntityActionSchema)
+    const stateField = entity.fields?.find((f) => f.type === 'state');
+    if (!stateField || !action.targetState) {
+      return res.status(400).json({ error: 'Azione non configurata correttamente' });
+    }
+
+    const currentState = record.data?.[stateField.id];
+    const allowed = stateField.allowedTransitions;
+    // Nessuna allowedTransitions configurata = tutte le transizioni tra gli
+    // `states` del campo sono ammesse (stessa convenzione di
+    // resolveEntityStatesAndActions, frontend/src/lib/site-schema.ts). Stato
+    // corrente assente/non riconosciuto: nessun vincolo da applicare, il
+    // record non ha ancora un valore di stato valido da cui partire.
+    if (allowed && currentState && allowed[currentState] && !allowed[currentState].includes(action.targetState)) {
+      return res.status(409).json({ error: `Transizione non ammessa da "${currentState}" a "${action.targetState}"` });
+    }
+
+    const updatedData = { ...(record.data || {}), [stateField.id]: action.targetState };
+    const { data: updated, error: updateError } = await supabase
+      .from('app_records')
+      .update({ data: updatedData, updated_at: new Date().toISOString() })
+      .eq('id', recordId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('POST client record action error:', updateError);
+      return res.status(500).json({ error: 'Errore interno' });
+    }
+
+    res.json({ record: updated });
+  } catch (err) {
+    console.error('POST client record action exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
+// ─── FASE 4 — CreatorAI: gestione utenti (app auth_mode='rbac') ────────────
+// GET/POST/DELETE /client/apps/:appId/users — pannello "Gestione Team" del
+// pannello admin (frontend/app/a/[slug]/app/UserManagementModal.tsx). Solo
+// per app auth_mode='rbac' (req.authMode, valorizzato da clientAuthMiddleware
+// in lib/client-auth.js) e solo per chi è già autenticato come 'admin' di
+// quella stessa app — mai un endpoint di provisioning "aperto". POST/DELETE
+// (le mutazioni) hanno anche userManagementLimiter (Security Audit Fase 4,
+// fix HIGH): richiedono già credenziali admin valide, ma restavano prive di
+// qualunque limite di frequenza.
+function requireAdminRbac(req, res) {
+  if (req.authMode !== 'rbac') {
+    res.status(400).json({ error: 'Questa app non usa l\'autenticazione multi-utente (auth_mode rbac)' });
+    return false;
+  }
+  if (req.appUserRole !== 'admin') {
+    res.status(403).json({ error: 'Solo un amministratore può gestire gli utenti dell\'app' });
+    return false;
+  }
+  return true;
+}
+
+// GET /client/apps/:appId/users — elenco utenti (mai la password).
+router.get('/client/apps/:appId/users', clientAuthMiddleware, async (req, res) => {
+  try {
+    if (!requireAdminRbac(req, res)) return;
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('app_rbac_users')
+      .select('id, client_email, role, created_at')
+      .eq('app_id', req.appId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('GET client users error:', error);
+      return res.status(500).json({ error: 'Errore interno' });
+    }
+
+    res.json({ users: data || [] });
+  } catch (err) {
+    console.error('GET client users exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
+// POST /client/apps/:appId/users — crea un nuovo utente operator/viewer.
+// L'admin sceglie direttamente email+password (stesso modello "credenziale
+// assegnata dal titolare", non un invito/onboarding self-service — coerente
+// con lo stesso approccio già usato per l'utente admin seedato al primo
+// publish, vedi app/api/creator/publish/route.ts).
+router.post('/client/apps/:appId/users', clientAuthMiddleware, userManagementLimiter, async (req, res) => {
+  try {
+    if (!requireAdminRbac(req, res)) return;
+
+    const { email, password, role } = req.body;
+    const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ error: 'Email non valida' });
+    }
+    if (typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'La password deve avere almeno 6 caratteri' });
+    }
+    // Solo operator/viewer da questo endpoint: un secondo admin si crea
+    // comunque così (nessun vincolo tecnico), ma la UI (UserManagementModal)
+    // offre solo questi due ruoli nel form — coerente col requisito Fase 4
+    // ("ruolo ('operator' | 'viewer')"), un secondo admin è una scelta
+    // deliberata da esporre in un secondo momento, non un default implicito.
+    if (role !== 'operator' && role !== 'viewer') {
+      return res.status(400).json({ error: 'Ruolo non valido: usa "operator" o "viewer"' });
+    }
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('app_rbac_users')
+      .insert({
+        app_id: req.appId,
+        tenant_id: req.tenantId,
+        client_email: cleanEmail,
+        client_password: password,
+        role,
+      })
+      .select('id, client_email, role, created_at')
+      .single();
+
+    if (error) {
+      // Vincolo unico (app_id, lower(client_email)), vedi migration
+      // 20260812000000: un'email già usata su questa stessa app.
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Esiste già un utente con questa email su questa app' });
+      }
+      console.error('POST client users error:', error);
+      return res.status(500).json({ error: 'Errore interno' });
+    }
+
+    res.status(201).json({ user: data });
+  } catch (err) {
+    console.error('POST client users exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
+// DELETE /client/apps/:appId/users/:userId — revoca un utente.
+router.delete('/client/apps/:appId/users/:userId', clientAuthMiddleware, userManagementLimiter, async (req, res) => {
+  try {
+    if (!requireAdminRbac(req, res)) return;
+    const { userId } = req.params;
+
+    const supabase = getSupabase();
+    const { data: target, error: fetchError } = await supabase
+      .from('app_rbac_users')
+      .select('id, role')
+      .eq('id', userId)
+      .eq('app_id', req.appId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('DELETE client users lookup error:', fetchError);
+      return res.status(500).json({ error: 'Errore interno' });
+    }
+    if (!target) {
+      return res.status(404).json({ error: 'Utente non trovato' });
+    }
+
+    // Mai eliminare l'ultimo admin: nessuno potrebbe più gestire l'app
+    // (né riautenticarsi come admin, né aggiungere un nuovo admin) — stessa
+    // logica difensiva di "non lasciare l'app senza titolare".
+    if (target.role === 'admin') {
+      const { count, error: countError } = await supabase
+        .from('app_rbac_users')
+        .select('id', { count: 'exact', head: true })
+        .eq('app_id', req.appId)
+        .eq('role', 'admin');
+      if (countError) {
+        console.error('DELETE client users admin-count error:', countError);
+        return res.status(500).json({ error: 'Errore interno' });
+      }
+      if ((count || 0) <= 1) {
+        return res.status(403).json({ error: 'Impossibile eliminare l\'unico amministratore dell\'app' });
+      }
+    }
+
+    const { error: deleteError } = await supabase
+      .from('app_rbac_users')
+      .delete()
+      .eq('id', userId)
+      .eq('app_id', req.appId);
+
+    if (deleteError) {
+      console.error('DELETE client users error:', deleteError);
+      return res.status(500).json({ error: 'Errore interno' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE client users exception:', err);
     res.status(500).json({ error: 'Errore interno' });
   }
 });

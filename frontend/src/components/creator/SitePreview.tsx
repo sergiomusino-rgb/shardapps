@@ -3,13 +3,17 @@
 // ─── SitePreview ────────────────────────────────────────────────────────────
 // Renderizza le pagine pubbliche di un SiteBlueprintJSON (site-schema.ts):
 // nessun testo hardcoded, ogni contenuto arriva da businessConfig/pages/
-// adminPanel. Le sezioni "list"/"form" (Menu/Catalogo/Prenota) non hanno
-// ancora dati reali finché l'app non è creata e usata (i record veri vivono
-// in app_records, popolati dopo /api/creator/create): qui mostrano dati di
-// esempio generati dai field type dell'entità collegata, stesso approccio
-// del mock già usato in DynamicAppPreview.tsx per il motore gestionali.
+// adminPanel. Le sezioni "form" (Prenota) restano sempre un mock statico
+// (nessuna sottomissione reale da qui). Le sezioni "list" (Menu/Catalogo)
+// mostrano dati di esempio generati dai field type dell'entità collegata
+// SOLO quando non c'è ancora uno slug pubblico (editor/anteprima, l'app non è
+// stata pubblicata) — una volta pubblicata (slug presente, /a/[slug]) i dati
+// reali arrivano da GET /api/public/apps/[slug]/records (LiveListSection più
+// sotto), con lo stesso mock come placeholder ottimistico finché la rete non
+// risponde. Le sezioni "gallery" restano invariate: le immagini vivono
+// inline nello schema (section.images), non sono legate a un'entità.
 
-import { useMemo, type SyntheticEvent } from 'react';
+import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 import { Phone, MessageCircle, MapPin, Mail, Star, Menu as MenuIcon } from 'lucide-react';
 import type {
   SiteBlueprintJSON,
@@ -146,16 +150,140 @@ function actionIcon(type: ActionButton['type']) {
   }
 }
 
+// ─── Sezione "list" sul sito pubblicato: dati reali da app_records ──────────
+// Attiva solo quando SitePreview riceve uno `slug` (sito pubblicato, vedi
+// app/a/[slug]/page.tsx -> PublicSiteRenderer): l'editor (AppEditorView,
+// nessuno slug perché l'app non è ancora pubblicata) continua a mostrare
+// sempre il mock in SectionRenderer, comportamento invariato. Componente
+// dedicato (non un ramo in più dentro SectionRenderer) apposta: possiede da
+// solo lo stato/l'effetto di fetch, senza introdurre hook condizionali nello
+// switch di SectionRenderer (che resta un unico componente con tutti i rami).
+// `relations`: etichette già risolte lato server (endpoint pubblico,
+// ?include_relations=true) per gli eventuali campi type:'relation'
+// dell'entità — es. { cliente_id: "Mario Rossi" } — mai calcolate qui: senza
+// autenticazione questo componente non ha modo di leggere l'entità target
+// per conto suo, deve fidarsi solo di quanto l'endpoint ha già risolto.
+type LiveListItem = Record<string, string> & { id?: string; relations?: Record<string, string> };
+
+function useLiveEntityRecords(slug: string, entity: string): { items: LiveListItem[] | null } {
+  const [items, setItems] = useState<LiveListItem[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Niente reset sincrono di `items` qui (react-hooks/set-state-in-effect):
+    // lo stato iniziale è già `null` (= "mostra il mock finché non arriva una
+    // risposta"), e slug/entity sono stabili per l'intera vita di questo
+    // componente (una LiveListSection per sezione "list", montata una sola
+    // volta sulla pagina pubblica) — non serve invalidare un valore precedente.
+
+    fetch(`/api/public/apps/${encodeURIComponent(slug)}/records?entity=${encodeURIComponent(entity)}&include_relations=true`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { success?: boolean; data?: { records?: { id: string; data: Record<string, unknown>; relations?: Record<string, string> }[] } } | null) => {
+        if (cancelled) return;
+        const records = json?.success ? json.data?.records : undefined;
+        if (!Array.isArray(records)) {
+          setItems([]);
+          return;
+        }
+        setItems(records.map((r) => {
+          const row: LiveListItem = { id: r.id };
+          for (const [key, value] of Object.entries(r.data || {})) {
+            row[key] = value == null ? '' : String(value);
+          }
+          if (r.relations && Object.keys(r.relations).length > 0) row.relations = r.relations;
+          return row;
+        }));
+      })
+      .catch(() => {
+        // Rete/endpoint non disponibile: nessuno stato di errore visibile sul
+        // sito pubblico, resta il mock (vedi sotto) per un problema tecnico
+        // transitorio invece di mostrare una sezione rotta a un visitatore reale.
+        if (!cancelled) setItems(null);
+      });
+
+    return () => { cancelled = true; };
+  }, [slug, entity]);
+
+  return { items };
+}
+
+function LiveListSection({
+  slug,
+  entity,
+  entityDef,
+  title,
+  layout,
+  emptyLabel,
+  primary,
+}: {
+  slug: string;
+  entity: string;
+  entityDef?: AdminEntity;
+  title?: string;
+  layout: 'grid' | 'list';
+  emptyLabel: string;
+  primary: string;
+}) {
+  const { items } = useLiveEntityRecords(slug, entity);
+  const isLive = items !== null;
+  // Prima che la rete risponda (o se la fetch fallisce): stessi dati di
+  // esempio del motore mock, per non mostrare un vuoto/flash sulla prima
+  // pagina vista da un visitatore reale.
+  const displayItems: LiveListItem[] = isLive ? items : (entityDef ? mockEntityItems(entityDef) : []);
+
+  const priceField = entityDef?.fields.find((f) => f.type === 'currency' || f.type === 'number');
+  const titleField = entityDef?.fields.find((f) => f.type === 'text' && f.id !== priceField?.id);
+  // Primo campo di relazione dell'entità (es. "cliente_id" su "ordini"): se
+  // presente, mostra l'etichetta già risolta dall'endpoint (item.relations)
+  // come riga informativa in più — mai calcolata qui, solo quella che il
+  // server ha già risolto in modo sicuro (?include_relations=true).
+  const relationField = entityDef?.fields.find((f) => f.type === 'relation');
+
+  return (
+    <section className="px-6 py-10">
+      {title && <h2 className="mb-6 text-center text-2xl font-bold text-gray-900">{title}</h2>}
+      {isLive && displayItems.length === 0 ? (
+        <p className="text-center text-sm text-gray-400">{emptyLabel}</p>
+      ) : (
+        <div className={`mx-auto max-w-3xl ${layout === 'grid' ? 'grid grid-cols-1 gap-4 sm:grid-cols-2' : 'flex flex-col gap-3'}`}>
+          {displayItems.map((item, i) => (
+            <div key={item.id ?? i} className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+              <div>
+                <div className="font-semibold text-gray-900">{titleField ? item[titleField.id] : entityDef?.label}</div>
+                <div className="text-xs text-gray-500">
+                  {relationField && item.relations?.[relationField.id]
+                    ? `${relationField.label}: ${item.relations[relationField.id]}`
+                    : entityDef?.labelPlural}
+                </div>
+              </div>
+              {priceField && (
+                <div className="whitespace-nowrap text-sm font-bold" style={{ color: primary }}>
+                  {item[priceField.id]}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Sezioni ─────────────────────────────────────────────────────────────────
 
 function SectionRenderer({
   section,
   schema,
   onNavigate,
+  slug,
 }: {
   section: PageSection;
   schema: SiteBlueprintJSON;
   onNavigate?: (slug: string) => void;
+  /** Slug pubblico dell'app: presente solo su /a/[slug] (sito pubblicato),
+   * assente in editor/anteprima. Attiva LiveListSection per le sezioni
+   * "list" collegate a un'entità, vedi sopra. */
+  slug?: string;
 }) {
   const primary = schema.ui.primaryColor;
 
@@ -243,6 +371,25 @@ function SectionRenderer({
 
     case 'list': {
       const entity = findEntity(schema, section.entity);
+
+      // Sito pubblicato (slug presente) + sezione collegata a un'entità
+      // reale: prova i dati veri da app_records (via LiveListSection) invece
+      // del mock. In editor/anteprima (nessuno slug, l'app non è ancora
+      // pubblicata) resta sempre il mock sotto, comportamento invariato.
+      if (slug && section.entity) {
+        return (
+          <LiveListSection
+            slug={slug}
+            entity={section.entity}
+            entityDef={entity}
+            title={section.title}
+            layout={section.layout}
+            emptyLabel={section.emptyLabel}
+            primary={primary}
+          />
+        );
+      }
+
       const items = entity ? mockEntityItems(entity) : [];
       const priceField = entity?.fields.find((f) => f.type === 'currency' || f.type === 'number');
       const titleField = entity?.fields.find((f) => f.type === 'text' && f.id !== priceField?.id);
@@ -275,10 +422,11 @@ function SectionRenderer({
 
     case 'form': {
       const entity = section.entity ? findEntity(schema, section.entity) : undefined;
+      const relationDefaults = { target: undefined, targetLabel: undefined, targetEntity: undefined, displayField: undefined, states: undefined, allowedTransitions: undefined };
       const genericFormFields: Field[] = [
-        { id: 'nome', type: 'text', label: 'Nome', required: true, options: [], target: undefined, targetLabel: undefined },
-        { id: 'email', type: 'email', label: 'Email', required: true, options: [], target: undefined, targetLabel: undefined },
-        { id: 'messaggio', type: 'textarea', label: 'Messaggio', required: false, options: [], target: undefined, targetLabel: undefined },
+        { id: 'nome', type: 'text', label: 'Nome', required: true, options: [], ...relationDefaults },
+        { id: 'email', type: 'email', label: 'Email', required: true, options: [], ...relationDefaults },
+        { id: 'messaggio', type: 'textarea', label: 'Messaggio', required: false, options: [], ...relationDefaults },
       ];
       const fields = entity ? entity.fields.filter((f) => f.type !== 'id') : genericFormFields;
       return (
@@ -452,10 +600,16 @@ export default function SitePreview({
   schema,
   activePageSlug,
   onNavigate,
+  slug,
 }: {
   schema: SiteBlueprintJSON;
   activePageSlug?: string;
   onNavigate?: (slug: string) => void;
+  /** Slug pubblico dell'app: passato solo da /a/[slug] (sito pubblicato).
+   * Assente nell'editor (AppEditorView) perché l'app non ha ancora uno slug
+   * finché non viene pubblicata — in quel caso le sezioni "list" mostrano
+   * sempre il mock, invariato. Vedi LiveListSection sopra. */
+  slug?: string;
 }) {
   const activePage: SitePage = useMemo(() => {
     return schema.pages.find((p) => p.slug === activePageSlug) || schema.pages[0];
@@ -472,7 +626,7 @@ export default function SitePreview({
           </div>
         ) : (
           activePage.sections.map((section, i) => (
-            <SectionRenderer key={i} section={section} schema={schema} onNavigate={onNavigate} />
+            <SectionRenderer key={i} section={section} schema={schema} onNavigate={onNavigate} slug={slug} />
           ))
         )}
       </div>

@@ -7,7 +7,7 @@ import {
   Download, Upload, MessageSquare, Mail, MessageCircle,
   Settings2, Heart, Receipt, ExternalLink
 } from 'lucide-react';
-import { TableDef, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField } from './table-definitions';
+import { TableDef, TableAction, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField } from './table-definitions';
 import { DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
@@ -38,6 +38,9 @@ interface DynamicLayoutRendererProps {
   onLogout: () => void;
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
+  /** Fase 4: "Gestione Team" — assente = nessuna voce in più in sidebar
+   * (page.tsx la passa solo per admin di un'app auth_mode='rbac'). */
+  onOpenUserManagement?: () => void;
   session?: any;
   customTables?: any[];
   activeCustomTable?: any;
@@ -48,9 +51,31 @@ interface DynamicLayoutRendererProps {
   onEdit: (record: any) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  /** Esegue un'azione di entità (table.actions, Fase 3/4) su un record. */
+  onExecuteAction?: (recordId: string, actionId: string) => void;
   loadRecords?: (tableName: string) => void;
   designComponents?: DesignComponent[];
   onEditTable?: (table: TableDef) => void;
+}
+
+// ─── Fase 4: azioni di entità visibili per un record ────────────────────────
+// Stessa identica logica di getVisibleActions in DynamicDataTable.tsx
+// (duplicata qui invece che importata: DynamicLayoutRenderer non importa mai
+// da DynamicDataTable, sono due renderer alternativi dello stesso pannello,
+// non uno wrapper dell'altro) — filtra table.actions per ruolo (requiredRole)
+// e, per le change_state, per la transizione ammessa dallo stato corrente.
+function getVisibleTableActions(table: TableDef, record: Record<string, unknown>, role?: string): TableAction[] {
+  if (!table.actions?.length || role === 'viewer') return [];
+  const stateField = table.fields.find((f) => f.type === 'state');
+  const currentState = stateField ? String(record[stateField.name] ?? '') : undefined;
+  return table.actions.filter((action) => {
+    if (action.requiredRole === 'admin' && role && role !== 'admin') return false;
+    if (action.type !== 'change_state') return true;
+    if (!stateField || !action.targetState) return false;
+    const allowed = stateField.allowedTransitions;
+    if (!allowed || !currentState || !allowed[currentState]) return true;
+    return allowed[currentState].includes(action.targetState);
+  });
 }
 
 // ─── Theme Helpers ───────────────────────────────────────────────────────────
@@ -95,6 +120,7 @@ export default function DynamicLayoutRenderer({
   setActiveView,
   onLogout,
   setShowSettings,
+  onOpenUserManagement,
   customTables = [],
   activeCustomTable,
   records = [],
@@ -104,14 +130,20 @@ export default function DynamicLayoutRenderer({
   onEdit,
   onDelete,
   onAddNew,
+  onExecuteAction,
   loadRecords,
   designComponents = [],
   onEditTable,
+  session,
 }: DynamicLayoutRendererProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [importazioniOpen, setImportazioniOpen] = useState(false);
   const [comunicazioniOpen, setComunicazioniOpen] = useState(false);
+  // Fase 4: ruolo dell'utente loggato (già disponibile via `session`, non
+  // serviva una prop dedicata) — 'viewer' nasconde Nuovo/Modifica/Elimina
+  // nei layout sotto che renderizzano CRUD diretto (Docs, SaaS/default).
+  const role: string | undefined = session?.role;
 
   const activeTable = tables.find((t) => t.name === activeView) || null;
   const activeCustomTableData = customTables.find((t: any) => `custom_${t.name}` === activeView) || null;
@@ -175,6 +207,8 @@ export default function DynamicLayoutRenderer({
             onEdit={onEdit}
             onDelete={onDelete}
             onAddNew={onAddNew}
+            onExecuteAction={onExecuteAction}
+            role={role}
             designComponents={designComponents}
           />
         );
@@ -256,6 +290,8 @@ export default function DynamicLayoutRenderer({
             onEdit={onEdit}
             onDelete={onDelete}
             onAddNew={onAddNew}
+            onExecuteAction={onExecuteAction}
+            role={role}
           />
         );
     }
@@ -281,6 +317,7 @@ export default function DynamicLayoutRenderer({
             datiAziendaliTable={datiAziendaliTable}
             onEditTable={onEditTable}
             onOpenSettings={() => setShowSettings(true)}
+            onOpenUserManagement={onOpenUserManagement}
             onLogout={onLogout}
             logoUrl={logoUrl}
             companyName={companyName}
@@ -304,6 +341,7 @@ export default function DynamicLayoutRenderer({
             datiAziendaliTable={datiAziendaliTable}
             onEditTable={onEditTable}
             onOpenSettings={() => setShowSettings(true)}
+            onOpenUserManagement={onOpenUserManagement}
             onLogout={onLogout}
             logoUrl={logoUrl}
             companyName={companyName}
@@ -349,6 +387,8 @@ interface LayoutSidebarProps {
   datiAziendaliTable: TableDef | null | undefined;
   onEditTable?: (table: TableDef) => void;
   onOpenSettings: () => void;
+  /** Fase 4: "Gestione Team" — assente = nessuna voce in più (comportamento invariato). */
+  onOpenUserManagement?: () => void;
   onLogout: () => void;
   logoUrl: string;
   companyName: string;
@@ -363,7 +403,7 @@ interface LayoutSidebarProps {
 
 function LayoutSidebar({
   tables, customTables, activeView, onNavigate, onNavigateView, datiAziendaliTable,
-  onEditTable, onOpenSettings, onLogout, logoUrl, companyName, footerLogoUrl, footerLabel, slug,
+  onEditTable, onOpenSettings, onOpenUserManagement, onLogout, logoUrl, companyName, footerLogoUrl, footerLabel, slug,
   comunicazioniOpen, onToggleComunicazioni, importazioniOpen, onToggleImportazioni,
 }: LayoutSidebarProps) {
   return (
@@ -442,6 +482,9 @@ function LayoutSidebar({
           active={false}
           onClick={() => { window.location.href = `/a/${slug}/fatture`; }}
         />
+        {onOpenUserManagement && (
+          <NavItem icon={<Users size={18} />} label="Gestione Team" active={false} onClick={onOpenUserManagement} />
+        )}
         <NavItem icon={<Settings size={18} />} label="Impostazioni" active={false} onClick={onOpenSettings} />
         <NavItem
           icon={<ExternalLink size={18} />}
@@ -490,6 +533,8 @@ interface DocsLayoutContentProps {
   onEdit: (record: any) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  onExecuteAction?: (recordId: string, actionId: string) => void;
+  role?: string;
   designComponents: DesignComponent[];
 }
 
@@ -497,7 +542,7 @@ function DocsLayoutContent({
   companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
   activeView, setActiveView, activeTable,
   records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew
+  onEdit, onDelete, onAddNew, onExecuteAction, role
 }: DocsLayoutContentProps) {
   const [totalRecords, setTotalRecords] = useState(0);
 
@@ -650,19 +695,23 @@ function DocsLayoutContent({
               }} />
             )}
           </div>
-          <button
-            onClick={onAddNew}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '10px 18px', borderRadius: '10px', border: 'none',
-              background: primaryColor, color: '#fff', fontSize: '14px',
-              fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-          >
-            <Plus size={16} /> Nuovo
-          </button>
+          {/* Fase 4: nascosto per il ruolo 'viewer' (sola lettura) — invece
+              di lasciare che l'utente scopra il blocco solo al submit. */}
+          {role !== 'viewer' && (
+            <button
+              onClick={onAddNew}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '10px 18px', borderRadius: '10px', border: 'none',
+                background: primaryColor, color: '#fff', fontSize: '14px',
+                fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+            >
+              <Plus size={16} /> Nuovo
+            </button>
+          )}
         </div>
 
         {/* Search Bar */}
@@ -786,35 +835,55 @@ function DocsLayoutContent({
                         </td>
                       ))}
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                          <button
-                            onClick={() => onEdit(record)}
-                            title="Modifica"
-                            style={{
-                              background: primaryColor + '20', border: 'none',
-                              borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                              color: primaryColor, display: 'flex', alignItems: 'center',
-                              transition: 'background 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = primaryColor + '40'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = primaryColor + '20'; }}
-                          >
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            onClick={() => onDelete(record.id)}
-                            title="Elimina"
-                            style={{
-                              background: colors.danger + '20', border: 'none',
-                              borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                              color: colors.danger, display: 'flex', alignItems: 'center',
-                              transition: 'background 0.2s',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
+                          {/* Fase 3/4: azioni di entità (cambio stato ecc.), filtrate per ruolo/transizione. */}
+                          {(activeTable ? getVisibleTableActions(activeTable, record, role) : []).map((action) => (
+                            <button
+                              key={action.id}
+                              onClick={() => onExecuteAction?.(String(record.id), action.id)}
+                              title={action.label}
+                              style={{
+                                background: colors.cardBgAlt, border: `1px solid ${colors.border}`,
+                                borderRadius: '8px', padding: '6px 10px', cursor: 'pointer',
+                                color: colors.text, fontSize: '12px', fontWeight: 600,
+                              }}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                          {/* Fase 4: nascosti per il ruolo 'viewer' (sola lettura). */}
+                          {role !== 'viewer' && (
+                            <>
+                              <button
+                                onClick={() => onEdit(record)}
+                                title="Modifica"
+                                style={{
+                                  background: primaryColor + '20', border: 'none',
+                                  borderRadius: '8px', padding: '6px', cursor: 'pointer',
+                                  color: primaryColor, display: 'flex', alignItems: 'center',
+                                  transition: 'background 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = primaryColor + '40'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = primaryColor + '20'; }}
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                onClick={() => onDelete(record.id)}
+                                title="Elimina"
+                                style={{
+                                  background: colors.danger + '20', border: 'none',
+                                  borderRadius: '8px', padding: '6px', cursor: 'pointer',
+                                  color: colors.danger, display: 'flex', alignItems: 'center',
+                                  transition: 'background 0.2s',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1068,13 +1137,15 @@ interface SaaSLayoutContentProps {
   onEdit: (record: any) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  onExecuteAction?: (recordId: string, actionId: string) => void;
+  role?: string;
 }
 
 function SaaSLayoutContent({
   companyName, tables, colors, designTokens = getDesignTokens(), primaryColor,
   activeView, setActiveView, activeTable,
   records, loading, searchQuery, setSearchQuery,
-  onEdit, onDelete, onAddNew
+  onEdit, onDelete, onAddNew, onExecuteAction, role
 }: SaaSLayoutContentProps) {
   const [totalRecords, setTotalRecords] = useState(0);
 
@@ -1217,19 +1288,22 @@ function SaaSLayoutContent({
         <h2 style={{ color: colors.text, fontSize: '24px', fontWeight: 700, margin: 0 }}>
           {activeTable?.labelPlural || 'Tabella'}
         </h2>
-        <button
-          onClick={onAddNew}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '10px 18px', borderRadius: '10px', border: 'none',
-            background: primaryColor, color: '#fff', fontSize: '14px',
-            fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
-        >
-          <Plus size={16} /> Nuovo
-        </button>
+        {/* Fase 4: nascosto per il ruolo 'viewer' (sola lettura). */}
+        {role !== 'viewer' && (
+          <button
+            onClick={onAddNew}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '10px 18px', borderRadius: '10px', border: 'none',
+              background: primaryColor, color: '#fff', fontSize: '14px',
+              fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <Plus size={16} /> Nuovo
+          </button>
+        )}
       </div>
 
       {/* Search Bar */}
@@ -1342,35 +1416,55 @@ function SaaSLayoutContent({
                       </td>
                     ))}
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px' }}>
-                        <button
-                          onClick={() => onEdit(record)}
-                          title="Modifica"
-                          style={{
-                            background: primaryColor + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: primaryColor, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = primaryColor + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = primaryColor + '20'; }}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          onClick={() => onDelete(record.id)}
-                          title="Elimina"
-                          style={{
-                            background: colors.danger + '20', border: 'none',
-                            borderRadius: '8px', padding: '6px', cursor: 'pointer',
-                            color: colors.danger, display: 'flex', alignItems: 'center',
-                            transition: 'background 0.2s',
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
+                        {/* Fase 3/4: azioni di entità (cambio stato ecc.), filtrate per ruolo/transizione. */}
+                        {(activeTable ? getVisibleTableActions(activeTable, record, role) : []).map((action) => (
+                          <button
+                            key={action.id}
+                            onClick={() => onExecuteAction?.(String(record.id), action.id)}
+                            title={action.label}
+                            style={{
+                              background: colors.cardBgAlt, border: `1px solid ${colors.border}`,
+                              borderRadius: '8px', padding: '6px 10px', cursor: 'pointer',
+                              color: colors.text, fontSize: '12px', fontWeight: 600,
+                            }}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                        {/* Fase 4: nascosti per il ruolo 'viewer' (sola lettura). */}
+                        {role !== 'viewer' && (
+                          <>
+                            <button
+                              onClick={() => onEdit(record)}
+                              title="Modifica"
+                              style={{
+                                background: primaryColor + '20', border: 'none',
+                                borderRadius: '8px', padding: '6px', cursor: 'pointer',
+                                color: primaryColor, display: 'flex', alignItems: 'center',
+                                transition: 'background 0.2s',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = primaryColor + '40'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = primaryColor + '20'; }}
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              onClick={() => onDelete(record.id)}
+                              title="Elimina"
+                              style={{
+                                background: colors.danger + '20', border: 'none',
+                                borderRadius: '8px', padding: '6px', cursor: 'pointer',
+                                color: colors.danger, display: 'flex', alignItems: 'center',
+                                transition: 'background 0.2s',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = colors.danger + '40'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = colors.danger + '20'; }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

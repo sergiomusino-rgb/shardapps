@@ -58,10 +58,39 @@ async function verifyLegacyPassword(supabase, app, providedValue) {
   return creds.client_password === providedValue;
 }
 
-// Risolve l'identità del chiamante per un'app, nei 3 modelli esistenti:
+// ─── FASE 3 — CreatorAI multi-utente (auth_mode='rbac') ────────────────────
+// Tabella dedicata app_rbac_users (migration 20260812000000), indipendente
+// da app_credentials: un'app rbac ha PIÙ righe, una per utente (email+
+// password+ruolo), mentre app_credentials resta la credenziale unica
+// condivisa delle app legacy — separarle evita di dover cambiare la PK/i
+// vincoli di app_credentials (su cui altri punti del codice fanno upsert con
+// onConflict:'app_id', vedi commento nella migration). Stesso identico
+// modello di sicurezza del legacy (password in chiaro, nessun hashing/JWT):
+// qui si estende solo lo scope da "1 password per app" a "1 password per
+// utente", non il livello di sicurezza della verifica.
+async function getRbacCredential(supabase, appId, email) {
+  if (!email) return null;
+  // Confronto case-insensitive senza operatori con wildcard (ilike userebbe
+  // %/_ dell'email come pattern se non escapati): l'email è normalizzata in
+  // minuscolo qui e alla scrittura (publish/route.ts), un semplice eq basta
+  // e resta coerente con l'indice unico su lower(client_email) della migration.
+  const { data } = await supabase
+    .from('app_rbac_users')
+    .select('client_password, role, client_email')
+    .eq('app_id', appId)
+    .eq('client_email', String(email).trim().toLowerCase())
+    .maybeSingle();
+  return data || null;
+}
+
+// Risolve l'identità del chiamante per un'app, in uno dei 4 modelli esistenti:
 // comandi_ai (JWT + tenant_members), auth_mode='supabase' (JWT + app_users),
-// legacy (password condivisa via Bearer). Precedenza comandi_ai > supabase >
-// legacy, identica a quella già usata da verifyClientAuth.
+// auth_mode='rbac' (Bearer "email:password" + app_credentials multi-riga,
+// Fase 3 CreatorAI — vedi getRbacCredential sopra), legacy (password
+// condivisa via Bearer). Precedenza comandi_ai > supabase > rbac > legacy:
+// le prime tre erano già così (identica a verifyClientAuth), rbac si inserisce
+// prima del fallback legacy perché i due si escludono a vicenda per
+// app.auth_mode (un'app è o rbac o legacy, mai entrambe).
 //
 // Input: supabase client (service role), `app` (deve avere almeno
 // id/tenant_id/app_type/auth_mode/client_password), `appId` (id dell'app,
@@ -117,6 +146,34 @@ async function resolveClientIdentity(supabase, app, appId, token) {
     return { ok: true, mode: 'supabase', tenantId: app.tenant_id, appId, appUserRole: appUser.role };
   }
 
+  if (app.auth_mode === 'rbac') {
+    // Token = "<email>:<password>" (vedi getRbacCredential sopra per il
+    // perché di questo formato): email fino ai primi due punti, password il
+    // resto — indexOf invece di split('.') per non troncare una password che
+    // contenga ':' (indexOf prende il PRIMO, quindi solo l'email non può
+    // contenerne — accettabile, un indirizzo email valido non ha ':').
+    const sep = token.indexOf(':');
+    if (sep === -1) {
+      return { ok: false, status: 401, error: 'Credenziali non valide' };
+    }
+    const email = token.slice(0, sep);
+    const password = token.slice(sep + 1);
+
+    const credential = await getRbacCredential(supabase, appId, email);
+    if (!credential || credential.client_password !== password) {
+      return { ok: false, status: 401, error: 'Credenziali non valide' };
+    }
+
+    // appUserEmail (Security Audit Fase 4, Focus 5 — attribution): usa
+    // credential.client_email (la forma canonica salvata, già lowercase) e
+    // non l'`email` grezza estratta dal token, per non propagare
+    // un'eventuale variante di maiuscole/minuscole diversa nel log di audit.
+    return {
+      ok: true, mode: 'rbac', tenantId: app.tenant_id, appId,
+      appUserRole: credential.role, appUserEmail: credential.client_email,
+    };
+  }
+
   // Legacy: confronto password in chiaro, comportamento invariato.
   const validPassword = await verifyLegacyPassword(supabase, app, token);
   if (!validPassword) {
@@ -168,12 +225,22 @@ async function clientAuthMiddleware(req, res, next) {
   req.appId = result.appId;
   if (result.appUserRole !== undefined) req.appUserRole = result.appUserRole;
   if (result.clientPassword !== undefined) req.clientPassword = result.clientPassword;
+  // Security Audit Fase 4, Focus 5 — attribution: solo per auth_mode='rbac'
+  // (le app legacy non hanno un concetto di utente individuale, resta
+  // undefined lì). Usato da action-dispatcher.js per popolare actor_email
+  // in app_action_logs.
+  if (result.appUserEmail !== undefined) req.appUserEmail = result.appUserEmail;
+  // Fase 4: usato dagli endpoint di gestione utenti (POST/GET/DELETE
+  // .../users) per rifiutare la richiesta su app che non sono auth_mode='rbac'
+  // — `app` è già in scope qui (fetchato sopra), nessuna query in più.
+  req.authMode = app.auth_mode;
   next();
 }
 
 module.exports = {
   getSupabase,
   getClientCredentials,
+  getRbacCredential,
   verifyLegacyPassword,
   resolveClientIdentity,
   clientAuthMiddleware,
