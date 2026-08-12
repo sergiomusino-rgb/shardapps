@@ -16,22 +16,97 @@
 // resta da costruire.
 
 import { useState, useEffect, type ChangeEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { RotateCcw, AlertCircle, UploadCloud, Loader2, Check, Sparkles } from 'lucide-react';
+import { RotateCcw, AlertCircle, UploadCloud, Loader2, Check, Sparkles, Pencil } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import ProjectWizard from '@/src/components/creator/ProjectWizard';
 import AppEditorView from '@/src/components/creator/AppEditorView';
 import { useLanguage } from '@/src/lib/LanguageContext';
+import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
 import type { ProjectType } from '@/src/lib/site-schema';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 export default function CreatorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { locale } = useLanguage();
   const [schema, setSchema] = useState<SiteBlueprintJSON | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ─── Editor re-entry (FASE 3) ────────────────────────────────────────────
+  // /dashboard/creator?appId=<id> — riapertura di un'app già pubblicata dalla
+  // lista "App Create" (dashboard/projects). editingAppId, quando valorizzato,
+  // è l'unica cosa che serve passare ad AppEditorView per farla lavorare in
+  // modalità "modifica/aggiornamento" invece che "prima pubblicazione": il
+  // componente lo usa già come publishedAppId iniziale (bottone "Salva
+  // Modifiche" invece di "Pubblica Gestionale", ogni refactor/publish
+  // successivo aggiorna l'app esistente invece di crearne una nuova, vedi
+  // AppEditorView.tsx). Qui serve solo recuperare lo schema live dell'app
+  // (app.config, via GET /api/apps/:id, già autenticato+ownership-checked)
+  // e reidratare lo state dell'editor con quello al posto del wizard.
+  const [editingAppId, setEditingAppId] = useState<string | undefined>(undefined);
+  const [editingAppName, setEditingAppName] = useState<string>('');
+  const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+
+  useEffect(() => {
+    const appIdParam = searchParams.get('appId');
+    if (!appIdParam) return;
+
+    let cancelled = false;
+    (async () => {
+      setIsLoadingExisting(true);
+      setError(null);
+      try {
+        const { data: { session } } = await supabaseBrowser.auth.getSession();
+        if (!session?.access_token) {
+          if (!cancelled) {
+            setError('Devi effettuare il login per modificare questa app.');
+            router.push('/login');
+          }
+          return;
+        }
+
+        const res = await fetch(`/api/apps/${appIdParam}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.app) {
+          if (!cancelled) setError(data.error || 'App non trovata o non autorizzata.');
+          return;
+        }
+
+        // Ri-sanitizzato con lo stesso schema Zod usato ovunque nel motore
+        // (generate/refactor/publish): app.config è quello che è stato
+        // salvato l'ultima volta, ma un'app pubblicata prima dell'aggiunta di
+        // un campo (es. authConfig, arrivato in Fase 3) potrebbe non averlo —
+        // sanitizeSiteBlueprint applica gli stessi default sicuri usati alla
+        // generazione, invece di forzare l'editor a gestire un blueprint
+        // parziale.
+        const sanitized = sanitizeSiteBlueprint(data.app.config);
+        if (!sanitized) {
+          if (!cancelled) setError('Questa app non usa il motore Creator AI (Sito/PWA) e non può essere riaperta qui.');
+          return;
+        }
+
+        if (!cancelled) {
+          setSchema(sanitized);
+          setEditingAppId(data.app.id);
+          setEditingAppName(data.app.name || sanitized.businessConfig.name || sanitized.appName);
+        }
+      } catch (err) {
+        console.error('[creator] load existing app error:', err);
+        if (!cancelled) setError('Errore di connessione durante il caricamento dell\'app.');
+      } finally {
+        if (!cancelled) setIsLoadingExisting(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Brandizza la tua app (white label reseller, piano Business): impostato
   // una volta qui, applicato automaticamente a ogni pubblicazione da
@@ -181,14 +256,30 @@ export default function CreatorPage() {
             <span className="text-white">Creator</span> <span className="text-blue-400">AI</span>
           </h1>
         </div>
-        {schema && (
-          <button
-            onClick={() => { setSchema(null); setError(null); }}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
-          >
-            <RotateCcw size={14} /> Ricomincia
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {editingAppId && (
+            <span className="flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-300">
+              <Pencil size={11} /> Modifica: {editingAppName}
+            </span>
+          )}
+          {schema && (
+            <button
+              onClick={() => {
+                setSchema(null);
+                setError(null);
+                setEditingAppId(undefined);
+                setEditingAppName('');
+                // Rimuove ?appId= dall'URL: senza, un refresh o una nuova
+                // generazione dal wizard ripartirebbe da qui e ricaricherebbe
+                // la stessa app invece di restare sul wizard vuoto.
+                router.replace('/dashboard/creator');
+              }}
+              className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
+            >
+              <RotateCcw size={14} /> Ricomincia
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -199,7 +290,14 @@ export default function CreatorPage() {
       )}
 
       {/* Wizard o Editor */}
-      {!schema ? (
+      {isLoadingExisting ? (
+        <div className="flex flex-1 items-center justify-center py-20">
+          <div className="flex items-center gap-3 text-sm text-gray-400">
+            <Loader2 size={20} className="animate-spin" />
+            Caricamento dell&apos;app…
+          </div>
+        </div>
+      ) : !schema ? (
         <div className="flex flex-1 flex-col items-center gap-6 py-10">
           {/* Brandizza la tua app: qui perché è il default applicato a ogni
               app che questo tenant pubblica da questo momento in poi, non
@@ -269,7 +367,7 @@ export default function CreatorPage() {
         </div>
       ) : (
         <div className="h-[calc(100vh-180px)] min-h-[560px]">
-          <AppEditorView initialSchema={schema} onSchemaChange={setSchema} lang={locale} />
+          <AppEditorView initialSchema={schema} onSchemaChange={setSchema} appId={editingAppId} lang={locale} />
         </div>
       )}
     </div>
