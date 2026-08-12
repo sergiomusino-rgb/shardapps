@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { Trash2, Loader2, AlertCircle, ExternalLink, Clock } from 'lucide-react';
+import { Trash2, Loader2, AlertCircle, ExternalLink, Clock, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 interface App {
@@ -232,6 +233,25 @@ export default function ProjectsPage() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: '12px' }}>
+                  {/* Editor re-entry (FASE 3): solo per le app del motore
+                      Sito/PWA (site-schema.ts) — Comandi AI ha una propria
+                      dashboard di gestione dedicata, non passa da qui.
+                      Riapre /dashboard/creator con l'app già caricata (vedi
+                      rehydration del blueprint in quella pagina). */}
+                  {app.app_type !== 'comandi_ai' && (
+                    <Link
+                      href={`/dashboard/creator?appId=${app.id}`}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        padding: '10px 16px', borderRadius: '10px', border: '1px solid #334155',
+                        background: 'transparent', color: '#a5b4fc', fontSize: '14px', fontWeight: 600,
+                        cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <Sparkles size={16} />
+                      {t('projects_edit')}
+                    </Link>
+                  )}
                   <a
                     href={
                       // Per Comandi AI ignora sempre production_url: è una

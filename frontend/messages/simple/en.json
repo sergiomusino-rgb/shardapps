@@ -622,6 +622,7 @@
   "projects_created": "Created:",
   "projects_trial_ends": "Trial ends:",
   "projects_open": "Open",
+  "projects_edit": "Edit with Copilot",
   "projects_delete": "Delete app",
   "projects_delete_confirm": "Are you sure you want to delete",
   "projects_delete_permanent": "The app will be permanently deleted.",

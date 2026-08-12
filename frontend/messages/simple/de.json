@@ -616,6 +616,7 @@
   "projects_created": "Erstellt:",
   "projects_trial_ends": "Test endet:",
   "projects_open": "Öffnen",
+  "projects_edit": "Mit Copilot bearbeiten",
   "projects_delete": "App löschen",
   "projects_delete_confirm": "Sind Sie sicher, dass Sie löschen möchten",
   "projects_delete_permanent": "Die App wird dauerhaft gelöscht.",
