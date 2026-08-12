@@ -13,7 +13,7 @@ const {
   resolveClientIdentity,
   clientAuthMiddleware,
 } = require('../lib/client-auth');
-const { dispatchAppAction } = require('../lib/action-dispatcher');
+const { dispatchAppAction, logAction } = require('../lib/action-dispatcher');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -409,12 +409,31 @@ router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAut
 
     const currentState = record.data?.[stateField.id];
     const allowed = stateField.allowedTransitions;
+    // Attribution (stesso principio di trigger_webhook/send_notification sopra):
+    // chi ha innescato l'azione, per l'audit trail — mai nel payload esterno,
+    // qui non c'è comunque nessun payload esterno per change_state.
+    const actorRole = req.appUserRole;
+    const actorEmail = req.appUserEmail;
+
     // Nessuna allowedTransitions configurata = tutte le transizioni tra gli
     // `states` del campo sono ammesse (stessa convenzione di
     // resolveEntityStatesAndActions, frontend/src/lib/site-schema.ts). Stato
     // corrente assente/non riconosciuto: nessun vincolo da applicare, il
     // record non ha ancora un valore di stato valido da cui partire.
     if (allowed && currentState && allowed[currentState] && !allowed[currentState].includes(action.targetState)) {
+      // FASE 5 smoke test (Focus 8): prima le azioni change_state non
+      // passavano MAI da logAction (solo trigger_webhook/send_notification lo
+      // facevano, vedi action-dispatcher.js) — app_action_logs restava vuota
+      // per il tipo di azione più comune. Anche il tentativo rifiutato viene
+      // registrato (status 'failed'): un audit trail che tace sui tentativi
+      // non riusciti sarebbe forense-mente incompleto tanto quanto uno che
+      // tace del tutto.
+      await logAction(supabase, {
+        appId: req.appId, tenantId: req.tenantId, recordId, entity: table, action,
+        actorRole, actorEmail, status: 'failed',
+        payload: { fromState: currentState, targetState: action.targetState },
+        error: `Transizione non ammessa da "${currentState}" a "${action.targetState}"`,
+      });
       return res.status(409).json({ error: `Transizione non ammessa da "${currentState}" a "${action.targetState}"` });
     }
 
@@ -428,8 +447,26 @@ router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAut
 
     if (updateError) {
       console.error('POST client record action error:', updateError);
+      await logAction(supabase, {
+        appId: req.appId, tenantId: req.tenantId, recordId, entity: table, action,
+        actorRole, actorEmail, status: 'failed',
+        payload: { fromState: currentState, targetState: action.targetState },
+        error: updateError.message || 'Errore interno',
+      });
       return res.status(500).json({ error: 'Errore interno' });
     }
+
+    // status 'delivered': a differenza di trigger_webhook (dove 'dispatched'
+    // significa "inviato, esito non ancora noto"), un change_state è
+    // sincrono e o riesce del tutto o fallisce del tutto — 'delivered' è lo
+    // stato che rappresenta correttamente "applicato con successo" nel CHECK
+    // esistente della tabella (dispatched|delivered|failed), senza doverne
+    // aggiungere uno nuovo solo per questo tipo.
+    await logAction(supabase, {
+      appId: req.appId, tenantId: req.tenantId, recordId, entity: table, action,
+      actorRole, actorEmail, status: 'delivered',
+      payload: { fromState: currentState, targetState: action.targetState },
+    });
 
     res.json({ record: updated });
   } catch (err) {
