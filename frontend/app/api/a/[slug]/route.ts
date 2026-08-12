@@ -93,7 +93,7 @@ export async function POST(
     } catch {
       return NextResponse.json({ error: 'Body della richiesta non è JSON valido' }, { status: 400 });
     }
-    const { password } = body;
+    const { password, email } = body;
 
     if (!password) {
       return NextResponse.json({ error: 'Password richiesta' }, { status: 400 });
@@ -103,7 +103,9 @@ export async function POST(
     const response = await fetch(`${BACKEND_URL}/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      // email: facoltativa, richiesta dal backend solo per le app
+      // auth_mode='rbac' (Fase 3) — ignorata per le app legacy, invariate.
+      body: JSON.stringify({ password, email }),
     });
 
     const data = await response.json();

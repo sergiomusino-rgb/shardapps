@@ -50,12 +50,11 @@ function GeneratedAppRootPage() {
 // ─── Rendering pubblico del motore Sito/PWA (Creator v2) ───────────────────
 // Riusa SitePreview.tsx (lo stesso motore usato nell'editor AppEditorView):
 // una sola implementazione per l'anteprima live e per il sito reale, niente
-// logica di rendering duplicata. Le sezioni "list" (Menu/Catalogo) mostrano
-// ancora dati di esempio dallo schema: leggere i record reali di app_records
-// da una pagina pubblica richiederebbe un endpoint di lettura senza
-// autenticazione (oggi ogni lettura passa da clientAuthMiddleware, a
-// password) — una scelta di sicurezza/prodotto deliberata da fare a parte,
-// non decisa qui implicitamente.
+// logica di rendering duplicata. Le sezioni "list" (Menu/Catalogo) leggono i
+// record reali da GET /api/public/apps/[slug]/records (endpoint pubblico
+// read-only, senza autenticazione: solo entità dichiarate in
+// adminPanel.entities, rate-limitato) passando `slug` a SitePreview — vedi
+// LiveListSection in SitePreview.tsx.
 function PublicSiteRenderer({ schema, onRequestLogin }: { schema: SiteBlueprintJSON; onRequestLogin: () => void }) {
   const { slug } = useAppInfo();
   const [activePageSlug, setActivePageSlug] = useState(schema.pages[0]?.slug);
@@ -74,7 +73,7 @@ function PublicSiteRenderer({ schema, onRequestLogin }: { schema: SiteBlueprintJ
           <LogIn size={15} /> Area Riservata
         </button>
       </div>
-      <SitePreview schema={schema} activePageSlug={activePageSlug} onNavigate={setActivePageSlug} />
+      <SitePreview schema={schema} activePageSlug={activePageSlug} onNavigate={setActivePageSlug} slug={slug} />
     </div>
   );
 }
@@ -394,7 +393,10 @@ function LegacyLoginGate() {
     const loginRes = await fetch(`${backendUrl}/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      // email: facoltativa, richiesta dal backend solo per le app
+      // auth_mode='rbac' (Fase 3, più utenti/ruoli) — ignorata per le app
+      // legacy a password condivisa, comportamento invariato.
+      body: JSON.stringify({ password, email: email.trim() || undefined }),
     });
     const loginData = await loginRes.json().catch(() => ({}));
 
@@ -466,16 +468,20 @@ function LegacyLoginGate() {
          localStorage.setItem('zeusx_locale', appLang);
        }
        
-       // Salva sessione con appInfo completo (tutti i dati)
+       // Salva sessione con appInfo completo (tutti i dati). Fase 3: app
+       // auth_mode='rbac' — il backend restituisce role+authToken (token
+       // composito "email:password", vedi backend/routes/client-app.js).
+       // Assenti per le app legacy: password resta quella nuda come sempre.
        const sessionData = {
          slug,
-         password,
+         password: loginData.authToken || password,
          appInfo: {
            id: appData.id,
            slug,
            name: appInfoData?.name,
            config: combinedConfig,
          },
+         ...(loginData.role ? { mode: 'rbac' as const, role: loginData.role } : {}),
        };
        
        console.log('[Login] Saving session with appInfo:', sessionData.appInfo);

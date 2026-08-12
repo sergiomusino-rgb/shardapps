@@ -120,6 +120,61 @@ const SITE_SECTION_TYPES_DOC = `Ogni sezione di pagina DEVE avere uno di questi 
 - "cta": { type, title, subtitle?, buttonLabel, buttonHref? } — invito all'azione.
 - "text": { type, title?, body } — blocco di testo libero.`;
 
+// Relazioni 1:N tra entità di adminPanel.entities (es. un ordine collegato al
+// proprio cliente): documentate a parte dal resto dei tipi di campo perché,
+// a differenza di text/number/select, richiedono due metadati aggiuntivi
+// (targetEntity/displayField) e una regola di coerenza incrociata con le
+// ALTRE entità dello stesso schema — un errore qui produce un riferimento
+// rotto che sanitizeSiteBlueprint neutralizza server-side (degrada il campo
+// a testo libero, vedi resolveEntityRelations in site-schema.ts), ma è
+// comunque un errore che vale la pena evitare a monte con un esempio chiaro.
+const RELATION_FIELD_DOC = `Relazioni 1:N tra entità (facoltative — usale solo quando il dominio ha davvero due entità collegate, es. un ordine che appartiene a un cliente, una prenotazione che appartiene a un tavolo): un campo di adminPanel.entities[].fields può avere "type":"relation" per riferirsi a un record di un'ALTRA entità dello stesso adminPanel.entities. In quel caso il campo DEVE avere anche:
+- "targetEntity": il "name" (snake_case) di un'altra entità che stai definendo TU STESSO in questo stesso JSON — mai il nome di un'entità che non esiste nello schema.
+- "displayField": l'"id" di un campo REALE di quell'entità target, scelto perché la rappresenta leggibilmente in un menu a tendina (es. "ragione_sociale", "nome", "titolo") — mai "id".
+Esempio concreto — entità "ordini" con un campo che collega ogni ordine al proprio cliente, in uno schema che definisce anche un'entità "clienti" con un campo "ragione_sociale":
+{
+  "name": "ordini", "label": "Ordine", "labelPlural": "Ordini", "icon": "🧾",
+  "fields": [
+    {"id": "id", "type": "id", "label": "ID"},
+    {"id": "numero_ordine", "type": "text", "label": "Numero Ordine"},
+    {"id": "cliente_id", "type": "relation", "label": "Cliente", "targetEntity": "clienti", "displayField": "ragione_sociale"},
+    {"id": "totale", "type": "number", "label": "Totale"}
+  ]
+}
+Non inventare un'entità solo per avere qualcosa a cui collegare una relazione: se il dominio del prompt non ha davvero due (o più) entità naturalmente collegate, usa campi normali (text/select/number) invece di una relazione fittizia.`;
+
+// Macchine a stati + azioni + ruoli: per entità "operative" (un ordine da
+// preparare, un intervento da chiudere, un ticket da gestire), non solo
+// anagrafiche/cataloghi. Come per le relazioni sopra, un errore qui non
+// rompe nulla (resolveEntityStatesAndActions in site-schema.ts degrada/
+// scarta ciò che non torna), ma un esempio chiaro evita che il modello
+// inventi stati o azioni che poi il server neutralizza silenziosamente.
+const WORKFLOW_DOC = `Macchine a stati e azioni (facoltative — usale solo per entità con un vero flusso di lavoro: ordini da preparare/consegnare, interventi da completare, ticket da chiudere; NON per anagrafiche/cataloghi come clienti o prodotti, che non hanno stati):
+- Un campo può avere "type":"state" per rappresentare lo stato di avanzamento di un record. In quel caso DEVE avere anche:
+  - "states": elenco di stringhe, il vocabolario COMPLETO degli stati possibili (es. ["bozza", "in_lavorazione", "completato", "annullato"]).
+  - "allowedTransitions" (facoltativo ma consigliato): mappa {stato_di_partenza: [stati_di_arrivo_ammessi]} — SOLO stati già elencati in "states". Se omesso, tutte le transizioni tra gli stati sono ammesse (nessun vincolo).
+- L'entità che ha un campo "type":"state" può avere anche un array "actions" (facoltativo) con pulsanti eseguibili su ogni record. Ogni azione:
+  - "id": identificativo snake_case.
+  - "label": etichetta del pulsante (nella lingua richiesta).
+  - "type": "change_state" (cambia lo stato del record — l'unico tipo con effetto reale oggi), "trigger_webhook" o "send_notification" (accettati a schema, ma la loro esecuzione non è ancora implementata: usali solo se il prompt li richiede esplicitamente, altrimenti preferisci "change_state").
+  - "targetState" (SOLO per "change_state"): uno degli stati elencati in "states" del campo di stato dell'entità.
+  - "requiredRole" (facoltativo): "admin" oppure "operator" — ruolo minimo richiesto per eseguire l'azione. Omettilo se chiunque con accesso in scrittura (operator o admin) deve poterla eseguire.
+  - "webhookUrl" (facoltativo, SOLO per "trigger_webhook"): un URL http/https valido a cui inviare una notifica quando l'azione viene eseguita. Valorizzalo SOLO se il prompt indica esplicitamente un URL reale — non inventare un URL plausibile.
+Esempio concreto — entità "ordini" con stato e due azioni di cambio stato:
+{
+  "name": "ordini", "label": "Ordine", "labelPlural": "Ordini", "icon": "🧾",
+  "fields": [
+    {"id": "id", "type": "id", "label": "ID"},
+    {"id": "numero_ordine", "type": "text", "label": "Numero Ordine"},
+    {"id": "stato", "type": "state", "label": "Stato", "states": ["nuovo", "in_preparazione", "pronto", "consegnato", "annullato"], "allowedTransitions": {"nuovo": ["in_preparazione", "annullato"], "in_preparazione": ["pronto", "annullato"], "pronto": ["consegnato"]}}
+  ],
+  "actions": [
+    {"id": "avvia_preparazione", "label": "Avvia preparazione", "type": "change_state", "targetState": "in_preparazione"},
+    {"id": "annulla_ordine", "label": "Annulla ordine", "type": "change_state", "targetState": "annullato", "requiredRole": "admin"}
+  ]
+}
+Autenticazione multi-utente (authConfig, facoltativo, top-level nello schema — NON dentro businessConfig): imposta "enabled":true SOLO se il prompt richiede esplicitamente più operatori/ruoli diversi (es. "i miei tecnici devono vedere solo i propri interventi", "voglio un ruolo amministratore e uno operatore"). Il default ("enabled":false, o authConfig del tutto assente) è corretto per la stragrande maggioranza dei casi (un solo titolare, nessun bisogno di ruoli) — non abilitarlo "per sicurezza" o "per completezza" se il prompt non lo chiede. Quando abilitato: "supportedRoles" è un sottoinsieme di ["admin","operator","viewer"] (sempre includere "admin"), "defaultRole" è "operator" o "viewer" (il ruolo assegnato a un nuovo utente che non sia il titolare).`;
+
 // Nomi estesi delle lingue supportate (vedi SUPPORTED_LOCALES in
 // LanguageContext.tsx): i modelli seguono un vincolo di lingua molto più
 // affidabilmente quando espresso per nome che per solo codice ISO.
@@ -196,15 +251,22 @@ Rispondi SOLO con un JSON valido con ESATTAMENTE questa struttura (nessun testo 
     {"type": "map", "label": "Mappa", "value": ""}
   ],
   "ui": { "primaryColor": "${designSystem.designTokens?.colors?.primary || '#6366f1'}" }
+  /* "authConfig" (facoltativo, solo se il prompt richiede più ruoli/operatori — vedi paragrafo dedicato sotto): { "enabled": true, "supportedRoles": ["admin","operator"], "defaultRole": "operator" } */
 }
 
 ${SITE_SECTION_TYPES_DOC}
+
+${RELATION_FIELD_DOC}
+
+${WORKFLOW_DOC}
 
 Regole tassative:
 - Ogni pagina deve avere almeno una sezione.
 - I campi di actionButtons.value per "call"/"whatsapp" possono restare vuoti: verranno risolti a runtime da businessConfig.phone/whatsapp. Valorizzali solo se il prompt indica un numero specifico diverso.
 - Le entità in adminPanel.entities devono coprire TUTTE le "entity" referenziate dalle sezioni "list"/"form" di ogni pagina: nessun riferimento a un'entità inesistente.
 - Ogni campo di un'entità con un valore economico (prezzo, tariffa, costo) deve avere "type":"number".
+- Se usi un campo "type":"relation", "targetEntity" deve corrispondere ESATTAMENTE al "name" di un'altra entità presente in questo stesso adminPanel.entities, e "displayField" a un "id" di campo REALE di quell'entità (mai "id"). Vedi il paragrafo sulle relazioni sopra per il formato completo.
+- Se usi un campo "type":"state" con "actions" di tipo "change_state", "targetState" deve corrispondere ESATTAMENTE a uno degli "states" dello stesso campo. Vedi il paragrafo su macchine a stati/azioni sopra per il formato completo.
 - TUTTI i campi di businessConfig sono OBBLIGATORI e NON possono restare stringhe vuote (eccetto logoUrl, che può restare "" in assenza di un logo reale): name, tagline, description, address, phone, whatsapp, email, openingHours (almeno 2 righe). Estraili dal prompt dell'utente quando presenti; per ogni campo non specificato esplicitamente, inventa un valore plausibile e coerente con settore/città/nome menzionati nel prompt (es. un indirizzo credibile per quella città, orari tipici del settore, un'email nella forma info@<dominio-plausibile-da-appName>.it) — mai lasciare un placeholder letterale tipo "N/A" o il campo vuoto.
 - VINCOLO DI LINGUA TASSATIVO: ogni testo generato — appName, description, TUTTI i campi di businessConfig (tagline, description, address, openingHours.day/hours inclusi), label/labelPlural/icon-caption delle entità in adminPanel.entities, label dei fields, titoli/sottotitoli/body/label di OGNI sezione di pagina (hero, about, gallery, list, form, contact, reviews, cta, text), label degli actionButtons, i dati di esempio (recensioni, gallery caption) — deve essere scritto SOLO in ${langName} (${lang}), senza mescolare altre lingue nemmeno parzialmente. Il campo "businessConfig.language" deve valere esattamente "${lang}". Fanno eccezione solo identificatori tecnici non testuali: "name"/"id" delle entità e dei campi (snake_case), "slug" delle pagine, "type" dei campi/sezioni, valori URL/telefono/email.
 - Non aggiungere testo prima o dopo il JSON.`;

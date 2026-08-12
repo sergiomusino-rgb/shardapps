@@ -31,8 +31,14 @@ export function StatusBadge({ value }: { value: string }) {
 // usato da DynamicDataTable, CustomTableRenderer e DynamicLayoutRenderer così
 // da avere lo stesso trattamento visivo ovunque (tabelle blueprint, tabelle
 // create con l'AI Schema Updater, layout ricchi di settore).
-export function renderCellValue(record: Record<string, unknown>, fieldName: string, type: string): React.ReactNode {
+// `relationLabel`: per un campo di relazione (field.targetTable impostato),
+// il chiamante ha già risolto l'id salvato nel record nell'etichetta
+// leggibile del record correlato (vedi DynamicDataTable, che ha accesso alla
+// mappa relationRecords) — se presente viene mostrata al posto del valore
+// grezzo (che altrimenti sarebbe l'id del record target, es. un UUID).
+export function renderCellValue(record: Record<string, unknown>, fieldName: string, type: string, relationLabel?: string): React.ReactNode {
   const val = record[fieldName];
+  if (relationLabel !== undefined) return relationLabel || '';
   if (val == null || val === '') return '';
 
   if (type === 'checkbox') {

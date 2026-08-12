@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   LayoutDashboard, Settings, LogOut, Plus, Settings2,
   MessageSquare, Mail, MessageCircle, Upload, Download, FileText,
-  FileSpreadsheet, File as FileIcon, Receipt, ExternalLink,
+  FileSpreadsheet, File as FileIcon, Receipt, ExternalLink, Users,
 } from 'lucide-react';
 import { Sheet } from '@/components/ui/sheet';
 import { sortTablesForSidebar, type TableDef } from './table-definitions';
@@ -20,6 +20,10 @@ interface ViewerSidebarProps {
   onEditTable: (table: TableDef) => void;
   onCreateTable: () => void;
   onOpenSettings: () => void;
+  /** Fase 4: "Gestione Team" — voce visibile solo se il chiamante la passa
+   * (page.tsx la mostra solo per admin di un'app auth_mode='rbac'). Assente
+   * = comportamento invariato, nessuna voce in più in sidebar. */
+  onOpenUserManagement?: () => void;
   onLogout: () => void;
   logoUrl: string;
   companyName: string;
@@ -35,7 +39,7 @@ interface ViewerSidebarProps {
 
 function SidebarContent({
   tables, customTables, activeView, onNavigate, datiAziendaliTable,
-  onEditTable, onCreateTable, onOpenSettings, onLogout,
+  onEditTable, onCreateTable, onOpenSettings, onOpenUserManagement, onLogout,
   logoUrl, companyName, footerLogoUrl, footerLabel, slug,
 }: Omit<ViewerSidebarProps, 'isMobile' | 'open' | 'onClose'>) {
   const [comunicazioniOpen, setComunicazioniOpen] = useState(false);
@@ -131,6 +135,9 @@ function SidebarContent({
           active={false}
           onClick={() => { window.location.href = `/a/${slug}/fatture`; }}
         />
+        {onOpenUserManagement && (
+          <NavItem icon={<Users size={18} />} label="Gestione Team" active={false} onClick={onOpenUserManagement} />
+        )}
         <NavItem icon={<Settings size={18} />} label="Impostazioni" active={false} onClick={onOpenSettings} />
         <NavItem
           icon={<ExternalLink size={18} />}
@@ -169,6 +176,7 @@ export default function ViewerSidebar({ isMobile, open, onClose, ...content }: V
           {...content}
           onNavigate={(view) => { content.onNavigate(view); onClose(); }}
           onOpenSettings={() => { content.onOpenSettings(); onClose(); }}
+          onOpenUserManagement={content.onOpenUserManagement ? () => { content.onOpenUserManagement!(); onClose(); } : undefined}
         />
       </Sheet>
     );

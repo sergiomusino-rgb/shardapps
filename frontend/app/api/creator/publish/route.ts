@@ -26,6 +26,7 @@ import {
   generateCreatorSlug,
   getAppBaseUrl,
   getTenantWhiteLabel,
+  CREATOR_ADMIN_USER_ID,
 } from '@/src/lib/creator-server';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -128,6 +129,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── Prima pubblicazione: consuma uno slot, come /api/creator/create ───────
+    // Precheck rapido (SELECT + confronto in memoria, NON atomico): serve solo
+    // a dare un errore immediato in UI senza spendere la RPC quando il tenant
+    // ha già visibilmente esaurito gli slot. Non è il cancello reale — vedi
+    // consumo atomico subito sotto.
     const { allowed, reason, tenant } = await canCreateApp(supabase, tenantId, user.id);
     if (!allowed) {
       if (reason === 'SlotsExhausted') {
@@ -142,10 +147,73 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: reason || 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
     }
 
+    // Consumo atomico dello slot: stesso identico meccanismo/RPC di
+    // /api/creator/create (increment_tenant_app_count, migration
+    // 20260808000005_atomic_tenant_slot_increment.sql). Prima di questo fix
+    // questa route consumava lo slot con un UPDATE non atomico DOPO l'insert
+    // dell'app (nessun cancello reale, solo il precheck sopra) — la stessa
+    // race condition tra pubblicazioni concorrenti dello stesso tenant che
+    // era già stata chiusa in create/route.ts ma non qui (vedi commento in
+    // 20260809000002_fix_increment_tenant_app_count_ambiguous_column.sql, che
+    // la segnalava esplicitamente come gap non ancora risolto in questa
+    // route). Se la RPC non ottiene una riga, lo slot non è più disponibile
+    // (consumato nel frattempo da un'altra richiesta) e l'app NON viene
+    // creata: nessuna scrittura su `apps` avviene prima di questo controllo.
+    let slotReserved = false;
+    if (user.id !== CREATOR_ADMIN_USER_ID) {
+      const { data: slotResult, error: slotError } = await supabase.rpc('increment_tenant_app_count' as any, {
+        p_tenant_id: tenantId,
+      }) as { data: unknown[] | null; error: any };
+
+      if (slotError && slotError.code !== 'PGRST202' && slotError.code !== '42883') {
+        // Errore reale (non "funzione non ancora deployata"): blocca la pubblicazione.
+        console.error('[creator/publish] increment_tenant_app_count error:', slotError);
+        return NextResponse.json({ success: false, error: 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
+      }
+
+      if (slotError) {
+        // PGRST202/42883 = la migration 20260808000005 non è ancora applicata
+        // al DB remoto: fallback al vecchio comportamento non atomico invece
+        // di rompere la pubblicazione per tutti finché non viene deployata
+        // (stesso fallback di create/route.ts).
+        console.warn('[creator/publish] increment_tenant_app_count non disponibile, fallback non atomico:', slotError.message);
+        if (!tenant || (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1)) {
+          return NextResponse.json({
+            success: false,
+            error: 'SlotsExhausted',
+            message: 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.',
+            redirectTo: '/pricing',
+            code: 'SLOTS_EXHAUSTED',
+          }, { status: 403 });
+        }
+        await supabase
+          .from('tenants')
+          .update({ total_apps_created: (tenant.total_apps_created || 0) + 1, updated_at: new Date().toISOString() })
+          .eq('id', tenantId);
+      } else if (!slotResult || slotResult.length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: 'SlotsExhausted',
+          message: 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.',
+          redirectTo: '/pricing',
+          code: 'SLOTS_EXHAUSTED',
+        }, { status: 403 });
+      } else {
+        slotReserved = true;
+      }
+    }
+
     const slug = generateCreatorSlug(appName, blueprint.sector);
     const clientPassword = generateClientPassword();
     const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;
     const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Fase 3 — auth multi-utente: solo se lo schema lo richiede esplicitamente
+    // (authConfig.enabled, vedi site-schema.ts). Default assente/false ->
+    // 'legacy', esattamente come prima di questo campo: nessuna app pubblicata
+    // finora ha mai avuto authConfig, quindi questo ramo è puramente additivo,
+    // non cambia comportamento per nessuno schema già esistente.
+    const authMode: 'legacy' | 'rbac' = blueprint.authConfig?.enabled ? 'rbac' : 'legacy';
 
     // White label reseller: prima pubblicazione, nessun branding esistente da
     // preservare, applica direttamente il default del tenant se presente.
@@ -167,7 +235,7 @@ export async function POST(request: NextRequest) {
         client_active: true,
         client_email: blueprint.businessConfig.email || tenantEmail,
         client_password: clientPassword, // fallback legacy, vedi nota in testa al file
-        auth_mode: 'legacy',
+        auth_mode: authMode,
         client_price: ZEUSX_MINIMUM_FEE_EUR,
         client_subscription_price: ZEUSX_MINIMUM_FEE_EUR,
       })
@@ -176,26 +244,81 @@ export async function POST(request: NextRequest) {
 
     if (appError || !app) {
       console.error('[creator/publish] insert error:', appError);
+      // Lo slot è già stato consumato atomicamente sopra: se l'insert
+      // dell'app fallisce dopo averlo riservato, lo rilasciamo per non
+      // "bruciare" uno slot pagato senza che sia mai stata creata un'app.
+      // Best-effort (fetch+update, non un'unica operazione atomica): questo è
+      // il ramo di errore di un insert che normalmente non fallisce, non il
+      // cancello principale — quello resta la RPC sopra. Un fallimento qui
+      // resta solo loggato, non deve mascherare l'errore reale già restituito.
+      if (slotReserved) {
+        try {
+          const { data: freshTenant } = await supabase
+            .from('tenants')
+            .select('total_apps_created')
+            .eq('id', tenantId)
+            .single();
+          if (freshTenant) {
+            await supabase
+              .from('tenants')
+              .update({ total_apps_created: Math.max(0, (freshTenant.total_apps_created || 0) - 1), updated_at: new Date().toISOString() })
+              .eq('id', tenantId);
+          }
+        } catch (rollbackErr) {
+          console.error('[creator/publish] slot rollback error:', rollbackErr);
+        }
+      }
       return NextResponse.json({ success: false, error: 'Errore pubblicazione: ' + (appError?.message || 'sconosciuto'), code: 'DB_ERROR' }, { status: 500 });
     }
 
-    // Credenziali nella tabella dedicata, mai esposta alla Data API pubblica
-    // (vedi 20260808000004_app_credentials_table.sql).
-    const { error: credError } = await supabase
-      .from('app_credentials')
-      .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
-    if (credError) {
-      console.error('[creator/publish] app_credentials upsert error:', credError);
-      // Non blocca la pubblicazione: apps.client_password resta come fallback
-      // funzionante (letto da getClientCredentials lato backend/route login).
+    const clientEmail = blueprint.businessConfig.email || tenantEmail;
+
+    if (authMode === 'rbac') {
+      // App multi-utente: il titolare diventa il primo utente 'admin' in
+      // app_rbac_users (migration 20260812000000) — tabella dedicata,
+      // indipendente da app_credentials (che resta il modello "1 password
+      // condivisa per app" delle app legacy, vedi nota lì per il perché non
+      // sono la stessa tabella). Altri utenti (operator/viewer) si
+      // aggiungono in seguito da un'interfaccia di gestione utenti — non
+      // ancora costruita in questa fase, vedi riepilogo.
+      // Cast 'as any' (stesso pattern già usato altrove nel progetto, es.
+      // src/lib/AuthContext.tsx per app_users): app_rbac_users non è ancora
+      // nei tipi generati da Supabase (types/database.ts), richiede di
+      // rigenerarli dopo l'applicazione della migration 20260812000000 al DB
+      // remoto — nessun impatto a runtime, solo sul type-checking.
+      const { error: rbacError } = await supabase
+        .from('app_rbac_users' as any)
+        .insert({
+          app_id: app.id,
+          tenant_id: tenantId,
+          client_email: clientEmail,
+          client_password: clientPassword,
+          role: 'admin',
+        } as any);
+      if (rbacError) {
+        console.error('[creator/publish] app_rbac_users insert error:', rbacError);
+        // Non blocca la pubblicazione (stessa scelta del ramo legacy sotto):
+        // l'app è comunque creata, ma senza un utente admin il titolare non
+        // potrebbe accedervi — a differenza del ramo legacy non c'è un
+        // fallback equivalente da cui il login possa comunque funzionare,
+        // quindi qui l'errore va segnalato più esplicitamente nel log.
+      }
+    } else {
+      // Credenziali nella tabella dedicata, mai esposta alla Data API
+      // pubblica (vedi 20260808000004_app_credentials_table.sql).
+      const { error: credError } = await supabase
+        .from('app_credentials')
+        .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
+      if (credError) {
+        console.error('[creator/publish] app_credentials upsert error:', credError);
+        // Non blocca la pubblicazione: apps.client_password resta come fallback
+        // funzionante (letto da getClientCredentials lato backend/route login).
+      }
     }
 
-    // Incrementa il contatore permanente di app create, stesso meccanismo di
-    // /api/creator/create e frontend/app/api/apps/route.ts.
-    await supabase
-      .from('tenants')
-      .update({ total_apps_created: (tenant?.total_apps_created || 0) + 1, updated_at: new Date().toISOString() })
-      .eq('id', tenantId);
+    // Il contatore slot è già stato incrementato atomicamente sopra
+    // (increment_tenant_app_count), prima dell'insert: nessun secondo
+    // incremento da fare qui (evita di contare due volte la stessa app).
 
     return NextResponse.json({
       success: true,
@@ -203,8 +326,12 @@ export async function POST(request: NextRequest) {
         appId: app.id,
         slug: app.slug,
         url: `${getAppBaseUrl()}/a/${app.slug}`,
-        clientEmail: blueprint.businessConfig.email || tenantEmail,
+        clientEmail,
         clientPassword,
+        // Presente solo per app rbac: 'admin' è sempre il ruolo del titolare
+        // seedato qui sopra. Assente per le app legacy, comportamento
+        // invariato per chi legge questa risposta senza aspettarselo.
+        ...(authMode === 'rbac' ? { role: 'admin' as const } : {}),
         updated: false,
       },
     });

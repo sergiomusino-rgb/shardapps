@@ -32,12 +32,55 @@ function normalizeFieldType(type: string): string {
     select: 'select',
     multiselect: 'multiselect',
     relation: 'relation',
+    state: 'state',
     currency: 'currency',
     file: 'file',
     image: 'image',
   };
   return mapping[type] || 'text';
 }
+
+// ─── type:'state' (macchina a stati) ────────────────────────────────────────
+// states: vocabolario chiuso dei valori ammessi per il campo (es. "bozza",
+// "in_lavorazione", "completato"). allowedTransitions: da quale stato si può
+// passare a quali altri — accetta sia una mappa {stato: [stati...]} (formato
+// canonico, usato internamente) sia un elenco di coppie [from,to] o
+// {from,to} (più naturale da generare per un LLM in certi casi), normalizzato
+// qui nella stessa mappa. Nessuna validazione incrociata qui (un valore in
+// allowedTransitions che non corrisponde a nessuno stato in `states`): quella
+// richiede di conoscere anche `states` dello stesso campo, fatta a valle in
+// resolveEntityStatesAndActions (site-schema.ts), non nello schema Zod di un
+// singolo campo isolato.
+const StatesSchema = z
+  .union([
+    z.array(z.union([z.string(), z.number()])).transform((arr) => arr.map((s) => String(s)).filter(Boolean)),
+    z.null(),
+    z.undefined(),
+  ])
+  .optional()
+  .transform((v) => (Array.isArray(v) && v.length > 0 ? v : undefined));
+
+const AllowedTransitionsSchema = z
+  .union([
+    z.record(z.string(), z.array(z.union([z.string(), z.number()])).transform((arr) => arr.map((s) => String(s)))),
+    z.array(z.union([
+      z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])]),
+      z.object({ from: z.union([z.string(), z.number()]), to: z.union([z.string(), z.number()]) }),
+    ])).transform((pairs) => {
+      const map: Record<string, string[]> = {};
+      for (const p of pairs) {
+        const [from, to] = Array.isArray(p) ? [String(p[0]), String(p[1])] : [String(p.from), String(p.to)];
+        if (!from || !to) continue;
+        if (!map[from]) map[from] = [];
+        if (!map[from].includes(to)) map[from].push(to);
+      }
+      return map;
+    }),
+    z.null(),
+    z.undefined(),
+  ])
+  .optional()
+  .transform((v) => (v && typeof v === 'object' && Object.keys(v).length > 0 ? v : undefined));
 
 // L'AI a volte etichetta un campo prezzo come "text" nonostante il prompt
 // richieda esplicitamente "number" — questo fa sì che renderCellValue non lo
@@ -80,6 +123,17 @@ export const FieldSchema = z.object({
   label: z.union([z.string(), z.number()]).transform((v) => String(v)).default('Campo'),
   required: z.union([z.boolean(), z.string(), z.number()]).transform((v) => v === true || v === 'true' || v === 1).default(false),
   options: FieldOptionsSchema,
+  // Relazione (type:'relation'/'select' con target): nome della tabella/entità
+  // referenziata e campo da mostrare nel lookup. Due coppie di nomi per lo
+  // stesso concetto, tenute sempre sincronizzate dal transform sotto:
+  // - target/targetLabel: nomi storici, già letti da toViewerTables
+  //   (creator-server.ts) e dal motore v1 (SYSTEM_TABLES, table-definitions.ts).
+  // - targetEntity/displayField: nomi "ufficiali" per il motore Sito/PWA
+  //   (site-schema.ts), quelli che il prompt AI istruisce a produrre (vedi
+  //   app/api/creator/generate/route.ts) — più leggibili nel JSON generato.
+  // Qualunque coppia arrivi dal modello o da uno schema più vecchio già
+  // salvato, l'altra viene popolata di conseguenza: nessun consumer esistente
+  // deve sapere quale delle due sia stata effettivamente scritta.
   target: z
     .union([z.string(), z.null(), z.undefined()])
     .optional()
@@ -88,7 +142,28 @@ export const FieldSchema = z.object({
     .union([z.string(), z.null(), z.undefined()])
     .optional()
     .transform((v) => v || undefined),
-}).transform(withPriceFieldOverride);
+  targetEntity: z
+    .union([z.string(), z.null(), z.undefined()])
+    .optional()
+    .transform((v) => v || undefined),
+  displayField: z
+    .union([z.string(), z.null(), z.undefined()])
+    .optional()
+    .transform((v) => v || undefined),
+  // Macchina a stati (type:'state'): vedi StatesSchema/AllowedTransitionsSchema sopra.
+  states: StatesSchema,
+  allowedTransitions: AllowedTransitionsSchema,
+}).transform((f) => {
+  const targetEntity = f.targetEntity || f.target;
+  const displayField = f.displayField || f.targetLabel;
+  return withPriceFieldOverride({
+    ...f,
+    target: targetEntity,
+    targetEntity,
+    targetLabel: displayField,
+    displayField,
+  });
+});
 
 export const TableSchema = z.object({
   name: z
@@ -185,7 +260,12 @@ export type BlueprintJSON = z.infer<typeof BlueprintJSONSchema>;
 // della propria attività. L'AI di settore genera solo le tabelle di dominio
 // (pazienti, ordini, ...); queste due vengono iniettate sempre in coda.
 function coreField(f: { id: string; type: string; label: string; required?: boolean; options?: string[] }): Field {
-  return { required: false, options: [], target: undefined, targetLabel: undefined, ...f };
+  return {
+    required: false, options: [],
+    target: undefined, targetLabel: undefined, targetEntity: undefined, displayField: undefined,
+    states: undefined, allowedTransitions: undefined,
+    ...f,
+  };
 }
 
 const CORE_TABLE_DATI_AZIENDALI: Table = {
@@ -256,14 +336,30 @@ function safeNormalizeFieldType(type: unknown): string {
 }
 
 function normalizeField(raw: any): Field {
+  const targetEntity = raw?.targetEntity || raw?.target || undefined;
+  const displayField = raw?.displayField || raw?.targetLabel || undefined;
+  const states = Array.isArray(raw?.states) && raw.states.length > 0
+    ? raw.states.map((s: unknown) => String(s)).filter(Boolean)
+    : undefined;
   return withPriceFieldOverride({
     id: safeNormalizeId(raw?.id ?? raw?.name ?? raw?.key, 'campo'),
     type: safeNormalizeFieldType(raw?.type),
     label: safeString(raw?.label ?? raw?.title ?? raw?.name, 'Campo'),
     required: raw?.required === true || raw?.required === 'true' || raw?.required === 1,
     options: normalizeOptions(raw?.options),
-    target: raw?.target || undefined,
-    targetLabel: raw?.targetLabel || undefined,
+    target: targetEntity,
+    targetLabel: displayField,
+    targetEntity,
+    displayField,
+    states,
+    // allowedTransitions manuale non normalizzato qui (fallback usato solo
+    // quando l'intero BlueprintJSON non supera nemmeno il parse Zod): un
+    // campo 'state' recuperato da questo percorso resta senza transizioni
+    // configurate piuttosto che tentare di interpretare una forma libera non
+    // validata — resolveEntityStatesAndActions (site-schema.ts) tratta
+    // "nessuna allowedTransitions" come "tutte le transizioni tra i propri
+    // `states` sono ammesse", un fallback permissivo ma mai rotto.
+    allowedTransitions: undefined,
   });
 }
 

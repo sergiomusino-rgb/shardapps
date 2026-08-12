@@ -23,19 +23,27 @@ interface DynamicRecordModalProps {
   onClose: () => void;
   saving: boolean;
   colors: unknown;
-  /** Lista di record clienti per popolare select relazionate */
-  clientiRecords?: Array<{ id: string; ragione_sociale?: string; [key: string]: unknown }>;
-  /** Lista di record prodotti per popolare select relazionate */
-  prodottiRecords?: Array<{ id: string; nome_prodotto?: string; [key: string]: unknown }>;
-  /** Lista di record ordini per popolare select relazionate */
-  ordiniRecords?: Array<{ id: string; numero_ordine?: string; [key: string]: unknown }>;
+  /**
+   * Record disponibili per popolare le select di relazione (field.targetTable),
+   * chiave = nome tabella target. Generico su qualunque entità collegata —
+   * non più 3 liste fisse per clienti/prodotti/ordini (le tabelle demo del
+   * motore v1): copre anche le entità relazionate generate da CreatorAI
+   * (adminPanel.entities, type:'relation', vedi site-schema.ts).
+   */
+  relationRecords?: Record<string, Array<{ id: string; [key: string]: unknown }>>;
+  /** Fase 4: true per il ruolo 'viewer' — disabilita ogni campo e nasconde
+   * "Salva". Difesa in profondità: i punti d'ingresso che aprono questa
+   * modale (Nuovo/Modifica) sono già nascosti per 'viewer' in
+   * DynamicDataTable/RecordCardGrid/DynamicLayoutRenderer/Dashboard, questa
+   * è la rete di sicurezza per se la modale venisse comunque aperta. */
+  readOnly?: boolean;
 }
 
-const SELECT_CLASSES = 'flex h-10 w-full appearance-none rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3.5 pr-9 py-2 text-sm text-tenant-text outline-none transition-colors focus:border-tenant-primary';
+const SELECT_CLASSES = 'flex h-10 w-full appearance-none rounded-xl border border-tenant-input-border bg-tenant-input-bg px-3.5 pr-9 py-2 text-sm text-tenant-text outline-none transition-colors focus:border-tenant-primary disabled:cursor-not-allowed disabled:opacity-60';
 
 export default function DynamicRecordModal({
   table, record, onSave, onClose, saving,
-  clientiRecords = [], prodottiRecords = [], ordiniRecords = [],
+  relationRecords = {}, readOnly = false,
 }: DynamicRecordModalProps) {
   const isEdit = record !== null;
 
@@ -114,17 +122,17 @@ export default function DynamicRecordModal({
     onSave(payload);
   };
 
-  // Helper per ottenere i record di una tabella target
-  const getTargetRecords = (targetTable?: string): Array<{ id: string; label: string }> => {
-    let records: Array<Record<string, unknown>> = [];
-    if (targetTable === 'clienti') records = clientiRecords;
-    else if (targetTable === 'prodotti') records = prodottiRecords;
-    else if (targetTable === 'ordini') records = ordiniRecords;
-    else return [];
-
+  // Helper per ottenere i record di una tabella target: generico su
+  // qualunque targetTable presente in relationRecords, con displayField
+  // esplicito (field.targetLabel) invece di un ternario hardcoded sui 3 nomi
+  // delle tabelle demo — funziona anche per un'entità relazionata qualunque
+  // generata da CreatorAI.
+  const getTargetRecords = (targetTable?: string, displayField?: string): Array<{ id: string; label: string }> => {
+    if (!targetTable) return [];
+    const records = relationRecords[targetTable] || [];
     return records.map((r) => ({
       id: String(r.id),
-      label: String(r[targetTable === 'clienti' ? 'ragione_sociale' : targetTable === 'prodotti' ? 'nome_prodotto' : 'numero_ordine'] ?? ''),
+      label: String((displayField ? r[displayField] : undefined) ?? r.id ?? ''),
     }));
   };
 
@@ -152,9 +160,10 @@ export default function DynamicRecordModal({
                       value={String(formData[fn] ?? '')}
                       onChange={(e) => handleChange(fn, e.target.value)}
                       className={SELECT_CLASSES}
+                      disabled={readOnly}
                     >
                       <option value="">Seleziona {field.targetLabel || field.label}...</option>
-                      {getTargetRecords(field.targetTable).map((r) => (
+                      {getTargetRecords(field.targetTable, field.targetLabel).map((r) => (
                         <option key={r.id} value={r.id}>{r.label}</option>
                       ))}
                     </select>
@@ -165,6 +174,7 @@ export default function DynamicRecordModal({
                     value={String(formData[fn] ?? '')}
                     onChange={(e) => handleChange(fn, e.target.value)}
                     rows={3}
+                    disabled={readOnly}
                   />
                 ) : field.type === 'select' ? (
                   <div className="relative">
@@ -172,6 +182,7 @@ export default function DynamicRecordModal({
                       value={String(formData[fn] ?? '')}
                       onChange={(e) => handleChange(fn, e.target.value)}
                       className={SELECT_CLASSES}
+                      disabled={readOnly}
                     >
                       <option value="">Seleziona...</option>
                       {(field.options || []).map((opt) => (
@@ -192,6 +203,7 @@ export default function DynamicRecordModal({
                       checked={Boolean(formData[fn])}
                       onChange={(e) => handleChange(fn, e.target.checked)}
                       className="h-[18px] w-[18px] accent-tenant-primary"
+                      disabled={readOnly}
                     />
                     <span className="text-sm text-tenant-text">
                       {formData[fn] ? 'Attivo' : 'Non attivo'}
@@ -203,18 +215,21 @@ export default function DynamicRecordModal({
                     step="0.01"
                     value={String(formData[fn] ?? '')}
                     onChange={(e) => handleChange(fn, e.target.value)}
+                    disabled={readOnly}
                   />
                 ) : field.type === 'date' ? (
                   <Input
                     type="date"
                     value={String(formData[fn] ?? '')}
                     onChange={(e) => handleChange(fn, e.target.value)}
+                    disabled={readOnly}
                   />
                 ) : (
                   <Input
                     type={field.type === 'email' ? 'email' : field.type === 'tel' ? 'tel' : 'text'}
                     value={String(formData[fn] ?? '')}
                     onChange={(e) => handleChange(fn, e.target.value)}
+                    disabled={readOnly}
                   />
                 )}
               </div>
@@ -245,45 +260,57 @@ export default function DynamicRecordModal({
                     type="text"
                     value={val}
                     onChange={(e) => handleDynamicChange(key, e.target.value)}
-                    className="flex-1 border-none bg-transparent text-sm text-tenant-text outline-none"
+                    className="flex-1 border-none bg-transparent text-sm text-tenant-text outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="Valore..."
+                    disabled={readOnly}
                   />
-                  <Button type="button" variant="destructive" size="icon" className="h-7 w-7" onClick={() => removeDynamicField(key)}>
-                    <Trash2 size={14} />
-                  </Button>
+                  {!readOnly && (
+                    <Button type="button" variant="destructive" size="icon" className="h-7 w-7" onClick={() => removeDynamicField(key)}>
+                      <Trash2 size={14} />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Aggiungi nuovo campo dinamico */}
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-tenant-border bg-tenant-card/50 p-3">
-            <input
-              type="text"
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-              placeholder="Nome campo (es. sconto_fedelta)"
-              className="w-full shrink-0 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 font-mono text-[13px] text-tenant-text outline-none focus:border-tenant-primary sm:w-40"
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
-            />
-            <input
-              type="text"
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder="Valore iniziale"
-              className="flex-1 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 text-[13px] text-tenant-text outline-none focus:border-tenant-primary"
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
-            />
-            <Button type="button" variant={newKey.trim() ? 'default' : 'ghost'} disabled={!newKey.trim()} onClick={addDynamicField} className="whitespace-nowrap">
-              <Plus size={14} /> Aggiungi
-            </Button>
-          </div>
+          {/* Aggiungi nuovo campo dinamico: nascosto in sola lettura, non solo
+              disabilitato — non c'è nulla di sensato da "compilare e non poter
+              inviare" qui, a differenza dei campi fissi sopra (mostrare il
+              valore esistente ha comunque senso in sola lettura). */}
+          {!readOnly && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-tenant-border bg-tenant-card/50 p-3">
+              <input
+                type="text"
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="Nome campo (es. sconto_fedelta)"
+                className="w-full shrink-0 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 font-mono text-[13px] text-tenant-text outline-none focus:border-tenant-primary sm:w-40"
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
+              />
+              <input
+                type="text"
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                placeholder="Valore iniziale"
+                className="flex-1 rounded-md border border-tenant-input-border bg-tenant-input-bg px-3 py-2 text-[13px] text-tenant-text outline-none focus:border-tenant-primary"
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addDynamicField())}
+              />
+              <Button type="button" variant={newKey.trim() ? 'default' : 'ghost'} disabled={!newKey.trim()} onClick={addDynamicField} className="whitespace-nowrap">
+                <Plus size={14} /> Aggiungi
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* ─── BUTTONS ─── */}
         <div className="mt-2 flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onClose}>Annulla</Button>
-          <Button type="submit" disabled={saving}>{saving ? 'Salvataggio...' : 'Salva'}</Button>
+          <Button type="button" variant="outline" onClick={onClose}>{readOnly ? 'Chiudi' : 'Annulla'}</Button>
+          {/* Fase 4: "Salva" nascosto in sola lettura invece che solo
+              disabilitato — evita di far scoprire il blocco al click. */}
+          {!readOnly && (
+            <Button type="submit" disabled={saving}>{saving ? 'Salvataggio...' : 'Salva'}</Button>
+          )}
         </div>
       </form>
     </Dialog>

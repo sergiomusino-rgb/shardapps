@@ -28,11 +28,13 @@ Riceverai lo SCHEMA JSON ATTUALE completo e un MESSAGGIO dell'utente che descriv
 
 Regole tassative:
 1. Applica ESCLUSIVAMENTE la modifica richiesta. Non toccare nessun altro campo, pagina, sezione o entità che non sia necessario cambiare.
-2. Rispondi SOLO con lo schema JSON COMPLETO aggiornato, con la stessa identica struttura di quello ricevuto (stessi campi di primo livello: projectType, appName, sector, description, businessConfig, adminPanel, pages, actionButtons, ui). Nessun testo prima o dopo, nessun blocco markdown.
+2. Rispondi SOLO con lo schema JSON COMPLETO aggiornato, con la stessa identica struttura di quello ricevuto (stessi campi di primo livello: projectType, appName, sector, description, businessConfig, adminPanel, pages, actionButtons, ui, authConfig). Nessun testo prima o dopo, nessun blocco markdown. Se authConfig era presente/abilitato nello schema ricevuto e la modifica non lo riguarda, riportalo INVARIATO — ometterlo lo disabiliterebbe silenziosamente.
 3. Se la modifica riguarda un colore, aggiorna ui.primaryColor (formato esadecimale "#rrggbb").
 4. Se la modifica aggiunge una sezione a una pagina, usa uno di questi "type" (nessun altro ammesso): hero, about, gallery, list, form, contact, reviews, cta, text.
 5. Se la modifica aggiunge/rimuove un'entità del pannello admin, aggiorna di conseguenza anche i riferimenti "entity" nelle sezioni "list"/"form" delle pagine — non lasciare riferimenti a entità inesistenti.
-6. Se il messaggio dell'utente è ambiguo o non applicabile allo schema, restituisci lo schema invariato.`;
+6. Se l'utente chiede di collegare un'entità a un'altra (es. "aggiungi il cliente all'ordine", "collega ogni prenotazione a un tavolo"), aggiungi al campo un "type":"relation" con "targetEntity" impostato al "name" esatto dell'altra entità (deve già esistere in adminPanel.entities, o essere creata nella stessa modifica) e "displayField" impostato all'"id" di un suo campo leggibile (es. "ragione_sociale", "nome" — mai "id"). Se la modifica rinomina o rimuove un'entità che è target di un campo "relation" di un'altra entità, aggiorna anche quel "targetEntity" di conseguenza — non lasciarlo puntare a un nome che non esiste più.
+7. Se l'utente chiede un flusso di lavoro su un'entità (es. "l'ordine deve poter passare da nuovo a in preparazione a consegnato", "aggiungi uno stato annullato agli interventi"), usa su un campo dell'entità "type":"state" con "states" (vocabolario completo) e "allowedTransitions" (mappa stato->stati raggiungibili), e aggiungi ad "actions" dell'entità le azioni "change_state" corrispondenti (targetState deve essere uno degli "states"). Se l'utente chiede ruoli/utenti diversi (es. "voglio un ruolo admin e uno operatore", "i dipendenti non devono poter cancellare nulla"), imposta/aggiorna authConfig.enabled=true, authConfig.supportedRoles e authConfig.defaultRole, ed eventualmente requiredRole sulle azioni che devono restare riservate.
+8. Se il messaggio dell'utente è ambiguo o non applicabile allo schema, restituisci lo schema invariato.`;
 
 function collectReferencedEntities(schema: SiteBlueprintJSON): Set<string> {
   const names = new Set<string>();

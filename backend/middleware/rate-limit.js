@@ -63,4 +63,50 @@ const changePasswordLimiter = rateLimit({
   message: { error: 'Troppi tentativi, riprova tra qualche minuto' },
 });
 
-module.exports = { aiLimiter, checkoutLimiter, loginLimiter, changePasswordLimiter };
+// Security Audit Fase 4 (fix HIGH — nessun rate limit su azioni/utenti):
+// chiave composta appId + IP, sullo stesso principio di ipAndSlugKey sopra
+// (più app/utenti dietro lo stesso IP/NAT non devono condividere un budget,
+// né un singolo utente rotante-IP deve poter aggirare il limite per una
+// specifica app). appId è già disponibile da req.params.appId non appena il
+// router matcha la rotta, prima ancora che clientAuthMiddleware giri.
+function appIdAndIpKey(req) {
+  return `${req.params.appId || ''}:${ipKeyGenerator(req.ip)}`;
+}
+
+// POST .../records/:recordId/actions/:actionId: bersaglio diretto sia di
+// spam generico (scrittura/DB/log amplification) sia — combinato con un
+// webhookUrl configurato — di un uso del backend come proxy di HTTP flood
+// verso terzi (vedi SSRF guard in lib/ssrf-guard.js, che blocca i target
+// interni ma non impedisce comunque un volume alto verso un target esterno
+// legittimo). Finestra corta (1 minuto) perché un utente legittimo che
+// aziona più record in sequenza deve restare fluido.
+const actionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: appIdAndIpKey,
+  message: { error: 'Troppe azioni eseguite, riprova tra un minuto' },
+});
+
+// POST/DELETE .../users: richiede già credenziali admin valide (requireAdminRbac
+// in client-app.js), quindi il rischio principale è un account admin
+// compromesso o uno script mal scritto, non un attacco anonimo — soglia più
+// permissiva ma comunque presente, stessa finestra di login/change-password.
+const userManagementLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: appIdAndIpKey,
+  message: { error: 'Troppe richieste di gestione utenti, riprova tra qualche minuto' },
+});
+
+module.exports = {
+  aiLimiter,
+  checkoutLimiter,
+  loginLimiter,
+  changePasswordLimiter,
+  actionLimiter,
+  userManagementLimiter,
+};
