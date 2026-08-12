@@ -13,7 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { handleStripeWebhookEvent } = require('./stripe-webhook-handler');
+const { handleStripeWebhookEvent, getFeePriceId } = require('./stripe-webhook-handler');
 
 // ─── Mutex per-chiave ────────────────────────────────────────────────────
 // Riproduce, lato fake, la garanzia che in Postgres dà gratis il vincolo
@@ -637,4 +637,62 @@ test('Caso 6 — slot: non vengono duplicati né da un retry dopo successo, né 
   });
   await assert.rejects(() => handleStripeWebhookEvent(supabase2, stripe, event2));
   assert.equal(supabase2._slotGrants.length, 0, 'nessuno slot sommato se il passo crediti (a monte) fallisce');
+});
+
+// ─── getFeePriceId: risoluzione da env, non dal fallback LIVE hardcoded ────
+// Nato dal test E2E manuale del 2026-08-11 contro Stripe TEST: il checkout
+// Business falliva sulla fee subscription con "No such price:
+// price_1TmdKuRZR2YaFu2sHeH8fShE" (il default LIVE hardcoded) perché
+// l'ambiente locale non aveva STRIPE_FEE_PRICE_BUSINESS impostata — non un
+// bug della funzione (che già leggeva process.env prima del fallback), ma
+// una lacuna di copertura test su questo comportamento. Guardia di
+// regressione: se in futuro qualcuno invertisse l'ordine env/fallback (o
+// rimuovesse la lettura da env), questi test lo segnalerebbero subito.
+test('getFeePriceId: legge il Price ID da env quando la variabile è impostata (starter/pro/business)', () => {
+  const saved = {
+    starter: process.env.STRIPE_FEE_PRICE_STARTER,
+    pro: process.env.STRIPE_FEE_PRICE_PRO,
+    business: process.env.STRIPE_FEE_PRICE_BUSINESS,
+  };
+  try {
+    process.env.STRIPE_FEE_PRICE_STARTER = 'price_env_starter';
+    process.env.STRIPE_FEE_PRICE_PRO = 'price_env_pro';
+    process.env.STRIPE_FEE_PRICE_BUSINESS = 'price_env_business';
+
+    assert.equal(getFeePriceId('starter'), 'price_env_starter');
+    assert.equal(getFeePriceId('pro'), 'price_env_pro');
+    assert.equal(getFeePriceId('business'), 'price_env_business');
+  } finally {
+    for (const [plan, value] of Object.entries(saved)) {
+      const key = `STRIPE_FEE_PRICE_${plan.toUpperCase()}`;
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('getFeePriceId: ricade sul default hardcoded (LIVE) solo se la env var è assente, per tutti i piani noti', () => {
+  const saved = {
+    starter: process.env.STRIPE_FEE_PRICE_STARTER,
+    pro: process.env.STRIPE_FEE_PRICE_PRO,
+    business: process.env.STRIPE_FEE_PRICE_BUSINESS,
+  };
+  try {
+    delete process.env.STRIPE_FEE_PRICE_STARTER;
+    delete process.env.STRIPE_FEE_PRICE_PRO;
+    delete process.env.STRIPE_FEE_PRICE_BUSINESS;
+
+    assert.equal(getFeePriceId('starter'), 'price_1TmdIgRZR2YaFu2sT5gkrMdx');
+    assert.equal(getFeePriceId('pro'), 'price_1TmdK0RZR2YaFu2s8pXkLety');
+    assert.equal(getFeePriceId('business'), 'price_1TmdKuRZR2YaFu2sHeH8fShE');
+    // Piano sconosciuto: fallback esplicito su starter (comportamento
+    // documentato della funzione, non un bug), non undefined/crash.
+    assert.equal(getFeePriceId('non-esiste'), getFeePriceId('starter'));
+  } finally {
+    for (const [plan, value] of Object.entries(saved)) {
+      const key = `STRIPE_FEE_PRICE_${plan.toUpperCase()}`;
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });

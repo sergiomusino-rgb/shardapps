@@ -106,7 +106,7 @@ export default function Sidebar({
       // sostituiti su /dashboard/creator dal nuovo motore Sito/PWA, ma
       // restano accessibili per test/debug interni.
       {
-        label: 'Creator AI v1',
+        label: 'CreatorAI v1',
         href: '/dashboard/creator-v1',
         icon: <Sparkles size={18} />,
         isActive: isPathActive(pathname, '/dashboard/creator-v1'),

@@ -99,7 +99,7 @@ export default function AppCreatePage() {
             className="flex items-center gap-2 text-gray-400 hover:text-white mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            Torna al Creator AI
+            Torna al CreatorAI
           </button>
           <h1 className="text-4xl font-bold mb-4">App Generata con Successo!</h1>
           <p className="text-gray-400 text-lg">

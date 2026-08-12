@@ -74,7 +74,7 @@ export default function DynamicTablePage() {
           .single();
 
         if (memberError || !membership) {
-          setError('Nessun tenant associato al tuo account. Crea prima un\'app dal Generator AI.');
+          setError('Nessun tenant associato al tuo account. Crea prima un\'app dal GeneratorAI.');
           setLoading(false);
           return;
         }
@@ -98,7 +98,7 @@ export default function DynamicTablePage() {
         if (!appData) {
           setError(
             `Nessuna app attiva trovata per il settore "${SECTOR_LABELS[config!.sector] || config!.sector}". ` +
-            'Crea un\'app dal Generator AI prima di visualizzare i dati.'
+            'Crea un\'app dal GeneratorAI prima di visualizzare i dati.'
           );
           setLoading(false);
           return;

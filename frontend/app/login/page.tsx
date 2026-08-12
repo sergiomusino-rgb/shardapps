@@ -161,9 +161,9 @@ function LoginForm() {
         <div className="text-center">
           <Link
             href="/"
-            className="bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-4xl font-black tracking-tighter text-transparent"
+            className="text-4xl font-black tracking-tighter text-white"
           >
-            SHARDAPPS
+            SHARD<span className="text-blue-400">APPS</span>
           </Link>
           <p className="mt-2 text-sm text-slate-400">
             {isLogin && t('login_title_login')}

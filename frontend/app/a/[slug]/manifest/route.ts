@@ -40,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       tenantName = t?.name || null;
       tenantLogo = t?.logo_url || null;
     }
-    const appName = tenantName || app?.name || 'Comand AI';
+    const appName = tenantName || app?.name || 'ComandAI';
 
     // Il logo caricato dal titolare in Azienda ha priorità sull'icona fissa
     // Comand AI: è così che ogni tenant installa l'app con la propria
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     const manifest = {
       name: appName,
       short_name: appName.length > 14 ? `${appName.slice(0, 13)}…` : appName,
-      description: `Gestionale ordini di ${appName}, powered by Comand AI`,
+      description: `Gestionale ordini di ${appName}, powered by ComandAI`,
       start_url: `/a/${slug}/dashboard`,
       scope: `/a/${slug}`,
       display: 'standalone',
