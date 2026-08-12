@@ -16,6 +16,7 @@ import {
   canCreateApp,
 } from '@/src/lib/creator-server';
 import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
+import { captureError } from '@/src/lib/error-tracking';
 
 // Duplicato intenzionalmente da src/lib/LanguageContext.tsx (SUPPORTED_LOCALES):
 // quel modulo è 'use client' e importarlo da una route API server-side
@@ -467,7 +468,7 @@ export async function POST(request: NextRequest) {
         const blueprint = fillBusinessConfigDefaults(sanitized, lang);
         return NextResponse.json({ success: true, data: { schema: blueprint } });
       } catch (err) {
-        console.error('[creator/generate] site engine error:', err);
+        captureError('creator.generate', err, { projectType, tenantId, userId: user.id });
         if (err instanceof AiRouterConfigError) {
           return NextResponse.json({ success: false, error: 'Servizio AI non configurato correttamente. Contatta il supporto.', code: 'AI_CONFIG_ERROR' }, { status: 500 });
         }
@@ -606,7 +607,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (err) {
-    console.error('[creator/generate] error:', err);
+    captureError('creator.generate', err, { url: request.url });
     if (err instanceof AiRouterConfigError) {
       return NextResponse.json({
         success: false,

@@ -17,6 +17,7 @@ import {
   type SiteBlueprintJSON,
   type AdminEntity,
 } from '@/src/lib/site-schema';
+import { captureError } from '@/src/lib/error-tracking';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, data: { schema: finalSchema } });
   } catch (err) {
-    console.error('[creator/refactor] error:', err);
+    captureError('creator.refactor', err, { url: request.url });
     return NextResponse.json({
       success: false,
       error: err instanceof Error ? err.message : 'Errore interno del server',

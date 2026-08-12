@@ -14,6 +14,7 @@ const {
   clientAuthMiddleware,
 } = require('../lib/client-auth');
 const { dispatchAppAction, logAction } = require('../lib/action-dispatcher');
+const { captureError } = require('../lib/error-tracking');
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -470,7 +471,16 @@ router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAut
 
     res.json({ record: updated });
   } catch (err) {
-    console.error('POST client record action exception:', err);
+    // req.params/req.appId sempre accessibili qui (a differenza di
+    // `recordId`/`actionId` dichiarati con const dentro il try, non visibili
+    // in questo blocco sibling) — mai dati sensibili nel context, solo
+    // identificatori utili a correlare l'errore (Product Readiness Audit,
+    // P1 — osservabilità, vedi lib/error-tracking.js).
+    captureError('client-app.actions', err, {
+      appId: req.appId,
+      recordId: req.params.recordId,
+      actionId: req.params.actionId,
+    });
     res.status(500).json({ error: 'Errore interno' });
   }
 });
