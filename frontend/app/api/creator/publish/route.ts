@@ -26,7 +26,8 @@ import {
   generateCreatorSlug,
   getAppBaseUrl,
   getTenantWhiteLabel,
-  CREATOR_ADMIN_USER_ID,
+  reserveAppSlot,
+  releaseAppSlot,
 } from '@/src/lib/creator-server';
 import { captureError } from '@/src/lib/error-tracking';
 
@@ -148,50 +149,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: reason || 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
     }
 
-    // Consumo atomico dello slot: stesso identico meccanismo/RPC di
-    // /api/creator/create (increment_tenant_app_count, migration
-    // 20260808000005_atomic_tenant_slot_increment.sql). Prima di questo fix
-    // questa route consumava lo slot con un UPDATE non atomico DOPO l'insert
-    // dell'app (nessun cancello reale, solo il precheck sopra) — la stessa
-    // race condition tra pubblicazioni concorrenti dello stesso tenant che
-    // era già stata chiusa in create/route.ts ma non qui (vedi commento in
-    // 20260809000002_fix_increment_tenant_app_count_ambiguous_column.sql, che
-    // la segnalava esplicitamente come gap non ancora risolto in questa
-    // route). Se la RPC non ottiene una riga, lo slot non è più disponibile
-    // (consumato nel frattempo da un'altra richiesta) e l'app NON viene
-    // creata: nessuna scrittura su `apps` avviene prima di questo controllo.
-    let slotReserved = false;
-    if (user.id !== CREATOR_ADMIN_USER_ID) {
-      const { data: slotResult, error: slotError } = await supabase.rpc('increment_tenant_app_count' as any, {
-        p_tenant_id: tenantId,
-      }) as { data: unknown[] | null; error: any };
-
-      if (slotError && slotError.code !== 'PGRST202' && slotError.code !== '42883') {
-        // Errore reale (non "funzione non ancora deployata"): blocca la pubblicazione.
-        console.error('[creator/publish] increment_tenant_app_count error:', slotError);
-        return NextResponse.json({ success: false, error: 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
-      }
-
-      if (slotError) {
-        // PGRST202/42883 = la migration 20260808000005 non è ancora applicata
-        // al DB remoto: fallback al vecchio comportamento non atomico invece
-        // di rompere la pubblicazione per tutti finché non viene deployata
-        // (stesso fallback di create/route.ts).
-        console.warn('[creator/publish] increment_tenant_app_count non disponibile, fallback non atomico:', slotError.message);
-        if (!tenant || (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1)) {
-          return NextResponse.json({
-            success: false,
-            error: 'SlotsExhausted',
-            message: 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.',
-            redirectTo: '/pricing',
-            code: 'SLOTS_EXHAUSTED',
-          }, { status: 403 });
-        }
-        await supabase
-          .from('tenants')
-          .update({ total_apps_created: (tenant.total_apps_created || 0) + 1, updated_at: new Date().toISOString() })
-          .eq('id', tenantId);
-      } else if (!slotResult || slotResult.length === 0) {
+    // Consumo atomico dello slot: estratto in reserveAppSlot (src/lib/
+    // creator-server.ts, App Catalog STEP 3) — stessa identica RPC/fallback
+    // di prima, ora condivisa con /api/catalog/products/[productSlug]/
+    // provision. Se la RPC non ottiene una riga, lo slot non è più
+    // disponibile (consumato nel frattempo da un'altra richiesta) e l'app
+    // NON viene creata: nessuna scrittura su `apps` avviene prima di questo
+    // controllo.
+    const slotResult = await reserveAppSlot(supabase, tenantId, tenant, user.id);
+    if (!slotResult.ok) {
+      if (slotResult.reason === 'SlotsExhausted') {
         return NextResponse.json({
           success: false,
           error: 'SlotsExhausted',
@@ -199,10 +166,11 @@ export async function POST(request: NextRequest) {
           redirectTo: '/pricing',
           code: 'SLOTS_EXHAUSTED',
         }, { status: 403 });
-      } else {
-        slotReserved = true;
       }
+      console.error('[creator/publish] reserveAppSlot error:', slotResult.message);
+      return NextResponse.json({ success: false, error: 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
     }
+    const slotReserved = slotResult.reserved;
 
     const slug = generateCreatorSlug(appName, blueprint.sector);
     const clientPassword = generateClientPassword();
@@ -246,28 +214,12 @@ export async function POST(request: NextRequest) {
     if (appError || !app) {
       console.error('[creator/publish] insert error:', appError);
       // Lo slot è già stato consumato atomicamente sopra: se l'insert
-      // dell'app fallisce dopo averlo riservato, lo rilasciamo per non
-      // "bruciare" uno slot pagato senza che sia mai stata creata un'app.
-      // Best-effort (fetch+update, non un'unica operazione atomica): questo è
-      // il ramo di errore di un insert che normalmente non fallisce, non il
-      // cancello principale — quello resta la RPC sopra. Un fallimento qui
-      // resta solo loggato, non deve mascherare l'errore reale già restituito.
+      // dell'app fallisce dopo averlo riservato, lo rilasciamo (releaseAppSlot,
+      // src/lib/creator-server.ts) per non "bruciare" uno slot pagato senza
+      // che sia mai stata creata un'app. Un fallimento qui resta solo
+      // loggato, non deve mascherare l'errore reale già restituito.
       if (slotReserved) {
-        try {
-          const { data: freshTenant } = await supabase
-            .from('tenants')
-            .select('total_apps_created')
-            .eq('id', tenantId)
-            .single();
-          if (freshTenant) {
-            await supabase
-              .from('tenants')
-              .update({ total_apps_created: Math.max(0, (freshTenant.total_apps_created || 0) - 1), updated_at: new Date().toISOString() })
-              .eq('id', tenantId);
-          }
-        } catch (rollbackErr) {
-          console.error('[creator/publish] slot rollback error:', rollbackErr);
-        }
+        await releaseAppSlot(supabase, tenantId);
       }
       return NextResponse.json({ success: false, error: 'Errore pubblicazione: ' + (appError?.message || 'sconosciuto'), code: 'DB_ERROR' }, { status: 500 });
     }

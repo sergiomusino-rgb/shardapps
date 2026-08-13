@@ -25,6 +25,7 @@ import {
   BookOpen,
   LogOut,
   Clapperboard,
+  Store,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -130,6 +131,17 @@ export default function Sidebar({
         href: '/dashboard/projects',
         icon: <FolderKanban size={18} />,
         isActive: isPathActive(pathname, '/dashboard/projects'),
+      },
+      {
+        // App Catalog & Instance Model, STEP 3 (FASE 9 dell'audit): unica
+        // voce di navigazione nuova di questa fase — punta a una pagina che
+        // elenca i prodotti attivi (app_products, letti direttamente via
+        // RLS "select_active", stesso pattern già usato da questa sidebar
+        // per /dashboard/projects) e permette di "Attivare" un provisioning.
+        label: t('nav_catalog'),
+        href: '/dashboard/catalog',
+        icon: <Store size={18} />,
+        isActive: isPathActive(pathname, '/dashboard/catalog'),
       },
       {
         label: t('nav_agenda'),

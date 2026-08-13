@@ -109,6 +109,85 @@ export async function canCreateApp(
   return { allowed: true, tenant };
 }
 
+// ─── Consumo atomico di uno slot app (App Catalog STEP 3) ──────────────────
+// Estratto da /api/creator/publish (unico chiamante finora) per essere
+// riusato tale e quale da /api/catalog/products/[productSlug]/provision:
+// "installare un prodotto dal catalogo" deve rispettare lo stesso identico
+// meccanismo di slot di una pubblicazione CreatorAI normale, non uno nuovo
+// (vedi audit FASE 1 — "riutilizzare il normale meccanismo di creazione
+// app", non duplicarlo). Comportamento invariato rispetto a prima di questa
+// estrazione: stessa RPC (increment_tenant_app_count, atomica), stesso
+// fallback non atomico se la migration non è ancora applicata (PGRST202/
+// 42883), stesso bypass per CREATOR_ADMIN_USER_ID, nessun cambio di firma
+// esterna per publish/route.ts.
+export type SlotReservationResult =
+  | { ok: true; reserved: boolean }
+  | { ok: false; reason: 'SlotsExhausted' }
+  | { ok: false; reason: 'Error'; message: string };
+
+export async function reserveAppSlot(
+  supabase: SupabaseClient,
+  tenantId: string,
+  tenant: { total_apps_created?: number; app_limit?: number } | undefined,
+  userId: string
+): Promise<SlotReservationResult> {
+  if (userId === CREATOR_ADMIN_USER_ID) {
+    return { ok: true, reserved: false };
+  }
+
+  const { data: slotResult, error: slotError } = await supabase.rpc('increment_tenant_app_count' as any, {
+    p_tenant_id: tenantId,
+  }) as { data: unknown[] | null; error: any };
+
+  if (slotError && slotError.code !== 'PGRST202' && slotError.code !== '42883') {
+    return { ok: false, reason: 'Error', message: slotError.message || 'Errore controllo limite app' };
+  }
+
+  if (slotError) {
+    // PGRST202/42883 = la migration 20260808000005 non è ancora applicata al
+    // DB remoto: fallback non atomico (stessa race condition storica) invece
+    // di rompere la creazione app per tutti finché non viene deployata.
+    console.warn('[reserveAppSlot] increment_tenant_app_count non disponibile, fallback non atomico:', slotError.message);
+    if (!tenant || (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1)) {
+      return { ok: false, reason: 'SlotsExhausted' };
+    }
+    await supabase
+      .from('tenants')
+      .update({ total_apps_created: (tenant.total_apps_created || 0) + 1, updated_at: new Date().toISOString() })
+      .eq('id', tenantId);
+    return { ok: true, reserved: true };
+  }
+
+  if (!slotResult || slotResult.length === 0) {
+    return { ok: false, reason: 'SlotsExhausted' };
+  }
+
+  return { ok: true, reserved: true };
+}
+
+// Rilascia uno slot riservato con reserveAppSlot() quando l'insert dell'app
+// che doveva occuparlo fallisce dopo la riserva — mai "bruciare" uno slot
+// per un'app mai creata davvero. Best-effort (fetch+update, non atomico
+// come la riserva): è il ramo di errore di un insert che normalmente non
+// fallisce, non il cancello principale.
+export async function releaseAppSlot(supabase: SupabaseClient, tenantId: string): Promise<void> {
+  try {
+    const { data: freshTenant } = await supabase
+      .from('tenants')
+      .select('total_apps_created')
+      .eq('id', tenantId)
+      .single();
+    if (freshTenant) {
+      await supabase
+        .from('tenants')
+        .update({ total_apps_created: Math.max(0, (freshTenant.total_apps_created || 0) - 1), updated_at: new Date().toISOString() })
+        .eq('id', tenantId);
+    }
+  } catch (rollbackErr) {
+    console.error('[releaseAppSlot] error:', rollbackErr);
+  }
+}
+
 // process.env.NEXT_PUBLIC_APP_URL a volte viene valorizzata per errore con
 // l'intera riga "NEXT_PUBLIC_APP_URL=https://..." (es. incollata così nel
 // pannello env vars della piattaforma di deploy invece del solo valore):
