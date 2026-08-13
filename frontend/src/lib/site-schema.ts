@@ -671,4 +671,48 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
   };
 }
 
+// ─── Euristica "prompt menziona uno stato ma lo schema non ne ha uno" ───────
+// Product Readiness Audit (P2 — qualità percepita): osservato empiricamente
+// che un prompt esplicito ("campo di stato con soli 2 valori") non sempre
+// produce un campo type:'state' al primo tentativo dell'AI. Nessuna chiamata
+// AI aggiuntiva, nessun retry automatico (scelta deliberata: un retry
+// raddoppierebbe costo/latenza per un controllo puramente euristico, con
+// falsi positivi possibili) — solo un confronto testuale che permette
+// all'editor di mostrare un avviso non bloccante, lasciando all'utente la
+// scelta se chiedere di nuovo al Copilot.
+//
+// Parole chiave multilingua (i 5 locale del wizard, vedi ProjectWizard.tsx):
+// elenco volutamente non esaustivo — falsi negativi (un prompt che descrive
+// uno stato senza usare nessuna di queste parole) sono accettabili per
+// un'euristica informativa, un falso positivo qui è solo un avviso in più da
+// poter ignorare, mai un blocco.
+const STATE_KEYWORDS = [
+  // it
+  'stato', 'workflow', 'flusso di lavoro', 'transizione', 'transizioni', 'cambio stato',
+  // en
+  'state', 'status', 'transition', 'flow',
+  // de
+  'zustand', 'arbeitsablauf', 'übergang',
+  // fr
+  'statut', 'état', 'flux de travail',
+  // es
+  'estado', 'flujo de trabajo', 'transición',
+];
+
+function schemaHasStateField(schema: SiteBlueprintJSON): boolean {
+  return schema.adminPanel.entities.some((entity) => entity.fields.some((f) => f.type === 'state'));
+}
+
+/**
+ * true quando il testo dell'utente (prompt iniziale o istruzione Copilot)
+ * sembra descrivere uno stato/workflow ma lo schema risultante non contiene
+ * alcun campo `type:'state'` in nessuna entità — segnale da mostrare come
+ * avviso non bloccante nell'editor, mai per rifiutare/bloccare il risultato.
+ */
+export function promptSuggestsStateButMissing(promptText: string, schema: SiteBlueprintJSON): boolean {
+  if (!promptText || schemaHasStateField(schema)) return false;
+  const haystack = promptText.toLowerCase();
+  return STATE_KEYWORDS.some((kw) => haystack.includes(kw));
+}
+
 export type { Field };

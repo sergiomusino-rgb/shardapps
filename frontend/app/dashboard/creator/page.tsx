@@ -18,12 +18,12 @@
 import { useState, useEffect, type ChangeEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { RotateCcw, AlertCircle, UploadCloud, Loader2, Check, Sparkles, Pencil } from 'lucide-react';
+import { RotateCcw, AlertCircle, UploadCloud, Loader2, Check, Sparkles, Pencil, X } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import ProjectWizard from '@/src/components/creator/ProjectWizard';
 import AppEditorView from '@/src/components/creator/AppEditorView';
 import { useLanguage } from '@/src/lib/LanguageContext';
-import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
+import { sanitizeSiteBlueprint, promptSuggestsStateButMissing } from '@/src/lib/site-schema';
 import type { ProjectType } from '@/src/lib/site-schema';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
@@ -34,6 +34,9 @@ export default function CreatorPage() {
   const [schema, setSchema] = useState<SiteBlueprintJSON | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Product Readiness Audit (P2 — qualità percepita): avviso non bloccante,
+  // mai un blocco della generazione — vedi promptSuggestsStateButMissing.
+  const [stateWarning, setStateWarning] = useState<string | null>(null);
 
   // ─── Editor re-entry (FASE 3) ────────────────────────────────────────────
   // /dashboard/creator?appId=<id> — riapertura di un'app già pubblicata dalla
@@ -211,6 +214,7 @@ export default function CreatorPage() {
   const handleGenerate = async (projectType: ProjectType, prompt: string) => {
     setIsGenerating(true);
     setError(null);
+    setStateWarning(null);
 
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
@@ -232,6 +236,9 @@ export default function CreatorPage() {
 
       if (data.success && data.data?.schema) {
         setSchema(data.data.schema);
+        if (promptSuggestsStateButMissing(prompt, data.data.schema)) {
+          setStateWarning('La tua descrizione sembra menzionare uno stato/workflow, ma lo schema generato non include un campo di questo tipo. Puoi chiederlo di nuovo al Copilot qui a destra (es. "aggiungi un campo di stato con i valori...").');
+        }
       } else if (data.code === 'SLOTS_EXHAUSTED') {
         alert(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
         router.push(data.redirectTo || '/pricing');
@@ -267,6 +274,7 @@ export default function CreatorPage() {
               onClick={() => {
                 setSchema(null);
                 setError(null);
+                setStateWarning(null);
                 setEditingAppId(undefined);
                 setEditingAppName('');
                 // Rimuove ?appId= dall'URL: senza, un refresh o una nuova
@@ -285,7 +293,28 @@ export default function CreatorPage() {
       {error && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-red-700/50 bg-red-900/20 p-3 text-sm text-red-300">
           <AlertCircle size={16} className="shrink-0" />
-          {error}
+          <span className="flex-1">{error}</span>
+          {/* Product Readiness Audit (P3): un rientro fallito da ?appId=
+              (es. un'app del vecchio motore tabellare, non riapribile qui)
+              lasciava solo il messaggio d'errore, senza un modo esplicito
+              per tornare alla lista app — l'utente doveva usare "indietro"
+              del browser o la sidebar. isLoadingExisting è già false qui
+              (altrimenti mostreremmo lo spinner, non questo banner). */}
+          {searchParams.get('appId') && !editingAppId && (
+            <Link href="/dashboard/projects" className="shrink-0 whitespace-nowrap font-semibold text-red-200 underline hover:text-white">
+              Torna alle tue app
+            </Link>
+          )}
+        </div>
+      )}
+
+      {stateWarning && (
+        <div className="mb-6 flex items-center gap-2 rounded-lg border border-amber-700/50 bg-amber-900/20 p-3 text-sm text-amber-200">
+          <AlertCircle size={16} className="shrink-0" />
+          <span className="flex-1">{stateWarning}</span>
+          <button onClick={() => setStateWarning(null)} className="shrink-0 text-amber-300 hover:text-white" aria-label="Chiudi avviso">
+            <X size={14} />
+          </button>
         </div>
       )}
 

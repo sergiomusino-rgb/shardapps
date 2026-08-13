@@ -18,7 +18,7 @@ import {
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import SitePreview from './SitePreview';
 import { useVoiceInput } from '@/src/lib/useVoiceInput';
-import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
+import { promptSuggestsStateButMissing, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'error';
@@ -219,7 +219,15 @@ export default function AppEditorView({
       if (data.success && data.data?.schema) {
         setSchema(data.data.schema);
         onSchemaChange?.(data.data.schema);
-        setMessages((prev) => [...prev, { role: 'assistant', content: t.appliedMessage }]);
+        // Product Readiness Audit (P2 — qualità percepita): stesso avviso
+        // non bloccante del wizard iniziale (dashboard/creator/page.tsx),
+        // qui applicato al messaggio Copilot invece che al prompt iniziale
+        // — il caso più comune è proprio "chiedi uno stato via chat e non
+        // arriva", osservato empiricamente in sessione.
+        const appliedMessage = promptSuggestsStateButMissing(message, data.data.schema)
+          ? `${t.appliedMessage} La tua richiesta sembra menzionare uno stato/workflow, ma non vedo ancora un campo di questo tipo nello schema — puoi riprovare a chiederlo in modo più esplicito.`
+          : t.appliedMessage;
+        setMessages((prev) => [...prev, { role: 'assistant', content: appliedMessage }]);
       } else {
         setMessages((prev) => [...prev, { role: 'error', content: data.error || 'Errore durante la modifica.' }]);
       }
