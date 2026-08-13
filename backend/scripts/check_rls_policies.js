@@ -158,6 +158,18 @@ const BASELINE = {
     UPDATE: ['service_role_full_access'],
     DELETE: ['service_role_full_access'],
   },
+  // CreatorAI SaaS Factory (Fase 3/4, migration 20260813000000): audit trail
+  // delle azioni di entità (change_state/trigger_webhook/send_notification).
+  // Aggiunta al BASELINE esplicito dopo il Product Readiness Audit (P2): senza
+  // di questo, un futuro drift che aggiungesse per errore una policy
+  // permissiva qui produrrebbe solo un WARNING (tabella "non in baseline"),
+  // non un FAIL CI — stesso principio di app_credentials/app_rbac_users sotto.
+  app_action_logs: {
+    SELECT: ['app_action_logs_deny_anon_authenticated'],
+    INSERT: ['app_action_logs_deny_anon_authenticated'],
+    UPDATE: ['app_action_logs_deny_anon_authenticated'],
+    DELETE: ['app_action_logs_deny_anon_authenticated'],
+  },
   app_collaborators: {
     // FOR ALL, richiede esplicitamente role = 'admin': corretto.
     SELECT: ['admin_manage_collaborators'],
@@ -184,6 +196,16 @@ const BASELINE = {
     INSERT: ['app_push_subscriptions_deny_anon_authenticated'],
     UPDATE: ['app_push_subscriptions_deny_anon_authenticated'],
     DELETE: ['app_push_subscriptions_deny_anon_authenticated'],
+  },
+  // CreatorAI SaaS Factory (Fase 3, migration 20260812000000): utenti
+  // multi-ruolo (admin/operator/viewer) di un'app auth_mode='rbac' — tabella
+  // indipendente da app_credentials (che resta la password unica condivisa
+  // delle app legacy). Stesso motivo del commento su app_action_logs sopra.
+  app_rbac_users: {
+    SELECT: ['app_rbac_users_deny_anon_authenticated'],
+    INSERT: ['app_rbac_users_deny_anon_authenticated'],
+    UPDATE: ['app_rbac_users_deny_anon_authenticated'],
+    DELETE: ['app_rbac_users_deny_anon_authenticated'],
   },
   app_records: {
     // Stesso sistema has_feature_access di app_definitions.
