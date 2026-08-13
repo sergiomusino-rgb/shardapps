@@ -219,11 +219,25 @@ router.post('/update-app-fee', checkoutLimiter, async (req, res) => {
     //    sono scaduti (il trial è gestito qui via query, non su Stripe: una
     //    subscription a quantity variabile non supporta trial differenziati
     //    per unità con date di inizio diverse).
+    // 4. product_id IS NULL (STEP 4, App Catalog) — una Catalog Instance
+    //    (product_id valorizzato, STEP 3) NON è una "app pubblicata dal
+    //    reseller a un proprio cliente": è fatturata direttamente al tenant
+    //    con una propria subscription Stripe (apps.stripe_subscription_id,
+    //    vedi /api/catalog/products/[productSlug]/checkout e il ramo 'app'
+    //    del webhook esteso allo STEP 4). Senza questo filtro rischierebbe
+    //    doppia fatturazione: se il tenant fa login nella propria Catalog
+    //    Instance (owner_trial_ends_at viene comunque impostato da
+    //    mark-first-login, che non distingue le Catalog Instance dalle app
+    //    normali) e poi non la sottoscrive entro 30 giorni (status resta
+    //    'trial', mai 'active' — quello lo diventa solo tramite il checkout
+    //    Catalog dedicato, non verify-checkout-session), verrebbe altrimenti
+    //    conteggiata qui E fatturata separatamente se sottoscritta più tardi.
     const { count: appCount, error: countError } = await supabase
       .from('apps')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
       .neq('status', 'active')
+      .is('product_id', null)
       .not('owner_trial_ends_at', 'is', null)
       .lt('owner_trial_ends_at', new Date().toISOString());
 

@@ -13,6 +13,8 @@
 const {
   PLAN_RANK,
   resolveAppStatusFromStripeStatus,
+  resolveCatalogSubscriptionStatus,
+  extractStripeId,
   isStaleEvent,
   classifyStripeEvent,
   resolvePlanFromProductName,
@@ -171,10 +173,20 @@ async function getAppIdBySubscriptionId(supabase, subscriptionId) {
 // positivo verificato nell'audit Fase 3B). stripe_event_applied_at è
 // scritta SOLO da questa funzione, quindi riflette esclusivamente l'ultimo
 // evento Stripe applicato.
-async function updateAppStatus(supabase, appId, status, eventCreatedAt, extra = {}) {
+// catalogExtra (STEP 4, App Catalog billing): campi che vanno scritti SOLO se
+// questa riga è una Catalog Instance (product_id IS NOT NULL) — per ogni
+// altra app (product_id NULL: pubblicazione CreatorAI singola o app-cliente
+// reseller) il comportamento resta IDENTICO a prima di questo step, `extra`
+// (il parametro preesistente, invariato) resta l'unico modo di scrivere
+// colonne aggiuntive. Non unificato con `extra` di proposito: `extra` è già
+// usato da un chiamante non-Catalog (checkout.session.completed, per
+// TUTTE le app) e deve restare tale e quale; mescolarci dentro campi
+// condizionati al product_id renderebbe quel call site ambiguo su quali
+// colonne scrive per chi.
+async function updateAppStatus(supabase, appId, status, eventCreatedAt, extra = {}, catalogExtra = {}) {
   const { data: current } = await supabase
     .from('apps')
-    .select('stripe_event_applied_at')
+    .select('stripe_event_applied_at, product_id')
     .eq('id', appId)
     .maybeSingle();
 
@@ -186,6 +198,21 @@ async function updateAppStatus(supabase, appId, status, eventCreatedAt, extra = 
   const update = { status, updated_at: new Date().toISOString(), ...extra };
   if (eventCreatedAt != null) {
     update.stripe_event_applied_at = new Date(eventCreatedAt * 1000).toISOString();
+  }
+
+  // Catalog Instance (STEP 4): apps.status resta l'unica source of truth del
+  // lifecycle, ma apps.subscription_status (colonna "vetrina" letta dalla UI
+  // del catalogo, 20260815000000_app_catalog_core_schema.sql) deve restare
+  // coerente con esso, non congelata a 'trialing' per sempre — vedi analisi
+  // STEP 4. Idem per stripe_subscription_id/stripe_customer_id: catturati
+  // opportunisticamente ad OGNI evento in cui Stripe li fornisce (non solo al
+  // checkout, a differenza del ramo non-Catalog), perché una Catalog
+  // Instance non ha un altro punto in cui questi due id vengano mai scritti.
+  if (current?.product_id) {
+    const subscriptionStatus = resolveCatalogSubscriptionStatus(status);
+    if (subscriptionStatus) update.subscription_status = subscriptionStatus;
+    if (catalogExtra.stripe_subscription_id) update.stripe_subscription_id = catalogExtra.stripe_subscription_id;
+    if (catalogExtra.stripe_customer_id) update.stripe_customer_id = catalogExtra.stripe_customer_id;
   }
 
   const { error } = await supabase
@@ -268,10 +295,16 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       const target = classifyStripeEvent(event);
 
       if (target.type === 'app') {
-        const appSubscriptionId = typeof session.subscription === 'string'
-          ? session.subscription
-          : session.subscription?.id || null;
-        await updateAppStatus(supabase, target.appId, 'active', event.created, appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {});
+        const appSubscriptionId = extractStripeId(session.subscription);
+        const appCustomerId = extractStripeId(session.customer);
+        await updateAppStatus(
+          supabase,
+          target.appId,
+          'active',
+          event.created,
+          appSubscriptionId ? { stripe_subscription_id: appSubscriptionId } : {},
+          { stripe_subscription_id: appSubscriptionId, stripe_customer_id: appCustomerId }
+        );
         console.log(`[Stripe Webhook] App ${target.appId} attivata (subscription ${appSubscriptionId || 'n/d'})`);
         break;
       }
@@ -397,7 +430,10 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       // stesso stripe_subscription_id.
       const paidAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
       if (paidAppId) {
-        await updateAppStatus(supabase, paidAppId, 'active', event.created);
+        await updateAppStatus(supabase, paidAppId, 'active', event.created, {}, {
+          stripe_subscription_id: subscriptionId,
+          stripe_customer_id: extractStripeId(invoice.customer),
+        });
         console.log(`[Stripe Webhook] Rinnovo pagato per app ${paidAppId}`);
         break;
       }
@@ -431,13 +467,17 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
     }
 
     case 'invoice.payment_failed': {
+      const invoice = event.data.object;
       const routingTarget = classifyStripeEvent(event);
       if (routingTarget.type !== 'requires-lookup') break;
       const subscriptionId = routingTarget.subscriptionId;
 
       const failedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
       if (failedAppId) {
-        await updateAppStatus(supabase, failedAppId, 'past_due', event.created);
+        await updateAppStatus(supabase, failedAppId, 'past_due', event.created, {}, {
+          stripe_subscription_id: subscriptionId,
+          stripe_customer_id: extractStripeId(invoice.customer),
+        });
         console.log(`[Stripe Webhook] Pagamento fallito per app ${failedAppId}`);
         break;
       }
@@ -464,13 +504,17 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
     }
 
     case 'customer.subscription.deleted': {
+      const subscription = event.data.object;
       const routingTarget = classifyStripeEvent(event);
       if (routingTarget.type !== 'requires-lookup') break;
       const subscriptionId = routingTarget.subscriptionId;
 
       const deletedAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
       if (deletedAppId) {
-        await updateAppStatus(supabase, deletedAppId, 'canceled', event.created);
+        await updateAppStatus(supabase, deletedAppId, 'canceled', event.created, {}, {
+          stripe_subscription_id: subscriptionId,
+          stripe_customer_id: extractStripeId(subscription.customer),
+        });
         console.log(`[Stripe Webhook] Subscription cancellata per app ${deletedAppId}`);
         break;
       }
@@ -506,7 +550,10 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       if (updatedAppId) {
         const newAppStatus = resolveAppStatusFromStripeStatus(subscription.status);
         if (newAppStatus) {
-          await updateAppStatus(supabase, updatedAppId, newAppStatus, event.created);
+          await updateAppStatus(supabase, updatedAppId, newAppStatus, event.created, {}, {
+            stripe_subscription_id: subscriptionId,
+            stripe_customer_id: extractStripeId(subscription.customer),
+          });
           console.log(`[Stripe Webhook] App ${updatedAppId} sincronizzata a '${newAppStatus}'`);
         }
         break;
