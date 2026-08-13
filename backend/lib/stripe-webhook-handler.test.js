@@ -696,3 +696,235 @@ test('getFeePriceId: ricade sul default hardcoded (LIVE) solo se la env var è a
     }
   }
 });
+
+// ─── STEP 4 — App Catalog billing: subscription_status/stripe_customer_id ──
+// Stesso ramo 'app' del webhook di sempre (nessuna modifica a
+// classifyStripeEvent/isStaleEvent), esteso in updateAppStatus per scrivere
+// anche subscription_status/stripe_customer_id QUANDO la riga ha
+// product_id valorizzato (Catalog Instance) — mai per le app non-Catalog
+// (Scenario 2/3b/3c sopra, invariati, lo dimostrano già: quelle app non
+// hanno product_id e infatti non hanno mai subscription_status/
+// stripe_customer_id popolati).
+
+test('STEP4 catalog: checkout.session.completed attiva l\'istanza e sincronizza subscription_status + stripe_customer_id', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-1', {
+      id: 'catalog-app-1',
+      status: 'trial',
+      subscription_status: 'trialing',
+      product_id: 'product-1',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_catalog_1',
+    metadata: { app_id: 'catalog-app-1' },
+    customer: 'cus_catalog_1',
+    subscription: 'sub_catalog_1',
+    created: 1700002000,
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-1');
+  assert.equal(app.status, 'active', 'apps.status (source of truth) deve passare a active');
+  assert.equal(app.subscription_status, 'active', 'subscription_status deve restare coerente con status');
+  assert.equal(app.stripe_subscription_id, 'sub_catalog_1');
+  assert.equal(app.stripe_customer_id, 'cus_catalog_1', 'stripe_customer_id deve essere catturato dal checkout');
+});
+
+test('STEP4 catalog: invoice.payment_succeeded (rinnovo) mantiene active e sincronizza subscription_status/customer_id', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-2', {
+      id: 'catalog-app-2',
+      status: 'active',
+      subscription_status: 'active',
+      product_id: 'product-1',
+      stripe_subscription_id: 'sub_catalog_2',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = {
+    type: 'invoice.payment_succeeded',
+    created: 1700003000,
+    data: { object: { subscription: 'sub_catalog_2', customer: 'cus_catalog_2' } },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-2');
+  assert.equal(app.status, 'active');
+  assert.equal(app.subscription_status, 'active');
+  assert.equal(app.stripe_customer_id, 'cus_catalog_2', 'stripe_customer_id catturato anche al rinnovo, non solo al checkout');
+});
+
+test('STEP4 catalog: invoice.payment_failed -> status/subscription_status entrambi past_due', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-3', {
+      id: 'catalog-app-3',
+      status: 'active',
+      subscription_status: 'active',
+      product_id: 'product-1',
+      stripe_subscription_id: 'sub_catalog_3',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = {
+    type: 'invoice.payment_failed',
+    created: 1700004000,
+    data: { object: { subscription: 'sub_catalog_3', customer: 'cus_catalog_3' } },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-3');
+  assert.equal(app.status, 'past_due');
+  assert.equal(app.subscription_status, 'past_due');
+});
+
+test('STEP4 catalog: customer.subscription.updated mappa lo stato Stripe su status E subscription_status', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-4', {
+      id: 'catalog-app-4',
+      status: 'active',
+      subscription_status: 'active',
+      product_id: 'product-1',
+      stripe_subscription_id: 'sub_catalog_4',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = {
+    type: 'customer.subscription.updated',
+    created: 1700005000,
+    data: { object: { id: 'sub_catalog_4', status: 'unpaid', customer: 'cus_catalog_4' } },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-4');
+  assert.equal(app.status, 'past_due', 'stripe status "unpaid" -> apps.status "past_due" (resolveAppStatusFromStripeStatus, invariata)');
+  assert.equal(app.subscription_status, 'past_due');
+  assert.equal(app.stripe_customer_id, 'cus_catalog_4');
+});
+
+test('STEP4 catalog: customer.subscription.deleted -> status/subscription_status entrambi canceled', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-5', {
+      id: 'catalog-app-5',
+      status: 'past_due',
+      subscription_status: 'past_due',
+      product_id: 'product-1',
+      stripe_subscription_id: 'sub_catalog_5',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = {
+    type: 'customer.subscription.deleted',
+    created: 1700006000,
+    data: { object: { id: 'sub_catalog_5', customer: 'cus_catalog_5' } },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-5');
+  assert.equal(app.status, 'canceled');
+  assert.equal(app.subscription_status, 'canceled');
+  assert.equal(app.stripe_customer_id, 'cus_catalog_5');
+});
+
+test('STEP4 catalog: idempotenza — stesso checkout.session.completed applicato due volte produce lo stesso stato finale', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-6', {
+      id: 'catalog-app-6',
+      status: 'trial',
+      subscription_status: 'trialing',
+      product_id: 'product-1',
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_catalog_dup',
+    metadata: { app_id: 'catalog-app-6' },
+    customer: 'cus_catalog_6',
+    subscription: 'sub_catalog_6',
+    created: 1700007000,
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+  await handleStripeWebhookEvent(supabase, stripe, event); // Stripe re-invia lo stesso evento
+
+  const app = supabase._db.apps.get('catalog-app-6');
+  assert.equal(app.status, 'active');
+  assert.equal(app.subscription_status, 'active');
+  assert.equal(app.stripe_subscription_id, 'sub_catalog_6');
+  assert.equal(app.stripe_customer_id, 'cus_catalog_6');
+});
+
+test('STEP4 catalog: un evento fuori ordine non regredisce subscription_status (stessa guardia isStaleEvent di status)', async () => {
+  const appliedAt = 1700008000;
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-7', {
+      id: 'catalog-app-7',
+      status: 'active',
+      subscription_status: 'active',
+      product_id: 'product-1',
+      stripe_subscription_id: 'sub_catalog_7',
+      stripe_event_applied_at: new Date(appliedAt * 1000).toISOString(),
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const staleEvent = {
+    type: 'invoice.payment_failed',
+    created: appliedAt - 500, // più vecchio dell'ultimo applicato
+    data: { object: { subscription: 'sub_catalog_7', customer: 'cus_catalog_7' } },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, staleEvent);
+
+  const app = supabase._db.apps.get('catalog-app-7');
+  assert.equal(app.status, 'active', 'evento fuori ordine scartato: status non deve regredire');
+  assert.equal(app.subscription_status, 'active', 'evento fuori ordine scartato: subscription_status non deve regredire');
+  assert.equal(app.stripe_customer_id, undefined, 'un evento scartato come stale non deve scrivere nulla, nemmeno stripe_customer_id');
+});
+
+test('STEP4 non-catalog: product_id assente -> subscription_status/stripe_customer_id MAI scritti (comportamento identico a prima dello STEP 4)', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['legacy-app-1', {
+      id: 'legacy-app-1',
+      status: 'trial',
+      // Nessun product_id: app-cliente pubblicata normalmente (o
+      // pubblicazione CreatorAI singola), non una Catalog Instance.
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = makeCheckoutSessionEvent({
+    id: 'cs_legacy_1',
+    metadata: { app_id: 'legacy-app-1' },
+    customer: 'cus_legacy_1',
+    subscription: 'sub_legacy_1',
+    created: 1700009000,
+  });
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('legacy-app-1');
+  assert.equal(app.status, 'active');
+  assert.equal(app.stripe_subscription_id, 'sub_legacy_1', 'stripe_subscription_id via extra: comportamento preesistente, invariato');
+  assert.equal(app.subscription_status, undefined, 'subscription_status non deve mai essere scritto per un\'app non-Catalog');
+  assert.equal(app.stripe_customer_id, undefined, 'stripe_customer_id non deve mai essere scritto per un\'app non-Catalog (STEP 4 lo scrive solo se product_id è presente)');
+});

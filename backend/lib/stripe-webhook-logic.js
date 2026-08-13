@@ -33,6 +33,35 @@ function resolveAppStatusFromStripeStatus(stripeStatus) {
   return APP_SUBSCRIPTION_STATUS_MAP[stripeStatus] || null;
 }
 
+// ─── STEP 4 (App Catalog — billing) ─────────────────────────────────────────
+// Vocabolario di apps.subscription_status per una Catalog Instance
+// (apps.product_id IS NOT NULL) — stesso CHECK constraint di
+// supabase/migrations/20260815000000_app_catalog_core_schema.sql
+// ('trialing'|'active'|'past_due'|'canceled'). apps.status resta l'UNICA
+// source of truth del lifecycle (decisione STEP 4): ogni valore che
+// updateAppStatus scrive su apps.status per il ramo 'app' del webhook
+// ('active'|'past_due'|'canceled', mai altro) è già, senza traduzione,
+// un membro valido di questo vocabolario — questa funzione esiste solo per
+// rendere esplicita/testabile quella coincidenza e per non scrivere mai
+// accidentalmente un valore fuori dal CHECK constraint (es. 'trial'/'expired',
+// stati che il webhook non emette mai, ma che apps.status può assumere da
+// altri percorsi — provisioning, cron legacy).
+const CATALOG_SUBSCRIPTION_STATUSES = new Set(['trialing', 'active', 'past_due', 'canceled']);
+function resolveCatalogSubscriptionStatus(appStatus) {
+  return CATALOG_SUBSCRIPTION_STATUSES.has(appStatus) ? appStatus : null;
+}
+
+// Estrae un id Stripe da un campo che può arrivare sia come stringa
+// ("cus_...", "sub_...") sia come oggetto espanso ({ id: "cus_..." }), a
+// seconda di come Stripe serializza l'evento — stesso pattern già ripetuto
+// inline in più punti di stripe-webhook-handler.js (session.subscription,
+// session.customer, invoice.customer, subscription.customer): unica fonte di
+// verità qui invece di duplicarlo ad ogni call site.
+function extractStripeId(value) {
+  if (!value) return null;
+  return typeof value === 'string' ? value : (value.id || null);
+}
+
 // Protezione eventi fuori ordine (Fase 3B, caso 13): Stripe non garantisce
 // la consegna in ordine cronologico degli eventi webhook. `eventCreatedAt`
 // è il campo `created` dell'Event Stripe (secondi Unix, sempre presente);
@@ -193,6 +222,9 @@ module.exports = {
   planRank,
   APP_SUBSCRIPTION_STATUS_MAP,
   resolveAppStatusFromStripeStatus,
+  CATALOG_SUBSCRIPTION_STATUSES,
+  resolveCatalogSubscriptionStatus,
+  extractStripeId,
   isStaleEvent,
   isDuplicateSessionError,
   resolveEventSubscriptionId,

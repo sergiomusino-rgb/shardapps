@@ -14,6 +14,9 @@ const {
   planRank,
   APP_SUBSCRIPTION_STATUS_MAP,
   resolveAppStatusFromStripeStatus,
+  CATALOG_SUBSCRIPTION_STATUSES,
+  resolveCatalogSubscriptionStatus,
+  extractStripeId,
   isStaleEvent,
   isDuplicateSessionError,
   resolveEventSubscriptionId,
@@ -391,4 +394,52 @@ test('resolvePlanFromProductName: nome mancante/vuoto -> null', () => {
   assert.equal(resolvePlanFromProductName(null), null);
   assert.equal(resolvePlanFromProductName(undefined), null);
   assert.equal(resolvePlanFromProductName(''), null);
+});
+
+// ─── STEP 4 — resolveCatalogSubscriptionStatus() ────────────────────────────
+
+test('resolveCatalogSubscriptionStatus: i 3 status scritti dal ramo app del webhook sono tutti nel vocabolario CHECK', () => {
+  assert.equal(resolveCatalogSubscriptionStatus('active'), 'active');
+  assert.equal(resolveCatalogSubscriptionStatus('past_due'), 'past_due');
+  assert.equal(resolveCatalogSubscriptionStatus('canceled'), 'canceled');
+});
+
+test('resolveCatalogSubscriptionStatus: "trialing" è nel vocabolario (anche se il webhook non lo scrive mai)', () => {
+  assert.equal(resolveCatalogSubscriptionStatus('trialing'), 'trialing');
+});
+
+test('resolveCatalogSubscriptionStatus: status fuori dal CHECK constraint (es. "trial"/"expired", non emessi dal webhook) -> null, mai scritto', () => {
+  // 'trial'/'expired' sono valori validi di apps.status (provisioning STEP 3,
+  // cron legacy) ma NON del CHECK constraint di apps.subscription_status
+  // (20260815000000_app_catalog_core_schema.sql): scriverli lì romperebbe
+  // il constraint. Il webhook non li passa mai a updateAppStatus, ma questa
+  // funzione resta la guardia esplicita se mai succedesse.
+  assert.equal(resolveCatalogSubscriptionStatus('trial'), null);
+  assert.equal(resolveCatalogSubscriptionStatus('expired'), null);
+  assert.equal(resolveCatalogSubscriptionStatus('qualcosa-di-inatteso'), null);
+  assert.equal(resolveCatalogSubscriptionStatus(undefined), null);
+});
+
+test('CATALOG_SUBSCRIPTION_STATUSES: esattamente i 4 valori del CHECK constraint su apps.subscription_status', () => {
+  assert.deepEqual([...CATALOG_SUBSCRIPTION_STATUSES].sort(), ['active', 'canceled', 'past_due', 'trialing']);
+});
+
+// ─── STEP 4 — extractStripeId() ─────────────────────────────────────────────
+
+test('extractStripeId: stringa -> ritornata così com\'è', () => {
+  assert.equal(extractStripeId('cus_123'), 'cus_123');
+  assert.equal(extractStripeId('sub_456'), 'sub_456');
+});
+
+test('extractStripeId: oggetto espanso -> .id', () => {
+  assert.equal(extractStripeId({ id: 'cus_789', email: 'x@example.com' }), 'cus_789');
+});
+
+test('extractStripeId: null/undefined -> null (mai crash)', () => {
+  assert.equal(extractStripeId(null), null);
+  assert.equal(extractStripeId(undefined), null);
+});
+
+test('extractStripeId: oggetto senza .id -> null', () => {
+  assert.equal(extractStripeId({}), null);
 });
