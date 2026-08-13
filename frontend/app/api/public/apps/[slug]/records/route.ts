@@ -26,6 +26,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint, type AdminEntity } from '@/src/lib/site-schema';
 import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
+import { captureError } from '@/src/lib/error-tracking';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -236,7 +237,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     });
   } catch (err) {
-    console.error('[public/apps/records] error:', err);
+    captureError('public.apps.records', err, { url: request.url });
     return NextResponse.json({ success: false, error: 'Errore interno del server', code: 'INTERNAL_ERROR' }, { status: 500 });
   }
 }
