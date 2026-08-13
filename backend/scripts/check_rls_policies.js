@@ -42,6 +42,23 @@ const COMMANDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 // una di queste tabelle/comandi non combacia esattamente, è un cambiamento —
 // voluto o un refuso — da rivedere prima del deploy.
 const BASELINE = {
+  // App Catalog & Instance Model (STEP 2, migration 20260815000000): catalogo
+  // prodotti GLOBALE di piattaforma (non per-tenant), leggibile da chiunque
+  // sia autenticato (is_active=true), scrivibile solo da service_role —
+  // nessuna policy INSERT/UPDATE/DELETE per anon/authenticated è
+  // intenzionale, stesso principio di tenant_members sotto.
+  app_products: {
+    SELECT: ['app_products_select_active'],
+    INSERT: [],
+    UPDATE: [],
+    DELETE: [],
+  },
+  app_product_versions: {
+    SELECT: ['app_product_versions_select_active'],
+    INSERT: [],
+    UPDATE: [],
+    DELETE: [],
+  },
   profiles: {
     // Dopo 20260808000014: sola lettura da client (propria riga o
     // has_table_access per il pannello admin). profiles.role autorizza le
