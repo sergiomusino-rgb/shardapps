@@ -41,7 +41,28 @@ export interface ProvisionComandiAppResult {
    * anche quando l'istanza esisteva già (recupero, non solo alla creazione). */
   posEmail?: string;
   posPassword?: string;
+  /** true quando questa chiamata ha collegato product_id/product_version_id
+   * a un'istanza gratuita preesistente (Catalog "adoption", vedi
+   * catalogLink sotto) invece di crearne una nuova o limitarsi a recuperarla. */
+  adopted?: boolean;
   error?: string;
+}
+
+/**
+ * Estensione additiva (App Catalog & Instance Model — ComandAI come
+ * prodotto Catalog): usata SOLO dal provisioning del Catalog
+ * (app/api/catalog/products/[productSlug]/provision/route.ts) per collegare
+ * product_id/product_version_id all'istanza comandi_ai del tenant — la
+ * STESSA istanza gratuita già esistente se presente ("adoption in place",
+ * mai una seconda app), oppure alla nuova istanza se il tenant non ne ha
+ * ancora una. Omesso (undefined) per ogni altro chiamante esistente
+ * (/api/tenants/create, bottone "Attiva" nel Creator, ecc.): il
+ * comportamento di questa funzione per loro resta IDENTICO a prima di
+ * questa estensione, nessun campo Catalog viene mai scritto.
+ */
+export interface ComandiCatalogLink {
+  productId: string;
+  productVersionId: string;
 }
 
 const UpdatePosPasswordInputSchema = z.object({
@@ -70,7 +91,8 @@ function generatePassword(): string {
 }
 
 export async function provisionComandiAppAction(
-  input: ProvisionComandiAppInput
+  input: ProvisionComandiAppInput,
+  catalogLink?: ComandiCatalogLink
 ): Promise<ProvisionComandiAppResult> {
   try {
     const validation = ProvisionComandiAppInputSchema.safeParse(input);
@@ -118,21 +140,72 @@ export async function provisionComandiAppAction(
     // istanza (una copia da vendere a un cliente diverso), non recuperare
     // quella già esistente.
     if (!createNew) {
-      const { data: existingApp } = await supabaseAdmin
-        .from('apps')
-        .select('id, slug, client_email, client_password')
+      // Cast (product_id non ancora nei tipi generati da Supabase per
+      // `apps`, stesso motivo/pattern già usato in
+      // app/api/catalog/products/[productSlug]/provision/route.ts — nessun
+      // impatto a runtime).
+      const { data: existingApp } = await (supabaseAdmin
+        .from('apps') as any)
+        .select('id, slug, client_email, client_password, product_id')
         .eq('tenant_id', tenantId)
         .eq('app_type', 'comandi_ai')
         .limit(1)
-        .maybeSingle();
+        .maybeSingle() as {
+          data: { id: string; slug: string; client_email: string | null; client_password: string | null; product_id: string | null } | null;
+        };
 
       if (existingApp?.slug) {
+        // Catalog "adoption in place" (App Catalog & Instance Model): il
+        // chiamante è il provisioning del Catalog e vuole collegare
+        // product_id/product_version_id a QUESTA istanza già esistente,
+        // mai crearne una seconda. Tre sotto-casi:
+        // - già collegata allo stesso prodotto: no-op, idempotente (come il
+        //   resto del Catalog per una seconda chiamata a provisioning).
+        // - collegata a un prodotto DIVERSO: non deve mai capitare nel
+        //   percorso normale (un'istanza comandi_ai ha un solo product_id
+        //   possibile, questo), ma se capitasse non si sovrascrive in
+        //   silenzio un collegamento esistente — errore esplicito.
+        // - non ancora collegata (product_id NULL, il caso atteso per
+        //   l'istanza omaggio preesistente): UPDATE mirato, WHERE ripete
+        //   anche product_id IS NULL come guardia ottimistica contro una
+        //   race con un'altra richiesta di adoption concorrente.
+        const existingProductId = existingApp.product_id;
+        if (catalogLink && existingProductId && existingProductId !== catalogLink.productId) {
+          return {
+            success: false,
+            error: 'Questa istanza ComandAI risulta già collegata a un altro prodotto del catalogo',
+          };
+        }
+        if (catalogLink && !existingProductId) {
+          const { error: adoptError } = await (supabaseAdmin
+            .from('apps') as any)
+            .update({
+              product_id: catalogLink.productId,
+              product_version_id: catalogLink.productVersionId,
+              subscription_status: 'trialing',
+            })
+            .eq('id', existingApp.id)
+            .is('product_id', null);
+          if (adoptError) {
+            console.error('[provisionComandiAppAction] Errore adoption Catalog:', adoptError);
+            return { success: false, error: 'Errore nel collegamento dell\'istanza al catalogo: ' + adoptError.message };
+          }
+          return {
+            success: true,
+            appId: existingApp.id,
+            slug: existingApp.slug,
+            posEmail: existingApp.client_email || undefined,
+            posPassword: existingApp.client_password || undefined,
+            adopted: true,
+          };
+        }
+
         return {
           success: true,
-          appId: existingApp.id as string,
-          slug: existingApp.slug as string,
-          posEmail: (existingApp.client_email as string) || undefined,
-          posPassword: (existingApp.client_password as string) || undefined,
+          appId: existingApp.id,
+          slug: existingApp.slug,
+          posEmail: existingApp.client_email || undefined,
+          posPassword: existingApp.client_password || undefined,
         };
       }
     }
@@ -200,8 +273,13 @@ export async function provisionComandiAppAction(
       return { success: false, error: 'Errore nella configurazione dell\'account di accesso' };
     }
 
-    const { data: newApp, error: appError } = await supabaseAdmin
-      .from('apps')
+    // Cast (product_id/product_version_id/subscription_status non ancora nei
+    // tipi generati da Supabase per `apps`, stesso motivo/pattern già usato
+    // in app/api/catalog/products/[productSlug]/provision/route.ts — nessun
+    // impatto a runtime, e SOLO quando catalogLink è presente questi tre
+    // campi vengono effettivamente scritti, vedi sotto).
+    const { data: newApp, error: appError } = await (supabaseAdmin
+      .from('apps') as any)
       .insert({
         name: 'ComandAI',
         slug,
@@ -220,6 +298,18 @@ export async function provisionComandiAppAction(
         client_price: MONTHLY_PRICE,
         zeusx_fee: createNew ? MONTHLY_PRICE : 0,
         production_url: productionUrl,
+        // Collegamento al Catalog SOLO se questa chiamata viene dal
+        // provisioning Catalog (catalogLink presente): per ogni altro
+        // chiamante (auto-provisioning gratuito, createNew:true) questi tre
+        // campi restano assenti/ai default di schema, comportamento
+        // invariato rispetto a prima di questa estensione.
+        ...(catalogLink
+          ? {
+              product_id: catalogLink.productId,
+              product_version_id: catalogLink.productVersionId,
+              subscription_status: 'trialing',
+            }
+          : {}),
         config: {
           appType: 'comandi_ai',
           appName: 'ComandAI',

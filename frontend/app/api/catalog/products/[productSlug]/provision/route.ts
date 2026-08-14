@@ -37,10 +37,21 @@ import {
 } from '@/src/lib/creator-server';
 import { authorizeCatalogProvision } from '@/src/lib/catalog-provision-authorization';
 import { captureError } from '@/src/lib/error-tracking';
+import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
+
+// ComandAI (App Catalog: prodotto ComandAI-native) NON usa il motore a
+// blueprint dinamico (ViewerProFinal) come ogni altro prodotto Catalog: il
+// suo runtime è selezionato da apps.app_type='comandi_ai', invariato,
+// esistente da prima del Catalog. Questo prodotto richiede quindi un
+// percorso di provisioning dedicato (vedi handleComandiAiProvisioning sotto)
+// invece del percorso generico blueprint-based di questa route — nessuna
+// nuova colonna di schema per distinguerlo, solo questo confronto sullo slug
+// (che identifica un prodotto specifico tanto quanto il suo id).
+const COMANDI_AI_PRODUCT_SLUG = 'command-ai';
 
 // Stessa identica generazione di /api/creator/publish/route.ts (crypto.randomInt,
 // mai Math.random per una password reale di primo accesso).
@@ -111,6 +122,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const tenantId = await getOrCreateTenant(supabase, user, token);
+
+    // ─── ComandAI: percorso di provisioning dedicato ───────────────────────
+    // Riusa il runtime/provisioning ComandAI ESISTENTE (comandi-provisioning.ts,
+    // invariato per ogni altro chiamante) invece del percorso blueprint
+    // generico sotto: nessun blueprint viene mai renderizzato per questo
+    // prodotto (app_type='comandi_ai' instrada altrove PRIMA che il blueprint
+    // conti, vedi app/a/[slug]/page.tsx). Uscita anticipata dalla route.
+    if (product.slug === COMANDI_AI_PRODUCT_SLUG) {
+      return handleComandiAiProvisioning({ token, tenantId, product, version });
+    }
 
     // ─── Idempotenza minima (FASE 7 dell'audit) ────────────────────────────
     // Un doppio click su "Attiva" non deve creare una seconda istanza dello
@@ -281,6 +302,128 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
   } catch (err) {
     captureError('catalog.provision', err, { url: request.url });
+    return NextResponse.json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Errore interno del server',
+      code: 'INTERNAL_ERROR',
+    }, { status: 500 });
+  }
+}
+
+// ─── ComandAI: provisioning/adozione dedicati ──────────────────────────────
+// Decisione di prodotto (App Catalog: ComandAI): UNA SOLA istanza ComandAI
+// per tenant, mai due. Ogni tenant possiede già oggi, di norma, un'istanza
+// comandi_ai gratuita creata automaticamente alla registrazione
+// (app_type='comandi_ai', product_id NULL — vedi /api/tenants/create). Il
+// Catalog non deve MAI crearne una seconda: deve "adottare in place" quella
+// esistente (collegare product_id/product_version_id) se c'è, oppure crearne
+// una nuova SOLO se il tenant non ne ha ancora nessuna.
+//
+// Riusa integralmente comandi-provisioning.ts (account cassa, apps,
+// app_definitions, app_registry, rollback su errore) tramite il parametro
+// catalogLink aggiunto lì: nessuna duplicazione di quella logica qui.
+async function handleComandiAiProvisioning({
+  token,
+  tenantId,
+  product,
+  version,
+}: {
+  token: string;
+  tenantId: string;
+  product: { id: string; slug: string; name: string; trial_days: number; is_active: boolean };
+  version: { id: string; product_id: string; version: string; blueprint: unknown; is_active: boolean };
+}) {
+  try {
+    // Ambiguità (FASE 4D dell'audit): un tenant può avere più di un'istanza
+    // comandi_ai SOLO tramite il percorso di rivendita esistente
+    // (provisionComandiAppAction con createNew:true, pensato per copie da
+    // vendere a un cliente finale diverso — non l'istanza gratuita "propria"
+    // del tenant). Se càpita, questa route non sceglie arbitrariamente quale
+    // collegare al Catalog: si ferma e lo segnala, nessun dato toccato.
+    const { data: existingComandiApps, error: lookupError } = await supabase
+      .from('apps' as any)
+      .select('id, product_id')
+      .eq('tenant_id', tenantId)
+      .eq('app_type', 'comandi_ai')
+      .eq('is_active', true) as { data: Array<{ id: string; product_id: string | null }> | null; error: unknown };
+
+    if (lookupError) {
+      captureError('catalog.provision.comandi_ai', lookupError, { tenantId });
+      return NextResponse.json({ success: false, error: 'Errore nella verifica delle istanze esistenti', code: 'DB_ERROR' }, { status: 500 });
+    }
+
+    const instances = existingComandiApps ?? [];
+    if (instances.length > 1) {
+      captureError('catalog.provision.comandi_ai', new Error('Più istanze comandi_ai attive per lo stesso tenant'), {
+        tenantId,
+        appIds: instances.map((a) => a.id),
+      });
+      return NextResponse.json({
+        success: false,
+        error: 'Trovate più istanze ComandAI attive per questo tenant: richiede intervento manuale, nessuna collegata automaticamente al catalogo.',
+        code: 'AMBIGUOUS_COMANDI_INSTANCES',
+      }, { status: 409 });
+    }
+
+    // Idempotenza esplicita (oltre a quella già gestita dentro
+    // provisionComandiAppAction): se l'unica istanza esistente è GIÀ
+    // collegata a questo stesso prodotto, non richiamare nemmeno l'action —
+    // stessa policy "un'istanza attiva per prodotto per tenant" del resto
+    // del Catalog.
+    if (instances.length === 1 && instances[0].product_id === product.id) {
+      const { data: app } = await supabase.from('apps' as any)
+        .select('id, slug, client_email, client_password')
+        .eq('id', instances[0].id)
+        .maybeSingle() as { data: { id: string; slug: string; client_email: string | null; client_password: string | null } | null };
+      if (!app) {
+        return NextResponse.json({ success: false, error: 'Errore interno', code: 'INTERNAL_ERROR' }, { status: 500 });
+      }
+      return NextResponse.json({
+        success: true,
+        data: {
+          appId: app.id,
+          slug: app.slug,
+          url: `${getAppBaseUrl()}/a/${app.slug}`,
+          productId: product.id,
+          productVersionId: version.id,
+          subscriptionStatus: 'trialing',
+          clientEmail: app.client_email ?? undefined,
+          clientPassword: app.client_password ?? undefined,
+          alreadyProvisioned: true,
+        },
+      });
+    }
+
+    // Creazione (nessuna istanza) o adozione (istanza esistente con
+    // product_id NULL): entrambe delegate a provisionComandiAppAction, che
+    // fa già il lookup/rollback necessari — qui si passa solo catalogLink.
+    const result = await provisionComandiAppAction(
+      { accessToken: token, createNew: false },
+      { productId: product.id, productVersionId: version.id }
+    );
+
+    if (!result.success || !result.appId || !result.slug) {
+      captureError('catalog.provision.comandi_ai', new Error(result.error || 'provisionComandiAppAction fallita'), { tenantId, productId: product.id });
+      return NextResponse.json({ success: false, error: result.error || 'Errore nel provisioning di ComandAI', code: 'COMANDI_PROVISION_ERROR' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        appId: result.appId,
+        slug: result.slug,
+        url: `${getAppBaseUrl()}/a/${result.slug}`,
+        productId: product.id,
+        productVersionId: version.id,
+        subscriptionStatus: 'trialing',
+        clientEmail: result.posEmail,
+        clientPassword: result.posPassword,
+        alreadyProvisioned: false,
+        adopted: !!result.adopted,
+      },
+    });
+  } catch (err) {
+    captureError('catalog.provision.comandi_ai', err, { tenantId, productId: product.id });
     return NextResponse.json({
       success: false,
       error: err instanceof Error ? err.message : 'Errore interno del server',
