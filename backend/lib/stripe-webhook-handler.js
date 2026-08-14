@@ -453,8 +453,17 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
         // scope per il modello Catalog.
         const { data: paidApp } = await supabase.from('apps').select('product_id').eq('id', paidAppId).maybeSingle();
         const paidPeriodEnd = invoice.lines?.data?.[0]?.period?.end;
+        // expiry_warning_sent: false insieme a expires_at, stessa condizione
+        // e stessa singola UPDATE (nessuna scrittura in più, idempotenza ed
+        // evento-fuori-ordine invariati — è lo stesso `extra` già coperto da
+        // isStaleEvent dentro updateAppStatus). Senza reset, il cron di
+        // scadenza (jobs/expiry-check.js) non invierebbe mai più l'email di
+        // preavviso dopo il primo ciclo: il flag resterebbe true per sempre,
+        // anche col nuovo expires_at esteso in avanti. SOLO reseller
+        // (product_id NULL), stesso motivo del ramo expires_at sopra: una
+        // Catalog Instance non ha mai usato questo meccanismo di preavviso.
         const extra = (!paidApp?.product_id && paidPeriodEnd)
-          ? { expires_at: new Date(paidPeriodEnd * 1000).toISOString() }
+          ? { expires_at: new Date(paidPeriodEnd * 1000).toISOString(), expiry_warning_sent: false }
           : {};
 
         await updateAppStatus(supabase, paidAppId, 'active', event.created, extra, {

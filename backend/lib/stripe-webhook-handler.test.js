@@ -796,7 +796,7 @@ test('STEP4 catalog: invoice.payment_failed -> status/subscription_status entram
 // client_active 5gg dopo expires_at indipendentemente da rinnovi Stripe
 // riusciti nel frattempo.
 
-test('BLOCKER #3: rinnovo pagato di un\'app-cliente reseller estende expires_at al period.end della fattura', async () => {
+test('BLOCKER #3: rinnovo pagato di un\'app-cliente reseller estende expires_at al period.end della fattura e resetta expiry_warning_sent', async () => {
   const supabase = createFakeSupabase({
     apps: [['reseller-app-1', {
       id: 'reseller-app-1',
@@ -804,6 +804,7 @@ test('BLOCKER #3: rinnovo pagato di un\'app-cliente reseller estende expires_at 
       product_id: null, // app-cliente reseller, NON una Catalog Instance
       stripe_subscription_id: 'sub_reseller_1',
       expires_at: '2026-01-01T00:00:00.000Z', // periodo precedente, ormai superato
+      expiry_warning_sent: true, // avviso già inviato nel ciclo precedente
       stripe_event_applied_at: null,
     }]],
   });
@@ -829,9 +830,52 @@ test('BLOCKER #3: rinnovo pagato di un\'app-cliente reseller estende expires_at 
   const app = supabase._db.apps.get('reseller-app-1');
   assert.equal(app.status, 'active');
   assert.equal(app.expires_at, new Date(paidThroughUnix * 1000).toISOString(), 'expires_at deve essere esteso al period.end della fattura, non più fermo al vecchio valore');
+  assert.equal(app.expiry_warning_sent, false, 'expiry_warning_sent deve tornare false: il nuovo ciclo deve poter generare di nuovo l\'avviso di scadenza');
 });
 
-test('BLOCKER #3: rinnovo pagato di una Catalog Instance NON tocca expires_at (fuori scope, resta gestito da status/subscription_status)', async () => {
+test('Task 1 — evento invoice.payment_succeeded duplicato (stesso event.created) sul rinnovo reseller: nessuna regressione, stato finale identico', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['reseller-app-dup', {
+      id: 'reseller-app-dup',
+      status: 'active',
+      product_id: null,
+      stripe_subscription_id: 'sub_reseller_dup',
+      expires_at: '2026-01-01T00:00:00.000Z',
+      expiry_warning_sent: true,
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const paidThroughUnix = 1700100000 + 30 * 24 * 60 * 60;
+  const event = {
+    type: 'invoice.payment_succeeded',
+    created: 1700100000,
+    data: {
+      object: {
+        subscription: 'sub_reseller_dup',
+        customer: 'cus_reseller_dup',
+        lines: { data: [{ period: { start: 1700100000, end: paidThroughUnix } }] },
+      },
+    },
+  };
+
+  // Stesso identico evento (stesso event.created) consegnato due volte da
+  // Stripe (retry/redelivery): isStaleEvent confronta con < (non <=), quindi
+  // un duplicato con lo stesso timestamp NON è "fuori ordine" e riapplica lo
+  // stesso UPDATE — atteso, dato che un UPDATE di stato è idempotente per
+  // costruzione (stesso principio già documentato sopra updateAppStatus).
+  await handleStripeWebhookEvent(supabase, stripe, event);
+  const afterFirst = { ...supabase._db.apps.get('reseller-app-dup') };
+  await handleStripeWebhookEvent(supabase, stripe, event);
+  const afterSecond = supabase._db.apps.get('reseller-app-dup');
+
+  assert.equal(afterSecond.status, 'active');
+  assert.equal(afterSecond.expires_at, afterFirst.expires_at, 'expires_at identico dopo il duplicato, nessun doppio avanzamento del periodo');
+  assert.equal(afterSecond.expiry_warning_sent, false, 'expiry_warning_sent resta false, non torna true né si comporta diversamente al secondo giro');
+});
+
+test('BLOCKER #3: rinnovo pagato di una Catalog Instance NON tocca expires_at né expiry_warning_sent (fuori scope, resta gestito da status/subscription_status)', async () => {
   const supabase = createFakeSupabase({
     apps: [['catalog-app-renew', {
       id: 'catalog-app-renew',
@@ -840,6 +884,7 @@ test('BLOCKER #3: rinnovo pagato di una Catalog Instance NON tocca expires_at (f
       product_id: 'product-1', // Catalog Instance
       stripe_subscription_id: 'sub_catalog_renew',
       expires_at: null,
+      expiry_warning_sent: true, // valore preesistente qualunque: non deve essere toccato
       stripe_event_applied_at: null,
     }]],
   });
@@ -863,6 +908,7 @@ test('BLOCKER #3: rinnovo pagato di una Catalog Instance NON tocca expires_at (f
   assert.equal(app.status, 'active');
   assert.equal(app.subscription_status, 'active');
   assert.equal(app.expires_at, null, 'una Catalog Instance non ha mai usato expires_at per il proprio ciclo di vita: deve restare invariato');
+  assert.equal(app.expiry_warning_sent, true, 'expiry_warning_sent non deve essere toccato per una Catalog Instance: resta il valore preesistente');
 });
 
 test('STEP4 catalog: customer.subscription.updated mappa lo stato Stripe su status E subscription_status', async () => {
