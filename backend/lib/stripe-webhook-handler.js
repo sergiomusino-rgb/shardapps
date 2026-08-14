@@ -430,11 +430,38 @@ async function handleStripeWebhookEvent(supabase, stripe, event) {
       // stesso stripe_subscription_id.
       const paidAppId = await getAppIdBySubscriptionId(supabase, subscriptionId);
       if (paidAppId) {
-        await updateAppStatus(supabase, paidAppId, 'active', event.created, {}, {
+        // Audit pre-lancio 2026-08-14, BLOCKER #3: prima di questa patch un
+        // rinnovo pagato aggiornava solo apps.status='active', mai
+        // apps.expires_at — che resta fermo a "creazione+30gg"
+        // (frontend/app/api/apps/route.ts) per sempre. Il cron di scadenza
+        // (backend/jobs/expiry-check.js) blocca client_active 5gg dopo
+        // expires_at indipendentemente da eventuali rinnovi Stripe riusciti
+        // nel frattempo: un cliente che pagava regolarmente veniva comunque
+        // bloccato alla scadenza del PRIMO periodo. Il periodo davvero
+        // pagato è sulla riga della fattura (invoice.lines.data[0].period.end,
+        // sempre presente per una fattura di abbonamento) — stessa
+        // subscription a riga singola creata in apps/checkout/route.ts,
+        // nessuna ambiguità su quale riga leggere.
+        //
+        // SOLO per app-cliente reseller (product_id NULL): una Catalog
+        // Instance (product_id NOT NULL) non ha mai usato expires_at per il
+        // proprio ciclo di vita — la revoca/il rinnovo per queste passano
+        // interamente da apps.status/subscription_status (vedi BLOCKER #2,
+        // clientAuthMiddleware). Impostarlo anche qui le esporrebbe per la
+        // prima volta al cron di scadenza reseller, un comportamento che non
+        // hanno mai avuto — non necessario per chiudere questo caso e fuori
+        // scope per il modello Catalog.
+        const { data: paidApp } = await supabase.from('apps').select('product_id').eq('id', paidAppId).maybeSingle();
+        const paidPeriodEnd = invoice.lines?.data?.[0]?.period?.end;
+        const extra = (!paidApp?.product_id && paidPeriodEnd)
+          ? { expires_at: new Date(paidPeriodEnd * 1000).toISOString() }
+          : {};
+
+        await updateAppStatus(supabase, paidAppId, 'active', event.created, extra, {
           stripe_subscription_id: subscriptionId,
           stripe_customer_id: extractStripeId(invoice.customer),
         });
-        console.log(`[Stripe Webhook] Rinnovo pagato per app ${paidAppId}`);
+        console.log(`[Stripe Webhook] Rinnovo pagato per app ${paidAppId}${extra.expires_at ? `, expires_at esteso a ${extra.expires_at}` : ''}`);
         break;
       }
 

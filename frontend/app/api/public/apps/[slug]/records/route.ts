@@ -27,6 +27,7 @@ import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint, type AdminEntity } from '@/src/lib/site-schema';
 import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 import { captureError } from '@/src/lib/error-tracking';
+import { isEntityExposedInPublicPages } from '@/src/lib/public-records-exposure';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -34,29 +35,6 @@ const supabase = createClient<Database>(supabaseUrl, serviceRoleKey);
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
-
-// ─── Fase 5 audit, Gap #1 (P0) — bypass RBAC in lettura ────────────────────
-// Fino a questa patch, qualunque entità dichiarata in adminPanel.entities era
-// leggibile da qui senza credenziali, indipendentemente dal fatto che l'app
-// avesse auth_mode='rbac'/authConfig.enabled: le due feature sono state
-// costruite in fasi diverse (questo endpoint in Fase 1-2, RBAC in Fase 3) e
-// non erano mai state riconciliate. Un'entità "interna" (gestita solo dal
-// pannello admin dietro login) non ha nulla che la distingua, nello schema,
-// da un'entità pensata per una sezione pubblica (es. il menu di un
-// ristorante) — l'unico segnale affidabile è se quell'entità è REALMENTE
-// referenziata da una sezione 'list'/'form' di una pagina pubblica del
-// blueprint (le uniche due che portano un campo `entity`, vedi
-// ListSectionSchema/FormSectionSchema in site-schema.ts). Se l'app non è
-// rbac, comportamento invariato (nessuna app legacy ha mai avuto bisogno di
-// questo controllo, ed è così che le sezioni pubbliche hanno sempre
-// funzionato finora).
-function isEntityExposedInPublicPages(blueprint: { pages: { sections: { type: string; entity?: string }[] }[] }, entityName: string): boolean {
-  return blueprint.pages.some((page) =>
-    page.sections.some((section) =>
-      (section.type === 'list' || section.type === 'form') && section.entity === entityName
-    )
-  );
-}
 
 // ─── Risoluzione relazioni (?include_relations=true) ───────────────────────
 // Disattivata di default: il chiamante che si accontenta degli id grezzi non
@@ -179,19 +157,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'Entità non trovata', code: 'ENTITY_NOT_FOUND' }, { status: 404 });
     }
 
-    // Fase 5 audit, Gap #1 (P0): un'app rbac (auth_mode='rbac' — già
-    // persistito al publish quando authConfig.enabled è true, vedi
-    // creator/publish/route.ts — controllato anche su blueprint.authConfig
-    // per coprire un config salvato ma non ancora riflesso su auth_mode, es.
-    // durante una modifica non ancora ripubblicata) espone qui SOLO le
-    // entità che il blueprint stesso rende pubbliche tramite una sezione
-    // 'list'/'form': un'entità di sola gestione interna (RBAC-protetta nel
-    // pannello admin) non deve mai essere leggibile senza credenziali.
-    // Stessa risposta (404 "Entità non trovata") del ramo sopra, per non far
-    // trapelare la differenza tra "entità inesistente" ed "entità esistente
-    // ma non pubblica" a chi sta enumerando nomi di entità.
-    const isRbacProtected = app.auth_mode === 'rbac' || blueprint.authConfig?.enabled === true;
-    if (isRbacProtected && !isEntityExposedInPublicPages(blueprint, entity)) {
+    // Fase 5 audit, Gap #1 (P0) + Audit pre-lancio 2026-08-14: espone qui
+    // SOLO le entità che il blueprint stesso rende pubbliche tramite una
+    // sezione 'list'/'form' — indipendentemente da auth_mode/authConfig.
+    // Prima di questa patch il controllo scattava solo per le app
+    // auth_mode='rbac': per QUALUNQUE altra app (la maggioranza, dato che il
+    // generatore lascia authConfig disabilitato di default, vedi
+    // creator/generate/route.ts) qualunque entità dichiarata in
+    // adminPanel.entities era leggibile qui senza credenziali per il solo
+    // fatto di esistere nello schema — anche un'entità di sola gestione
+    // interna (clienti, ordini, fornitori) mai referenziata da una pagina
+    // pubblica. "Pubblica" ora significa sempre e solo "referenziata da una
+    // sezione list/form pubblica", non "l'app non ha login". Stessa risposta
+    // (404 "Entità non trovata") del ramo sopra, per non far trapelare la
+    // differenza tra "entità inesistente" ed "entità esistente ma non
+    // pubblica" a chi sta enumerando nomi di entità. Le vere sezioni
+    // pubbliche list/form continuano a funzionare invariate, essendo per
+    // definizione già "esposte" secondo questo stesso controllo.
+    if (!isEntityExposedInPublicPages(blueprint, entity)) {
       return NextResponse.json({ success: false, error: 'Entità non trovata', code: 'ENTITY_NOT_FOUND' }, { status: 404 });
     }
 

@@ -788,6 +788,83 @@ test('STEP4 catalog: invoice.payment_failed -> status/subscription_status entram
   assert.equal(app.subscription_status, 'past_due');
 });
 
+// ─── BLOCKER #3 (Audit pre-lancio 2026-08-14) — rinnovo reseller estende
+// apps.expires_at ─────────────────────────────────────────────────────────
+// Prima di questa patch, invoice.payment_succeeded per un'app-cliente
+// reseller (product_id NULL) aggiornava solo apps.status='active', mai
+// apps.expires_at: il cron di scadenza (jobs/expiry-check.js) blocca
+// client_active 5gg dopo expires_at indipendentemente da rinnovi Stripe
+// riusciti nel frattempo.
+
+test('BLOCKER #3: rinnovo pagato di un\'app-cliente reseller estende expires_at al period.end della fattura', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['reseller-app-1', {
+      id: 'reseller-app-1',
+      status: 'active',
+      product_id: null, // app-cliente reseller, NON una Catalog Instance
+      stripe_subscription_id: 'sub_reseller_1',
+      expires_at: '2026-01-01T00:00:00.000Z', // periodo precedente, ormai superato
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  // 1700100000 = 2023-11-16T00:00:00Z, usato solo come "adesso" dell'evento
+  // (isStaleEvent) — il periodo pagato reale è invoice.lines[0].period.end.
+  const paidThroughUnix = 1700100000 + 30 * 24 * 60 * 60; // +30gg
+  const event = {
+    type: 'invoice.payment_succeeded',
+    created: 1700100000,
+    data: {
+      object: {
+        subscription: 'sub_reseller_1',
+        customer: 'cus_reseller_1',
+        lines: { data: [{ period: { start: 1700100000, end: paidThroughUnix } }] },
+      },
+    },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('reseller-app-1');
+  assert.equal(app.status, 'active');
+  assert.equal(app.expires_at, new Date(paidThroughUnix * 1000).toISOString(), 'expires_at deve essere esteso al period.end della fattura, non più fermo al vecchio valore');
+});
+
+test('BLOCKER #3: rinnovo pagato di una Catalog Instance NON tocca expires_at (fuori scope, resta gestito da status/subscription_status)', async () => {
+  const supabase = createFakeSupabase({
+    apps: [['catalog-app-renew', {
+      id: 'catalog-app-renew',
+      status: 'active',
+      subscription_status: 'active',
+      product_id: 'product-1', // Catalog Instance
+      stripe_subscription_id: 'sub_catalog_renew',
+      expires_at: null,
+      stripe_event_applied_at: null,
+    }]],
+  });
+  const stripe = createFakeStripe();
+
+  const event = {
+    type: 'invoice.payment_succeeded',
+    created: 1700100000,
+    data: {
+      object: {
+        subscription: 'sub_catalog_renew',
+        customer: 'cus_catalog_renew',
+        lines: { data: [{ period: { start: 1700100000, end: 1700100000 + 30 * 24 * 60 * 60 } }] },
+      },
+    },
+  };
+
+  await handleStripeWebhookEvent(supabase, stripe, event);
+
+  const app = supabase._db.apps.get('catalog-app-renew');
+  assert.equal(app.status, 'active');
+  assert.equal(app.subscription_status, 'active');
+  assert.equal(app.expires_at, null, 'una Catalog Instance non ha mai usato expires_at per il proprio ciclo di vita: deve restare invariato');
+});
+
 test('STEP4 catalog: customer.subscription.updated mappa lo stato Stripe su status E subscription_status', async () => {
   const supabase = createFakeSupabase({
     apps: [['catalog-app-4', {

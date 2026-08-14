@@ -30,6 +30,35 @@ function getSupabase() {
   );
 }
 
+// ─── Audit pre-lancio 2026-08-14, BLOCKER #2 — revoca accesso post-cancel ──
+// apps.status è l'unica source of truth del lifecycle di fatturazione (per
+// le app-cliente reseller E per le Catalog Instance, che lo rispecchiano su
+// subscription_status — vedi commento su updateAppStatus in
+// stripe-webhook-handler.js): il webhook Stripe lo aggiorna correttamente a
+// 'canceled'/'past_due' quando l'abbonamento non è più in regola, ma prima
+// di questa patch il gate che protegge le API dati (clientAuthMiddleware,
+// sotto) controllava SOLO client_active/expires_at — mai status. Per una
+// Catalog Instance, il provisioning non valorizza mai expires_at (resta
+// sempre NULL) e client_active resta true: un cliente che cancella
+// l'abbonamento manteneva quindi accesso indefinito alle API dati,
+// nonostante il webhook avesse scritto correttamente 'canceled'.
+//
+// Stessa soglia già applicata lato client (frontend/app/a/[slug]/
+// AppLayoutClient.tsx, requiresPaywall): 'past_due'/'canceled'/'expired'
+// bloccano, 'trial'/'active' (e qualunque altro valore, incluso null/
+// undefined) restano sempre consentiti — apps.status ha DEFAULT 'trial', per
+// cui nessuna app che non è mai passata da un ciclo di fatturazione
+// (comandi_ai plain, CreatorAI non-Catalog, app reseller pre-Stripe) viene
+// mai bloccata da qui. Un'unica soglia condivisa, usata solo da
+// clientAuthMiddleware (il gate reale delle API dati) per non introdurre
+// duplicazioni sparse — NON applicata alla route di login legacy
+// (POST /a/:slug), che non restituisce dati di business, solo config/
+// branding, e il cui comportamento resta quello esistente.
+const BLOCKED_APP_STATUSES = new Set(['past_due', 'canceled', 'expired']);
+function isAppBillingBlocked(app) {
+  return BLOCKED_APP_STATUSES.has(app?.status);
+}
+
 // Le credenziali client vivono in app_credentials (mai esposta alla Data API
 // pubblica, vedi 20260808000004_app_credentials_table.sql), con
 // apps.client_password/initial_password come fallback finché la migration di
@@ -200,7 +229,7 @@ async function clientAuthMiddleware(req, res, next) {
 
   const { data: app, error } = await supabase
     .from('apps')
-    .select('id, tenant_id, client_password, client_active, expires_at, auth_mode, app_type')
+    .select('id, tenant_id, client_password, client_active, expires_at, auth_mode, app_type, status')
     .eq('id', appId)
     .single();
 
@@ -214,6 +243,15 @@ async function clientAuthMiddleware(req, res, next) {
 
   if (app.expires_at && new Date(app.expires_at) < new Date()) {
     return res.status(403).json({ error: 'App scaduta' });
+  }
+
+  // BLOCKER #2 (vedi commento su BLOCKED_APP_STATUSES sopra): un abbonamento
+  // cancellato/non pagato deve bloccare l'accesso alle API dati anche
+  // quando client_active/expires_at non l'hanno ancora fatto (Catalog
+  // Instance con expires_at sempre NULL, o app-cliente reseller la cui
+  // finestra di expires_at non coincide col periodo di fatturazione Stripe).
+  if (isAppBillingBlocked(app)) {
+    return res.status(403).json({ error: 'Abbonamento non attivo' });
   }
 
   const result = await resolveClientIdentity(supabase, app, appId, token);
@@ -244,4 +282,6 @@ module.exports = {
   verifyLegacyPassword,
   resolveClientIdentity,
   clientAuthMiddleware,
+  isAppBillingBlocked,
+  BLOCKED_APP_STATUSES,
 };
