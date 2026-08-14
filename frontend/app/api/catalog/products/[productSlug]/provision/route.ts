@@ -334,6 +334,45 @@ async function handleComandiAiProvisioning({
   version: { id: string; product_id: string; version: string; blueprint: unknown; is_active: boolean };
 }) {
   try {
+    // Collisione su product_id indipendente da app_type (bug osservato in
+    // produzione: una riga creata dal percorso di provisioning GENERICO
+    // prima che questo branch dedicato esistesse aveva già ottenuto
+    // product_id=questo prodotto ma app_type restava NULL — il Catalog
+    // generico imposta product_id per qualunque prodotto a prescindere
+    // dall'app_type). Va cercata a parte, non solo tra le righe
+    // app_type='comandi_ai' sotto, perché una riga con app_type NULL non
+    // comparirebbe in quella query — e "nessuna riga app_type='comandi_ai'
+    // trovata" farebbe procedere alla CREAZIONE di una seconda istanza con
+    // lo stesso product_id, rompendo la garanzia "un'istanza per prodotto
+    // per tenant" su cui contano checkout/cancel/dashboard (.maybeSingle()).
+    // Nessuna scelta automatica: si blocca e basta, la pulizia (come già
+    // fatto per l'istanza orfana rilevata) resta manuale.
+    const { data: productLinkedApps, error: productLookupError } = await supabase
+      .from('apps' as any)
+      .select('id, app_type')
+      .eq('tenant_id', tenantId)
+      .eq('product_id', product.id)
+      .eq('is_active', true) as { data: Array<{ id: string; app_type: string | null }> | null; error: unknown };
+
+    if (productLookupError) {
+      captureError('catalog.provision.comandi_ai', productLookupError, { tenantId, productId: product.id });
+      return NextResponse.json({ success: false, error: 'Errore nella verifica delle istanze esistenti', code: 'DB_ERROR' }, { status: 500 });
+    }
+
+    const nonComandiCollisions = (productLinkedApps ?? []).filter((a) => a.app_type !== 'comandi_ai');
+    if (nonComandiCollisions.length > 0) {
+      captureError('catalog.provision.comandi_ai', new Error('Istanza collegata a questo product_id con app_type diverso da comandi_ai'), {
+        tenantId,
+        productId: product.id,
+        appIds: nonComandiCollisions.map((a) => a.id),
+      });
+      return NextResponse.json({
+        success: false,
+        error: 'Trovata un\'istanza già collegata a questo prodotto ma non è la console ComandAI: richiede pulizia manuale, nessun dato modificato.',
+        code: 'COMANDI_PRODUCT_ID_COLLISION',
+      }, { status: 409 });
+    }
+
     // Ambiguità (FASE 4D dell'audit): un tenant può avere più di un'istanza
     // comandi_ai SOLO tramite il percorso di rivendita esistente
     // (provisionComandiAppAction con createNew:true, pensato per copie da
