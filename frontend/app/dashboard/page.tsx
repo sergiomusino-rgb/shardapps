@@ -170,11 +170,11 @@ export default function DashboardPage() {
       showCredits: true,
     },
     {
-      title: t('dashboard_comandi_title'),
-      desc: t('dashboard_comandi_desc'),
-      link: "/dashboard/comandi",
+      title: t('dashboard_catalog_title'),
+      desc: t('dashboard_catalog_desc'),
+      link: "/dashboard/catalog",
       color: "bg-gradient-to-br from-amber-600 to-orange-600",
-      icon: "🎙️",
+      icon: "🛍️",
       highlighted: false
     },
     {
