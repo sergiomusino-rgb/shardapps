@@ -1053,12 +1053,31 @@ router.post('/client/apps/:appId/chat', clientAuthMiddleware, aiLimiter, async (
       }
     }
 
+    // Modello configurabile via GROQ_CHAT_MODEL (default invariato:
+    // llama-3.1-8b-instant), per poter fare pilot/rollback della migrazione a
+    // openai/gpt-oss-20b via env, senza toccare questo codice (vedi PR/audit
+    // migrazione Groq -> GPT-OSS). reasoning_effort/reasoning_format sono
+    // supportati SOLO dai modelli gpt-oss/qwen3 su Groq: inviarli a
+    // llama-3.1-8b-instant fa fallire la chiamata con 400 "reasoning_effort is
+    // not supported with this model", quindi vanno applicati solo quando il
+    // modello configurato è effettivamente un gpt-oss — altrimenti il
+    // rollback via env (tornare a llama-3.1-8b-instant) si romperebbe.
+    const chatModel = process.env.GROQ_CHAT_MODEL || 'llama-3.1-8b-instant';
+    const isGptOssModel = chatModel.startsWith('openai/gpt-oss');
+
     const groq = new Groq({ apiKey });
     const completion = await groq.chat.completions.create({
-      model: process.env.GROQ_CHAT_MODEL || 'llama-3.1-8b-instant',
+      model: chatModel,
       messages: [...contextMessages, ...safeMessages],
       temperature: 0.4,
       max_tokens: 800,
+      // reasoning_effort 'low' contiene il ragionamento interno (gpt-oss usa
+      // 'medium' di default) per non erodere il budget di 800 token di
+      // risposta su una chat gestionale breve; reasoning_format 'hidden'
+      // impedisce che il ragionamento compaia in un campo della risposta,
+      // cosa che il parsing esistente (solo message.content, sotto) non
+      // gestirebbe comunque.
+      ...(isGptOssModel ? { reasoning_effort: 'low', reasoning_format: 'hidden' } : {}),
     });
 
     const reply = completion.choices?.[0]?.message?.content || '';
