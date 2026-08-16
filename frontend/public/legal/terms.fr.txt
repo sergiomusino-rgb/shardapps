@@ -13,12 +13,12 @@ Définitions
 Aux fins des présentes Conditions Générales :
 - Affiliée désigne une entité qui contrôle, est contrôlée par, ou est sous contrôle commun avec une partie, où "contrôle" signifie la propriété de 50 % ou plus des actions, participations ou autres titres habilités à voter pour l'élection des administrateurs ou d'une autre autorité de gestion.
 - Pays fait référence à : Italie
-- Société (désignée par "la Société", "Nous", "Notre" ou "Nos" dans le présent Contrat) fait référence à zeusx.
+- Société (désignée par "la Société", "Nous", "Notre" ou "Nos" dans le présent Contrat) fait référence à ShardApps. [Document legacy non lié depuis l'application — la source canonique des Conditions est /info. À compléter si ce fichier est un jour republié : raison sociale, adresse, numéro de TVA et coordonnées légales du responsable.]
 - Appareil désigne tout appareil pouvant accéder au Service, tel qu'un ordinateur, un téléphone portable ou une tablette numérique.
 - Service se rapporte au Site Web.
 - Conditions Générales (également désignées sous le terme "Conditions") désignent les présentes Conditions Générales, y compris tout document expressément incorporé par référence, qui régissent votre accès et votre utilisation du Service et constituent l'intégralité de l'accord entre vous et la Société concernant le Service.
 - Service de Médias Sociaux Tiers désigne tout service ou contenu (y compris des données, informations, produits ou services) fourni par un tiers qui est affiché, inclus, mis à disposition ou lié via le Service.
-- Site Web fait référence à zeusx, accessible depuis https://zeusxapps.com
+- Site Web fait référence à ShardApps, accessible depuis https://zeusxapps.com
 - Utilisateur (également désigné par "Vous" ou "Votre") désigne la personne physique ou morale qui accède ou utilise le Service, ou la société ou autre entité juridique pour le compte de laquelle une telle personne accède ou utilise le Service, selon le cas.
 
 Reconnaissance
@@ -57,7 +57,7 @@ Abonnements, Facturation et Conditions Commerciales
 Traitement des Paiements
 Tous les plans d'abonnement, niveaux commerciaux et transactions financières sont gérés via Stripe, Inc., notre prestataire de paiement. Stripe, Inc. est responsable de la facturation, de la conformité des moyens de paiement, de la collecte des taxes, du cycle de vie des abonnements et du traitement des remboursements.
 
-En achetant un abonnement payant ou un niveau de produit pour accéder à des fonctionnalités spécifiques de zeusx, Vous acceptez de respecter les conditions générales et de facturation de Stripe, Inc. en plus des présentes Conditions. Les litiges financiers, erreurs de paiement et demandes de facturation doivent être adressés au service client de Stripe, Inc.
+En achetant un abonnement payant ou un niveau de produit pour accéder à des fonctionnalités spécifiques de ShardApps, Vous acceptez de respecter les conditions générales et de facturation de Stripe, Inc. en plus des présentes Conditions. Les litiges financiers, erreurs de paiement et demandes de facturation doivent être adressés au service client de Stripe, Inc.
 
 Tarifs et Résiliations
 La Société se réserve le droit de modifier les tarifs ou niveaux d'abonnement à tout moment, avec un préavis minimum de 30 jours aux utilisateurs actifs. Vous pouvez résilier Votre abonnement à tout moment via le tableau de bord des paramètres de votre compte, dans la section de facturation gérée par Stripe, Inc. En cas de résiliation, l'accès aux fonctionnalités premium se poursuivra jusqu'à la fin du cycle de facturation en cours.

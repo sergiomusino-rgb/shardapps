@@ -1,21 +1,18 @@
 import type { Metadata } from 'next';
-import LoginClient from './LoginClient';
+import PrivacyClient from './PrivacyClient';
 import { SITE_URL, SITE_NAME, DEFAULT_OG_IMAGE } from '@/lib/seo';
 
-const title = 'Accedi — ShardApps';
-const description = 'Accedi o registrati su ShardApps per creare e rivendere gestionali AI ai tuoi clienti con il tuo brand.';
+const title = 'Informativa Privacy — ShardApps';
+const description = 'Come ShardApps raccoglie, utilizza e protegge i dati personali degli utenti e dei loro clienti finali.';
 
 export const metadata: Metadata = {
   title,
   description,
-  alternates: { canonical: `${SITE_URL}/login` },
-  // Pagina di servizio (login/registrazione): nessun valore informativo
-  // proprio da indicizzare, l'ingresso organico deve restare la landing.
-  robots: { index: false, follow: true },
+  alternates: { canonical: `${SITE_URL}/privacy` },
   openGraph: {
     title,
     description,
-    url: `${SITE_URL}/login`,
+    url: `${SITE_URL}/privacy`,
     siteName: SITE_NAME,
     type: 'website',
     locale: 'it_IT',
@@ -30,5 +27,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <LoginClient />;
+  return <PrivacyClient />;
 }

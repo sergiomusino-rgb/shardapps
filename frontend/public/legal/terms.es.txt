@@ -13,12 +13,12 @@ Definiciones
 A los efectos de estos Términos y Condiciones:
 - Afiliada significa una entidad que controla, es controlada por, o está bajo control común con una parte, donde "control" significa la propiedad del 50% o más de las acciones, participaciones u otros valores con derecho a voto para la elección de directores u otra autoridad de gestión.
 - País se refiere a: Italia
-- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en este Contrato) se refiere a zeusx.
+- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en este Contrato) se refiere a ShardApps. [Documento heredado, ya no enlazado desde la aplicación — la fuente canónica de los Términos es /info. Pendiente de completar si este archivo se vuelve a publicar: razón social, domicilio, NIF/CIF y datos de contacto legales del responsable.]
 - Dispositivo significa cualquier dispositivo que pueda acceder al Servicio, como un ordenador, un teléfono móvil o una tableta digital.
 - Servicio se refiere al Sitio Web.
 - Términos y Condiciones (también denominados "Términos") significa estos Términos y Condiciones, incluidos los documentos expresamente incorporados por referencia, que rigen el acceso y uso del Servicio por Su parte y constituyen el acuerdo íntegro entre Usted y la Compañía en relación con el Servicio.
 - Servicio de Redes Sociales de Terceros significa cualquier servicio o contenido (incluidos datos, información, productos o servicios) proporcionado por un tercero que se muestre, incluya, ponga a disposición o enlace a través del Servicio.
-- Sitio Web se refiere a zeusx, accesible desde https://zeusxapps.com
+- Sitio Web se refiere a ShardApps, accesible desde https://zeusxapps.com
 - Usuario (también referido como "Usted" o "Su") significa la persona física o jurídica que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
 
 Reconocimiento
@@ -57,7 +57,7 @@ Suscripciones, Facturación y Términos Comerciales
 Procesamiento de Pagos
 Todos los planes de suscripción, niveles comerciales y transacciones financieras se gestionan a través de Stripe, Inc., nuestro procesador de pagos. Stripe, Inc. es responsable de la facturación, el cumplimiento normativo de los medios de pago, la recaudación de impuestos, el ciclo de vida de las suscripciones y la gestión de reembolsos.
 
-Al adquirir un plan de suscripción de pago o un nivel de producto para acceder a funcionalidades específicas de zeusx, Usted acepta cumplir con los términos de servicio y las condiciones de facturación de Stripe, Inc., además de estos Términos. Las disputas financieras, errores de pago y consultas de facturación deben dirigirse al servicio de atención al cliente de Stripe, Inc.
+Al adquirir un plan de suscripción de pago o un nivel de producto para acceder a funcionalidades específicas de ShardApps, Usted acepta cumplir con los términos de servicio y las condiciones de facturación de Stripe, Inc., además de estos Términos. Las disputas financieras, errores de pago y consultas de facturación deben dirigirse al servicio de atención al cliente de Stripe, Inc.
 
 Tarifas y Cancelaciones
 La Compañía se reserva el derecho de modificar las tarifas o niveles de suscripción en cualquier momento, con un preaviso mínimo de 30 días a los usuarios activos. Usted puede cancelar su plan de suscripción en cualquier momento a través del panel de configuración de su cuenta, en la sección de facturación gestionada mediante Stripe, Inc. En caso de cancelación, el acceso a las funciones premium continuará hasta el final del ciclo de facturación actual.

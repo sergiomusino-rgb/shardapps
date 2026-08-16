@@ -13,12 +13,12 @@ Begriffsbestimmungen
 Im Sinne dieser Allgemeinen Geschäftsbedingungen:
 - Verbundenes Unternehmen bezeichnet eine Einrichtung, die eine Partei kontrolliert, von ihr kontrolliert wird oder mit ihr unter gemeinsamer Kontrolle steht, wobei "Kontrolle" den Besitz von 50 % oder mehr der Anteile, Beteiligungen oder anderer stimmberechtigter Wertpapiere zur Wahl von Direktoren oder einer anderen Leitungsbefugnis bedeutet.
 - Land bezieht sich auf: Italien
-- Unternehmen (in diesem Vertrag als "das Unternehmen", "Wir", "Uns" oder "Unser" bezeichnet) bezieht sich auf zeusx.
+- Unternehmen (in diesem Vertrag als "das Unternehmen", "Wir", "Uns" oder "Unser" bezeichnet) bezieht sich auf ShardApps. [Legacy-Dokument, nicht mehr aus der App verlinkt — die maßgebliche Fassung der Bedingungen befindet sich unter /info. Bei erneuter Veröffentlichung zu ergänzen: eingetragener Firmenname, Adresse, USt-IdNr. und rechtliche Kontaktdaten des Verantwortlichen.]
 - Gerät bezeichnet jedes Gerät, das auf den Dienst zugreifen kann, wie einen Computer, ein Mobiltelefon oder ein digitales Tablet.
 - Dienst bezieht sich auf die Website.
 - Allgemeine Geschäftsbedingungen (auch als "Bedingungen" bezeichnet) bezeichnet diese Allgemeinen Geschäftsbedingungen, einschließlich aller ausdrücklich durch Bezugnahme aufgenommenen Dokumente, die Ihren Zugang zu und Ihre Nutzung des Dienstes regeln und die gesamte Vereinbarung zwischen Ihnen und dem Unternehmen bezüglich des Dienstes darstellen.
 - Social-Media-Dienst Dritter bezeichnet jeden Dienst oder Inhalt (einschließlich Daten, Informationen, Produkte oder Dienstleistungen), der von einem Dritten bereitgestellt wird und über den Dienst angezeigt, eingebunden, verfügbar gemacht oder verlinkt wird.
-- Website bezieht sich auf zeusx, erreichbar unter https://zeusxapps.com
+- Website bezieht sich auf ShardApps, erreichbar unter https://zeusxapps.com
 - Benutzer (auch als "Sie" oder "Ihr" bezeichnet) bezeichnet die natürliche oder juristische Person, die auf den Dienst zugreift oder ihn nutzt, oder das Unternehmen oder eine andere juristische Person, in deren Namen eine solche Person auf den Dienst zugreift oder ihn nutzt, je nach Anwendbarkeit.
 
 Anerkennung
@@ -57,7 +57,7 @@ Abonnements, Abrechnung und Geschäftsbedingungen
 Zahlungsabwicklung
 Alle Abonnementpläne, Geschäftsstufen und Finanztransaktionen werden über Stripe, Inc., unseren Zahlungsdienstleister, abgewickelt. Stripe, Inc. ist verantwortlich für die Rechnungsstellung, die Einhaltung der Zahlungskartenvorschriften, die Steuererhebung, den Lebenszyklus der Abonnements und die Bearbeitung von Rückerstattungen.
 
-Mit dem Kauf eines kostenpflichtigen Abonnements oder einer Produktstufe zum Zugriff auf bestimmte Funktionen von zeusx stimmen Sie zu, zusätzlich zu diesen Bedingungen die Nutzungsbedingungen und Abrechnungsbedingungen von Stripe, Inc. einzuhalten. Finanzielle Streitigkeiten, Zahlungsfehler und Rechnungsanfragen müssen über den Kundendienst von Stripe, Inc. abgewickelt werden.
+Mit dem Kauf eines kostenpflichtigen Abonnements oder einer Produktstufe zum Zugriff auf bestimmte Funktionen von ShardApps stimmen Sie zu, zusätzlich zu diesen Bedingungen die Nutzungsbedingungen und Abrechnungsbedingungen von Stripe, Inc. einzuhalten. Finanzielle Streitigkeiten, Zahlungsfehler und Rechnungsanfragen müssen über den Kundendienst von Stripe, Inc. abgewickelt werden.
 
 Gebühren und Kündigungen
 Das Unternehmen behält sich das Recht vor, Abonnementgebühren oder -stufen jederzeit mit einer Mindestfrist von 30 Tagen für aktive Nutzer zu ändern. Sie können Ihr Abonnement jederzeit über das interne Kontoeinstellungs-Dashboard im über Stripe, Inc. verwalteten Abrechnungsbereich kündigen. Nach der Kündigung bleibt der Zugang zu Premium-Funktionen bis zum Ende des aktuellen Abrechnungszyklus bestehen.
