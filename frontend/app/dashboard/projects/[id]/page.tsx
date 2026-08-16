@@ -37,7 +37,6 @@ export default function AppDetailPage() {
   const idOrSlug = params.id as string;
 
   const [app, setApp] = useState<App | null>(null);
-  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -111,9 +110,6 @@ export default function AppDetailPage() {
     async function loadApp() {
       if (!idOrSlug) return;
 
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      setUser(currentUser);
-
       // Prima prova a cercare per ID (UUID)
       const { data, error } = await supabase
         .from('apps')
@@ -183,29 +179,24 @@ export default function AppDetailPage() {
       return;
     }
 
-    // Decrementa fee mensile per l'app eliminata
+    // Decrementa fee mensile per l'app eliminata. Security fix: prima questa
+    // chiamata andava direttamente al backend leggendo
+    // process.env.BACKEND_SERVICE_TOKEN qui in un componente 'use client' —
+    // una env senza NEXT_PUBLIC_ è sempre undefined nel bundle browser
+    // (Bearer undefined, chiamata di fatto non autenticata/no-op), pattern
+    // pericoloso se mai "corretto" rinominandola NEXT_PUBLIC_ (esporrebbe il
+    // segreto condiviso a chiunque). Ora passa da una route server-side
+    // (decrement-fee/route.ts) che tiene BACKEND_SERVICE_TOKEN esclusivamente
+    // lato server e deriva il tenant dalla sessione, mai da un id lato client.
     try {
-      const memberResult = await supabase
-        .from('tenant_members')
-        .select('tenant_id')
-        .eq('user_id', user?.id)
-        .single();
-
-      const memberData = memberResult.data as { tenant_id: string } | null | undefined;
-
-      if (memberData?.tenant_id) {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
-        const token = process.env.BACKEND_SERVICE_TOKEN;
-        
-        await fetch(`${backendUrl}/api/update-app-fee`, {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch('/api/apps/decrement-fee', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
-            'X-User-ID': user?.id || '',
-            'X-User-Email': user?.email || '',
+            'Authorization': `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ tenantId: memberData.tenant_id, action: 'decrement' }),
         });
       }
     } catch (err) {
