@@ -28,7 +28,7 @@ function hashToken(token: string): string {
 }
 
 async function sendResetEmail(toEmail: string, slug: string, token: string): Promise<void> {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com';
   const resetLink = `${appUrl}/a/${slug}/reset-password?token=${token}`;
   const resendApiKey = process.env.RESEND_API_KEY;
 

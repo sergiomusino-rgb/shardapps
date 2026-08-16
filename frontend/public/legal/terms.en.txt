@@ -18,7 +18,7 @@ For the purposes of these Terms and Conditions:
 - Service refers to the Website.
 - Terms and Conditions (also referred to as "Terms") means these Terms and Conditions, including any documents expressly incorporated by reference, which govern Your access to and use of the Service and form the entire agreement between You and the Company regarding the Service.
 - Third-Party Social Media Service means any services or content (including data, information, products or services) provided by a third party that is displayed, included, made available, or linked to through the Service.
-- Website refers to ShardApps, accessible from https://zeusxapps.com
+- Website refers to ShardApps, accessible from https://shardapps.com
 - You means the individual accessing or using the Service, or the company, or other legal entity on behalf of which such individual is accessing or using the Service, as applicable.
 
 Acknowledgment

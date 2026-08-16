@@ -18,7 +18,7 @@ A los efectos de estos Términos y Condiciones:
 - Servicio se refiere al Sitio Web.
 - Términos y Condiciones (también denominados "Términos") significa estos Términos y Condiciones, incluidos los documentos expresamente incorporados por referencia, que rigen el acceso y uso del Servicio por Su parte y constituyen el acuerdo íntegro entre Usted y la Compañía en relación con el Servicio.
 - Servicio de Redes Sociales de Terceros significa cualquier servicio o contenido (incluidos datos, información, productos o servicios) proporcionado por un tercero que se muestre, incluya, ponga a disposición o enlace a través del Servicio.
-- Sitio Web se refiere a ShardApps, accesible desde https://zeusxapps.com
+- Sitio Web se refiere a ShardApps, accesible desde https://shardapps.com
 - Usuario (también referido como "Usted" o "Su") significa la persona física o jurídica que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
 
 Reconocimiento

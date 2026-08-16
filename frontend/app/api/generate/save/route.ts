@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepara i dati per l'inserimento
-    const productionAppUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
+    const productionAppUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`;
     const appData = {
       name: appName,
       slug,
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       .upsert({ app_id: newApp.id, client_password: clientPassword }, { onConflict: 'app_id' });
 
     // Registra l'app nella app_registry per la Management Console
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${newApp.slug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${newApp.slug}`;
     const { error: registryError } = await supabase
       .from('app_registry')
       .insert({

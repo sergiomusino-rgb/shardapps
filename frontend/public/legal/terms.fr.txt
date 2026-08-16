@@ -18,7 +18,7 @@ Aux fins des présentes Conditions Générales :
 - Service se rapporte au Site Web.
 - Conditions Générales (également désignées sous le terme "Conditions") désignent les présentes Conditions Générales, y compris tout document expressément incorporé par référence, qui régissent votre accès et votre utilisation du Service et constituent l'intégralité de l'accord entre vous et la Société concernant le Service.
 - Service de Médias Sociaux Tiers désigne tout service ou contenu (y compris des données, informations, produits ou services) fourni par un tiers qui est affiché, inclus, mis à disposition ou lié via le Service.
-- Site Web fait référence à ShardApps, accessible depuis https://zeusxapps.com
+- Site Web fait référence à ShardApps, accessible depuis https://shardapps.com
 - Utilisateur (également désigné par "Vous" ou "Votre") désigne la personne physique ou morale qui accède ou utilise le Service, ou la société ou autre entité juridique pour le compte de laquelle une telle personne accède ou utilise le Service, selon le cas.
 
 Reconnaissance

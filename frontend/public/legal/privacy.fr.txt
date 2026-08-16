@@ -22,7 +22,7 @@ Aux fins de la présente Politique de Confidentialité :
 - Service désigne le Site Web.
 - Prestataire de Services désigne toute personne physique ou morale qui traite les données pour le compte de la Société. Il s'agit de sociétés tierces ou d'individus employés par la Société pour faciliter le Service, fournir le Service pour le compte de la Société, exécuter des services liés au Service ou assister la Société dans l'analyse de l'utilisation du Service. Au sens du RGPD, les Prestataires de Services sont considérés comme des Sous-Titulaires (Data Processors).
 - Données d'Utilisation désignent les données collectées automatiquement, qu'elles soient générées par l'utilisation du Service ou provenant de l'infrastructure du Service lui-même (par exemple, la durée d'une visite de page).
-- Site Web désigne ShardApps, accessible depuis https://zeusxapps.com
+- Site Web désigne ShardApps, accessible depuis https://shardapps.com
 - Vous désigne la personne accédant ou utilisant le Service, ou la société ou autre entité juridique pour le compte de laquelle une telle personne accède ou utilise le Service, selon le cas.
 
 Collecte et Utilisation des Données Personnelles

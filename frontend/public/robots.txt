@@ -5,4 +5,4 @@ Disallow: /admin
 Disallow: /management
 Allow: /a/*/manifest
 
-Sitemap: https://zeusxapps.com/sitemap.xml
+Sitemap: https://shardapps.com/sitemap.xml
