@@ -35,6 +35,7 @@ import LanguageSelector from '@/components/LanguageSelector';
 import FullscreenToggle from '@/components/FullscreenToggle';
 import { ALL_TABS, AGENT_TABS, TrialNudgeBanner, type Tab } from '@/components/comandi/ComandiInstanceDashboard';
 import { useAppInfo } from '../../AppInfoContext';
+import { extractBrandingFromConfig } from '../sidebar-branding';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import { useComandiRole } from '@/src/lib/useComandiRole';
@@ -77,6 +78,11 @@ export default function ComandiAgentPage() {
   const appInfo = useAppInfo();
   const { t } = useLanguage();
   const router = useRouter();
+
+  // Branding reseller (CreatorAI Engine 2.0): stesso apps.config.branding già
+  // usato da ogni altra app generata da ShardApps — vedi lo stesso commento
+  // in ComandiInstanceDashboard.tsx (da cui questa pagina riusa ComandiSidebar).
+  const resellerBranding = extractBrandingFromConfig(appInfo.config);
 
   // Icona e nome dell'app installabile: quelli scelti dal titolare in Azienda
   // (tenants.logo_url / name), non il brand fisso "Comand AI" — ogni agente
@@ -324,6 +330,8 @@ export default function ComandiAgentPage() {
           isOnAgentPage
           onLogout={handleLogout}
           logoutLabel={t('comandi_dashboard_logout')}
+          brandingLogoUrl={resellerBranding?.footer_logo_url}
+          brandingLabel={resellerBranding?.footer_label}
         />
       </div>
 
@@ -352,6 +360,8 @@ export default function ComandiAgentPage() {
             onLogout={handleLogout}
             logoutLabel={t('comandi_dashboard_logout')}
             onClose={() => setMobileMenuOpen(false)}
+            brandingLogoUrl={resellerBranding?.footer_logo_url}
+            brandingLabel={resellerBranding?.footer_label}
           />
         </div>
       </div>

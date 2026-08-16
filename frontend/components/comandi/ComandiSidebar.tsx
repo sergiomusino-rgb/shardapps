@@ -18,9 +18,16 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Building2, ClipboardList, KeyRound, LogOut, Mic, Package, Receipt, UserCog, Users, Warehouse, X } from 'lucide-react';
 import ComandiHeaderBrand from './ComandiHeaderBrand';
-import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabase } from '@/src/lib/supabase';
 import type { Tab } from './ComandiInstanceDashboard';
+// Branding reseller (CreatorAI Engine 2.0): STESSA funzione di risoluzione
+// già usata da SidebarBrandFooter (app/a/[slug]/app/sidebar-primitives.tsx)
+// per ogni altra app generata da ShardApps — nessun secondo sistema di
+// fallback, solo riusata qui per il footer di Comandi, che ha una sua
+// palette/markup propri (grigio/ambra, non il design system "tenant-*"
+// generico) e quindi non importa il componente React condiviso, solo la
+// logica pura di risoluzione per-campo.
+import { resolveSidebarBranding } from '@/app/a/[slug]/app/sidebar-branding';
 
 const TAB_ICON: Record<Tab, React.ReactNode> = {
   catalog: <Package className="w-[18px] h-[18px]" />,
@@ -47,6 +54,11 @@ export interface ComandiSidebarProps {
   onLogout?: () => void;
   logoutLabel?: string;
   onClose?: () => void;
+  /** Branding reseller (apps.config.branding.footer_logo_url/footer_label,
+   * CreatorAI Engine 2.0): assenti/vuoti -> fallback ShardApps, stesso
+   * comportamento per-campo di SidebarBrandFooter. */
+  brandingLogoUrl?: string;
+  brandingLabel?: string;
 }
 
 function itemClassName(active: boolean): string {
@@ -70,9 +82,9 @@ export default function ComandiSidebar({
   onLogout,
   logoutLabel,
   onClose,
+  brandingLogoUrl,
+  brandingLabel,
 }: ComandiSidebarProps) {
-  const { t } = useLanguage();
-
   // Logo aziendale caricato in Azienda (tenants.logo_url): mostrato in cima
   // all'elenco, sopra "Modalità Agente", solo quando l'azienda ne ha
   // caricato uno — altrimenti la sidebar resta invariata.
@@ -178,12 +190,25 @@ export default function ComandiSidebar({
         </div>
       )}
 
-      <div className="border-t border-gray-800/60 bg-gray-950/40 p-4">
-        <div className="flex flex-col items-center gap-2">
-          <img src="/favicon.png" alt="ShardApps" className="h-14 w-14 rounded-full object-cover" />
-          <p className="text-xs font-semibold text-gray-400">{t('sidebar_by')}</p>
-        </div>
-      </div>
+      {/* Branding reseller (CreatorAI Engine 2.0): fallback ShardApps per
+          campo, stessa risoluzione di SidebarBrandFooter — vedi import sopra.
+          Layout/palette invariati (grigio/ambra di Comandi), solo logo/testo
+          diventano dinamici invece che fissi su ShardApps. */}
+      {(() => {
+        const effective = resolveSidebarBranding(brandingLogoUrl, brandingLabel);
+        return (
+          <div className="border-t border-gray-800/60 bg-gray-950/40 p-4">
+            <div className="flex flex-col items-center gap-2">
+              {effective.logoUrl ? (
+                <img src={effective.logoUrl} alt={effective.label} className="h-14 w-14 rounded-full object-cover" />
+              ) : (
+                <img src="/favicon.png" alt="ShardApps" className="h-14 w-14 rounded-xl object-cover" />
+              )}
+              <p className="max-w-full truncate text-[11px] font-semibold text-gray-400">{effective.label}</p>
+            </div>
+          </div>
+        );
+      })()}
     </aside>
   );
 }

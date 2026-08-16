@@ -13,10 +13,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Send, Loader2, Sparkles, AlertCircle,
-  Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff,
+  Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff, Clock, Palette,
 } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import SitePreview from './SitePreview';
+// Hardening 2/2 (CreatorAI Engine 2.0): pannello "Versioni" + rollback, vedi
+// commento in testa a VersionHistoryPanel.tsx per il contratto/sicurezza.
+import VersionHistoryPanel from './VersionHistoryPanel';
+// Branding reseller (CreatorAI Engine 2.0): pannello "Branding", vedi
+// commento in testa a BrandingPanel.tsx per il contratto/sicurezza/riuso.
+import BrandingPanel from './BrandingPanel';
+import { EMPTY_BRANDING_FORM, buildBrandingPayload, saveBrandingForApp, type BrandingFormState } from '@/src/lib/creator/branding';
 import { useVoiceInput } from '@/src/lib/useVoiceInput';
 import { promptSuggestsStateButMissing, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 
@@ -44,6 +51,11 @@ export interface AppEditorViewLabels {
   publishButton: string;
   publishingButton: string;
   saveButton: string;
+  /** Hardening 2/2: etichetta del pulsante che apre il pannello Versioni
+   * (visibile solo dopo la prima pubblicazione, vedi render sotto). */
+  versionsButton: string;
+  /** Branding reseller: etichetta del pulsante che apre il pannello Branding. */
+  brandingButton: string;
 }
 
 const DEFAULT_LABELS: AppEditorViewLabels = {
@@ -56,6 +68,8 @@ const DEFAULT_LABELS: AppEditorViewLabels = {
   publishButton: 'Pubblica Gestionale',
   publishingButton: 'Pubblicazione in corso…',
   saveButton: 'Salva Modifiche',
+  versionsButton: 'Versioni',
+  brandingButton: 'Branding',
 };
 
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -178,6 +192,23 @@ export default function AppEditorView({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
 
+  // Hardening 2/2: pannello Versioni/rollback — visibile solo per un'app già
+  // pubblicata (publishedAppId), perché app_versions esiste solo a partire
+  // dalla prima ripubblicazione (nessuna riga alla primissima pubblicazione,
+  // vedi app-versions.ts). rollbackNotice è un messaggio di successo
+  // transitorio (auto-dismiss), stesso trattamento "leggero" di publishError.
+  const [showVersions, setShowVersions] = useState(false);
+  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
+
+  // Branding reseller: pannello + draft. Il draft serve SOLO quando l'app
+  // non è ancora stata pubblicata (nessun appId su cui fare PATCH subito) —
+  // una volta pubblicata la prima volta, viene applicato una sola volta
+  // (vedi handlePublish) e da lì in poi il pannello salva direttamente,
+  // senza più passare dal draft.
+  const [showBranding, setShowBranding] = useState(false);
+  const [brandingAccessToken, setBrandingAccessToken] = useState<string | null>(null);
+  const [brandingDraft, setBrandingDraft] = useState<BrandingFormState>(EMPTY_BRANDING_FORM);
+
   // Hot-reload locale: qualunque aggiornamento di `schema` (via chat o da un
   // eventuale editor esterno tramite `initialSchema`) si riflette subito
   // nell'anteprima, senza ricaricare la pagina — SitePreview è puramente
@@ -191,12 +222,21 @@ export default function AppEditorView({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async () => {
-    const message = input.trim();
+  useEffect(() => {
+    if (!rollbackNotice) return;
+    const timer = setTimeout(() => setRollbackNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [rollbackNotice]);
+
+  // Estratta da handleSend così anche il pannello Branding può inoltrare la
+  // "Richiesta branding" come un messaggio in chat qualunque — stessa
+  // identica chiamata a /api/creator/refactor, nessuna nuova capacità
+  // dell'AI Engine: il testo libero non è mai la fonte autorevole del
+  // brand (nome/logo restano quelli strutturati salvati separatamente).
+  const sendChatMessage = async (message: string) => {
     if (!message || isSending) return;
 
     setMessages((prev) => [...prev, { role: 'user', content: message }]);
-    setInput('');
     setIsSending(true);
 
     try {
@@ -239,10 +279,21 @@ export default function AppEditorView({
     }
   };
 
+  const handleSend = async () => {
+    const message = input.trim();
+    if (!message || isSending) return;
+    setInput('');
+    await sendChatMessage(message);
+  };
+
   const handlePublish = async () => {
     if (isPublishing) return;
     setIsPublishing(true);
     setPublishError(null);
+    // Catturato PRIMA della chiamata: publishedAppId cambia appena la
+    // risposta arriva, ma "era la prima pubblicazione" va deciso guardando
+    // lo stato COM'ERA quando l'utente ha premuto il bottone.
+    const wasFirstPublish = !publishedAppId;
 
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
@@ -264,6 +315,23 @@ export default function AppEditorView({
       if (data.success && data.data) {
         setPublishedAppId(data.data.appId);
         setPublishResult(data.data);
+
+        // Branding reseller: se l'utente aveva compilato il pannello PRIMA
+        // che l'app esistesse (nessun appId su cui fare PATCH allora), lo
+        // applica ora che l'app è appena stata creata — una volta sola,
+        // stessa route PATCH /api/apps/[id] riusata dal pannello stesso.
+        // Best-effort: un fallimento qui non deve mai far sembrare fallita
+        // la pubblicazione, che è già andata a buon fine.
+        if (wasFirstPublish) {
+          const draftPayload = buildBrandingPayload(brandingDraft);
+          if (draftPayload) {
+            const brandingResult = await saveBrandingForApp(data.data.appId, draftPayload, session.access_token);
+            if (!brandingResult.ok) {
+              console.error('[AppEditorView] branding draft apply error:', brandingResult.error);
+            }
+            setBrandingDraft(EMPTY_BRANDING_FORM);
+          }
+        }
       } else if (data.code === 'SLOTS_EXHAUSTED') {
         setPublishError(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
         router.push(data.redirectTo || '/pricing');
@@ -278,6 +346,58 @@ export default function AppEditorView({
     }
   };
 
+  // Hardening 2/2 — Versioni/rollback: il token viene recuperato al momento
+  // dell'apertura (mai riusato "vecchio"), stesso pattern di handleSend/
+  // handlePublish sopra. Il pannello stesso decide/valida tenant e ownership
+  // lato server (API /api/creator/rollback, invariata) — qui non si fa
+  // altro che passargli appId + token.
+  const [versionsAccessToken, setVersionsAccessToken] = useState<string | null>(null);
+  const handleOpenVersions = async () => {
+    const { data: { session } } = await supabaseBrowser.auth.getSession();
+    if (!session?.access_token) {
+      setPublishError('Sessione scaduta, effettua di nuovo il login.');
+      return;
+    }
+    setVersionsAccessToken(session.access_token);
+    setShowVersions(true);
+  };
+
+  // Invocata dal pannello SOLO dopo un rollback riuscito (mai automatico):
+  // aggiorna editor + preview con lo schema ripristinato, propaga al
+  // chiamante esterno (stesso contratto di handleSend/handlePublish) e
+  // mostra conferma esplicita all'utente.
+  const handleRollback = (restoredSchema: SiteBlueprintJSON) => {
+    setSchema(restoredSchema);
+    setActivePageSlug((prev) => (restoredSchema.pages.some((p) => p.slug === prev) ? prev : restoredSchema.pages[0]?.slug));
+    onSchemaChange?.(restoredSchema);
+    setShowVersions(false);
+    // Il rollback aggiorna apps.config direttamente lato server (stesso
+    // contratto già in produzione, invariato): l'app pubblicata è già
+    // ripristinata a questo punto, non serve un ulteriore "Salva Modifiche".
+    setRollbackNotice('Versione ripristinata: l\'app pubblicata è già stata aggiornata.');
+  };
+
+  // Branding reseller: stesso pattern token-al-momento-dell'apertura di
+  // handleOpenVersions sopra. Il pannello stesso decide se salvare subito
+  // (app già pubblicata, PATCH /api/apps/[id]) o solo aggiornare il draft
+  // locale (app non ancora pubblicata) — qui si riceve comunque il form
+  // aggiornato in `onClose`, così il draft resta sincronizzato in entrambi
+  // i casi (utile se l'utente riapre il pannello prima di pubblicare).
+  const handleOpenBranding = async () => {
+    const { data: { session } } = await supabaseBrowser.auth.getSession();
+    if (!session?.access_token) {
+      setPublishError('Sessione scaduta, effettua di nuovo il login.');
+      return;
+    }
+    setBrandingAccessToken(session.access_token);
+    setShowBranding(true);
+  };
+
+  const handleCloseBranding = (draft: BrandingFormState) => {
+    setBrandingDraft(draft);
+    setShowBranding(false);
+  };
+
   return (
     <div className="flex h-full flex-col gap-3">
       {/* ── Header: nome app + pubblica/salva ── */}
@@ -289,15 +409,41 @@ export default function AppEditorView({
               <AlertCircle size={12} className="shrink-0" /> {publishError}
             </div>
           )}
+          {rollbackNotice && !publishError && (
+            <div className="mt-0.5 flex items-center gap-1 text-xs text-emerald-400">
+              <CheckCircle2 size={12} className="shrink-0" /> {rollbackNotice}
+            </div>
+          )}
         </div>
-        <button
-          onClick={handlePublish}
-          disabled={isPublishing}
-          className="flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:bg-gray-700"
-        >
-          {isPublishing ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
-          {isPublishing ? t.publishingButton : publishedAppId ? t.saveButton : t.publishButton}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Branding reseller: sempre visibile, anche prima della prima
+              pubblicazione (raccoglie solo il draft finché non esiste un
+              appId, vedi handleOpenBranding/handleCloseBranding). */}
+          <button
+            onClick={handleOpenBranding}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
+          >
+            <Palette size={14} /> {t.brandingButton}
+          </button>
+          {/* Hardening 2/2: solo per un'app già pubblicata almeno una volta
+              (publishedAppId) — nessuna cronologia possibile prima. */}
+          {publishedAppId && (
+            <button
+              onClick={handleOpenVersions}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
+            >
+              <Clock size={14} /> {t.versionsButton}
+            </button>
+          )}
+          <button
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:bg-gray-700"
+          >
+            {isPublishing ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
+            {isPublishing ? t.publishingButton : publishedAppId ? t.saveButton : t.publishButton}
+          </button>
+        </div>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
@@ -418,6 +564,26 @@ export default function AppEditorView({
 
       {publishResult && (
         <PublishSuccessModal result={publishResult} onClose={() => setPublishResult(null)} />
+      )}
+
+      {showVersions && publishedAppId && versionsAccessToken && (
+        <VersionHistoryPanel
+          appId={publishedAppId}
+          currentSchema={schema}
+          accessToken={versionsAccessToken}
+          onRollback={handleRollback}
+          onClose={() => setShowVersions(false)}
+        />
+      )}
+
+      {showBranding && brandingAccessToken && (
+        <BrandingPanel
+          appId={publishedAppId}
+          accessToken={brandingAccessToken}
+          initialDraft={brandingDraft}
+          onClose={handleCloseBranding}
+          onApplyInstructions={sendChatMessage}
+        />
       )}
     </div>
   );

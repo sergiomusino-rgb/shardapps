@@ -18,14 +18,21 @@ export default function CancelPage() {
         </p>
 
         <div className="flex flex-col gap-3">
-          <Link 
-            href="/checkout" 
+          {/* Audit commerciale pre-lancio: "/checkout" non è mai stata una
+              route reale del prodotto (404) — nessun checkout di questo
+              repo usa /cancel come propria cancel_url (tutti tornano a
+              /pricing o alla dashboard dell'app), quindi questa pagina non
+              era mai raggiunta dal flusso reale, ma i link restavano rotti
+              per chiunque ci arrivasse a URL diretto. Corretti verso le
+              uniche destinazioni reali equivalenti. */}
+          <Link
+            href="/pricing"
             className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
           >
             Riprova il pagamento
           </Link>
-          <Link 
-            href="/vision" 
+          <Link
+            href="/"
             className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
           >
             Torna alla Home
