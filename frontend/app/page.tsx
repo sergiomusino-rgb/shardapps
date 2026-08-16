@@ -8,12 +8,17 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import {
   Sparkles,
   ArrowRight,
-  MessageSquareText,
   Wand2,
+  Palette,
   Rocket,
-  Bot,
-  Share2,
+  Database,
+  Workflow,
   Smartphone,
+  Table2,
+  History,
+  Users,
+  Check,
+  MessageSquareText,
 } from 'lucide-react';
 
 // ─── Mockup dashboard (puro CSS/HTML, nessuna immagine): l'unico visual
@@ -90,16 +95,24 @@ function DashboardMockup() {
   );
 }
 
-const STEPS = [
-  { n: '01', icon: MessageSquareText, title: 'DESCRIVI', text: 'Scrivi cosa deve fare la tua app.' },
-  { n: '02', icon: Wand2, title: 'GENERA', text: "L'AI costruisce struttura e interfaccia." },
-  { n: '03', icon: Rocket, title: 'PUBBLICA', text: 'Personalizza, pubblica e vendi.' },
+// ─── Contenuti: solo capacità realmente presenti in CreatorAI Engine 2.0,
+// verificate nel codice (generazione AI, database/CRUD dinamico, workflow,
+// custom tables, branding, versioning/rollback) — vedi audit commerciale. ──
+
+const HOW_IT_WORKS = [
+  { n: '01', icon: MessageSquareText, title: 'Crea', text: 'Descrivi l\'app che ti serve: l\'AI genera database, gestionale e interfaccia.' },
+  { n: '02', icon: Wand2, title: 'Personalizza', text: 'Modifica dal vivo via chat. Ogni versione resta salvata, puoi tornare indietro quando vuoi.' },
+  { n: '03', icon: Palette, title: 'Brandizza', text: 'Il tuo logo, il tuo nome. Il cliente vede te, non ShardApps.' },
+  { n: '04', icon: Rocket, title: 'Rivendi', text: 'Consegni le credenziali al tuo cliente. Decidi tu quanto fargli pagare ogni mese.' },
 ];
 
-const VALUE_ITEMS = [
-  { icon: Bot, title: 'AI App Builder', desc: 'Gestionali generati da un semplice prompt.' },
-  { icon: Share2, title: 'White Label & Reselling', desc: 'Rivendi ciò che crei ai tuoi clienti.' },
-  { icon: Smartphone, title: 'PWA & Mobile', desc: 'Pronte su browser e smartphone, subito.' },
+const FEATURES = [
+  { icon: Wand2, title: 'Generazione AI', desc: 'Da un prompt a un\'app funzionante: struttura, database e interfaccia già pronti.' },
+  { icon: Database, title: 'Database & CRUD', desc: 'Ogni entità del gestionale ha già creazione, modifica, ricerca e cancellazione.' },
+  { icon: Workflow, title: 'Workflow & automazioni', desc: 'Stati, transizioni, azioni e notifiche: il gestionale segue i processi reali del cliente.' },
+  { icon: Table2, title: 'Custom tables', desc: 'Aggiungi tabelle su misura oltre a quelle generate, senza scrivere codice.' },
+  { icon: Smartphone, title: 'Web App & PWA', desc: 'Installabile su desktop e smartphone, pronta all\'uso da subito.' },
+  { icon: History, title: 'Versioning & rollback', desc: 'Ogni pubblicazione crea una versione. Sbagliato qualcosa? Ripristini quella precedente in un click.' },
 ];
 
 export default function Home() {
@@ -130,19 +143,35 @@ export default function Home() {
         }`}
       >
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex items-center gap-2.5">
             <img src="/favicon.png" alt="ShardApps" className="h-8 w-8 rounded-lg object-cover" />
-          </div>
+            <span className="hidden sm:inline text-lg font-black tracking-tight">
+              SHARD<span className="text-indigo-400">APPS</span>
+            </span>
+          </Link>
+
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
+            <a href="#reseller" className="hover:text-white transition-colors">Reseller</a>
+            <a href="#features" className="hover:text-white transition-colors">Funzionalità</a>
+            <a href="#pricing" className="hover:text-white transition-colors">Prezzi</a>
+            <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
+          </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/login"
+              className="hidden sm:inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold px-4 py-2 transition"
+            >
+              Accedi
+            </Link>
             <FullscreenToggle color="#ffffff" hoverBackground="rgba(255,255,255,0.12)" />
             <LanguageSelector />
           </div>
         </div>
       </header>
 
-      {/* ─── HERO (quasi tutto above-the-fold) ─────────────────────────── */}
       <main className="pt-16">
+        {/* ─── HERO ───────────────────────────────────────────────────── */}
         <section className="px-4 sm:px-6 min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center py-10">
           <div className="max-w-6xl mx-auto mb-8 text-center w-full">
             <span className="inline-block text-4xl sm:text-7xl lg:text-8xl font-black tracking-tight">
@@ -153,18 +182,16 @@ export default function Home() {
           <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-14 items-center w-full">
             <div className="text-center lg:text-left">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.05] mb-5">
-                La tua idea.
-                <br />
-                La tua app.
+                Crei app per i tuoi clienti.
                 <br />
                 <span className="bg-gradient-to-r from-indigo-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-                  Un solo prompt.
+                  Le vendi col tuo brand.
                 </span>
               </h1>
 
               <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-md mx-auto lg:mx-0 mb-8">
-                ShardApps trasforma una descrizione in un&apos;app gestionale pronta da personalizzare, pubblicare e
-                vendere.
+                ShardApps genera con l&apos;AI gestionali e app web/PWA complete di database, CRUD e workflow.
+                Le personalizzi, le brandizzi col tuo logo e le rivendi ai tuoi clienti. Tu decidi il prezzo.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-5">
@@ -172,19 +199,19 @@ export default function Home() {
                   href="/login"
                   className="group inline-flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-7 py-3.5 rounded-xl shadow-[0_10px_40px_-10px_rgba(99,102,241,0.7)] transition"
                 >
-                  Crea la tua app
+                  Crea la tua prima app
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </Link>
                 <Link
-                  href="/info"
+                  href="/pricing"
                   className="inline-flex items-center justify-center gap-2 border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold px-7 py-3.5 rounded-xl backdrop-blur transition"
                 >
-                  Scopri i piani
+                  Vedi i piani
                 </Link>
               </div>
 
               <p className="text-xs text-slate-500 font-semibold tracking-widest">
-                AI &bull; PWA &bull; MULTI-LANGUAGE &bull; READY TO SELL
+                AI &bull; DATABASE &bull; WORKFLOW &bull; WHITE LABEL &bull; RIVENDIBILE
               </p>
             </div>
 
@@ -194,48 +221,122 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ─── STRIP "COME FUNZIONA" ────────────────────────────────── */}
-        <section className="px-4 sm:px-6 py-8 border-t border-white/5">
-          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-4 sm:gap-2">
-            {STEPS.map((s, i) => (
-              <div key={s.n} className="flex items-center gap-2 sm:gap-3">
-                <div className="flex items-center gap-2.5 text-center sm:text-left">
-                  <s.icon className="w-4 h-4 text-cyan-300 shrink-0" />
-                  <div>
-                    <span className="text-sm font-black tracking-wide">
-                      <span className="text-indigo-400">{s.n}</span> {s.title}
-                    </span>
-                    <p className="text-xs text-slate-500 leading-tight">{s.text}</p>
-                  </div>
-                </div>
-                {i < STEPS.length - 1 && (
-                  <ArrowRight className="hidden sm:block w-4 h-4 text-slate-600 mx-2 shrink-0" />
-                )}
-              </div>
-            ))}
+        {/* ─── PROBLEMA → SOLUZIONE ───────────────────────────────────── */}
+        <section className="px-4 sm:px-6 py-16 border-t border-white/5">
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-5">
+              Ogni cliente vuole un gestionale su misura.
+              <br className="hidden sm:block" />
+              Farlo da zero costa settimane.
+            </h2>
+            <p className="text-slate-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
+              Come agenzia o freelancer, ogni nuovo progetto significa ripartire da capo: analisi, sviluppo,
+              database, interfaccia. Con ShardApps generi un&apos;app completa e funzionante in pochi minuti,
+              la personalizzi per quel cliente specifico e la pubblichi con il tuo brand — pronta per essere
+              venduta come tua.
+            </p>
           </div>
         </section>
 
-        {/* ─── VALUE PROPOSITION (compatta) ───────────────────────────── */}
-        <section className="px-4 sm:px-6 py-10 border-t border-white/5">
+        {/* ─── COME FUNZIONA ───────────────────────────────────────────── */}
+        <section className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-8">
-              Non crei solo un&apos;app. Crei un{' '}
-              <span className="bg-gradient-to-r from-indigo-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-                prodotto
-              </span>
-              .
-            </h2>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">Come funziona</h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {HOW_IT_WORKS.map((s) => (
+                <div key={s.n} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-gradient-to-br from-indigo-500/20 to-cyan-400/20 flex items-center justify-center">
+                      <s.icon className="w-4 h-4 text-cyan-300" />
+                    </div>
+                    <span className="text-xs font-black text-indigo-400 tracking-wide">{s.n}</span>
+                  </div>
+                  <h3 className="font-bold text-white mb-1.5">{s.title}</h3>
+                  <p className="text-sm text-slate-400 leading-snug">{s.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
-            <div className="grid sm:grid-cols-3 gap-4">
-              {VALUE_ITEMS.map((v) => (
-                <div key={v.title} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-gradient-to-br from-indigo-500/20 to-cyan-400/20 flex items-center justify-center">
-                    <v.icon className="w-4 h-4 text-cyan-300" />
+        {/* ─── RESELLER / WHITE LABEL (sezione principale) ────────────── */}
+        <section id="reseller" className="relative px-4 sm:px-6 py-16 border-t border-white/5 overflow-hidden">
+          <div className="absolute inset-0 -z-10 flex items-center justify-center">
+            <div className="w-[36rem] h-[36rem] bg-gradient-to-tr from-violet-600/15 via-indigo-600/10 to-cyan-500/15 rounded-full blur-[120px]" />
+          </div>
+          <div className="max-w-5xl mx-auto">
+            <div className="grid lg:grid-cols-2 gap-10 items-center">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-300 tracking-wide mb-4">
+                  <Users className="w-3.5 h-3.5" /> PER AGENZIE, FREELANCER E RESELLER
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight mb-4">
+                  &quot;Creo app per i miei clienti.
+                  <br />
+                  Le rivendo con il mio brand.&quot;
+                </h2>
+                <p className="text-slate-400 leading-relaxed mb-6">
+                  ShardApps è l&apos;infrastruttura dietro le quinte: tu resti il fornitore che il tuo cliente
+                  conosce e paga. Ogni app che pubblichi ha credenziali proprie per il tuo cliente, e sul piano
+                  Business puoi sostituire il nostro brand con il tuo.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    'Crei app dedicate per ciascun cliente, in autonomia',
+                    'White label: il tuo logo e il tuo nome al posto di ShardApps',
+                    'Decidi tu il prezzo dell\'abbonamento mensile che il cliente paga',
+                    'Gestisci tutte le app dei tuoi clienti da un\'unica dashboard',
+                  ].map((item) => (
+                    <li key={item} className="flex items-start gap-2.5 text-sm text-slate-300">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 sm:p-8">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center">
+                    <Palette className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-white">{v.title}</h3>
-                    <p className="text-xs text-slate-400 leading-snug">{v.desc}</p>
+                    <p className="text-sm font-bold text-white">Il tuo brand, non il nostro</p>
+                    <p className="text-xs text-slate-500">Piano Business</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { label: 'App pubblicata per', value: 'Cliente finale' },
+                    { label: 'Brand visibile', value: 'La tua agenzia' },
+                    { label: 'Prezzo cliente', value: 'Lo decidi tu' },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-4 py-2.5 text-sm">
+                      <span className="text-slate-400">{row.label}</span>
+                      <span className="font-semibold text-white">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── FEATURES ───────────────────────────────────────────────── */}
+        <section id="features" className="px-4 sm:px-6 py-16 border-t border-white/5">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">
+              Tutto quello che serve per un gestionale vero
+            </h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {FEATURES.map((f) => (
+                <div key={f.title} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-gradient-to-br from-indigo-500/20 to-cyan-400/20 flex items-center justify-center">
+                    <f.icon className="w-4 h-4 text-cyan-300" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-white">{f.title}</h3>
+                    <p className="text-xs text-slate-400 leading-snug mt-0.5">{f.desc}</p>
                   </div>
                 </div>
               ))}
@@ -243,19 +344,102 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ─── CTA FINALE (compatta) ──────────────────────────────────── */}
+        {/* ─── PRICING (riepilogo — dettagli/acquisto su /pricing) ─────── */}
+        <section id="pricing" className="px-4 sm:px-6 py-16 border-t border-white/5">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-3">Prezzi</h2>
+            <p className="text-center text-slate-400 mb-10">Un costo di attivazione una tantum + un canone mensile fisso. Nessuna sorpresa.</p>
+
+            <div className="grid sm:grid-cols-3 gap-5">
+              {[
+                { name: 'Starter', setup: '€10', slots: '1 app', highlight: false },
+                { name: 'Pro', setup: '€79', slots: '5 app', highlight: true },
+                { name: 'Business', setup: '€299', slots: '50 app · White Label', highlight: false },
+              ].map((p) => (
+                <div
+                  key={p.name}
+                  className={`relative rounded-2xl border p-6 ${
+                    p.highlight
+                      ? 'border-indigo-500 bg-gradient-to-br from-indigo-950/50 to-violet-950/50 shadow-2xl shadow-indigo-500/10'
+                      : 'border-white/10 bg-white/[0.03]'
+                  }`}
+                >
+                  {p.highlight && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 px-3 py-0.5 rounded-full text-[11px] font-bold">
+                      Più scelto
+                    </span>
+                  )}
+                  <h3 className="text-lg font-black mb-3">{p.name}</h3>
+                  <div className="flex items-baseline gap-1.5 mb-1">
+                    <span className="text-3xl font-black">{p.setup}</span>
+                    <span className="text-xs text-slate-400">attivazione</span>
+                  </div>
+                  <p className="text-sm text-slate-400 mb-4">+ 25€/mese</p>
+                  <p className="text-xs font-semibold text-slate-300 bg-white/5 rounded-lg px-3 py-2">{p.slots}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="text-center mt-8">
+              <Link
+                href="/pricing"
+                className="inline-flex items-center gap-2 text-indigo-300 hover:text-indigo-200 font-semibold text-sm transition"
+              >
+                Vedi tutti i dettagli e attiva un piano <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── FAQ ────────────────────────────────────────────────────── */}
+        <section id="faq" className="px-4 sm:px-6 py-16 border-t border-white/5">
+          <div className="max-w-3xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">Domande frequenti</h2>
+            <div className="space-y-4">
+              {[
+                {
+                  q: 'Serve saper programmare?',
+                  a: 'No. Descrivi l\'app in linguaggio naturale, l\'AI genera database, gestionale e interfaccia. Le modifiche successive si fanno via chat.',
+                },
+                {
+                  q: 'Posso rivendere le app ai miei clienti?',
+                  a: 'Sì, è pensato esattamente per questo. Ogni app pubblicata ha credenziali dedicate per il tuo cliente e tu decidi il prezzo del suo abbonamento.',
+                },
+                {
+                  q: 'L\'app avrà il mio brand o quello di ShardApps?',
+                  a: 'Dipende dal piano: sul piano Business puoi sostituire logo e nome ShardApps con i tuoi (white label).',
+                },
+                {
+                  q: 'Posso modificare un\'app dopo averla pubblicata?',
+                  a: 'Sì. Puoi chiedere modifiche via chat in qualsiasi momento. Ogni pubblicazione crea una versione: se qualcosa non va, ripristini quella precedente.',
+                },
+                {
+                  q: 'Quante app posso creare?',
+                  a: 'Dipende dal piano scelto (da 1 a 50 slot inclusi). Puoi acquistarne altri in qualsiasi momento.',
+                },
+              ].map((item) => (
+                <div key={item.q} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                  <h3 className="font-bold text-white text-sm mb-1.5">{item.q}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">{item.a}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ─── CTA FINALE ─────────────────────────────────────────────── */}
         <section className="relative px-4 sm:px-6 py-14 border-t border-white/5 overflow-hidden">
           <div className="absolute inset-0 -z-10 flex items-center justify-center">
             <div className="w-[28rem] h-[28rem] bg-gradient-to-tr from-indigo-600/20 via-violet-600/15 to-cyan-500/20 rounded-full blur-[100px]" />
           </div>
           <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">Cosa vuoi creare oggi?</h2>
-            <p className="text-slate-400 mb-7">Descrivilo. ShardApps farà il resto.</p>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">Il tuo prossimo cliente aspetta.</h2>
+            <p className="text-slate-400 mb-7">Crea la sua app oggi, brandizzala col tuo nome, falla tua.</p>
             <Link
               href="/login"
               className="group inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-8 py-4 rounded-xl shadow-[0_10px_40px_-10px_rgba(99,102,241,0.7)] transition"
             >
-              Inizia a creare
+              Crea la tua prima app
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
@@ -264,10 +448,16 @@ export default function Home() {
 
       {/* ─── FOOTER ─────────────────────────────────────────────────── */}
       <footer className="px-4 sm:px-6 py-6 border-t border-white/5">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <span>
             SHARD<span className="text-indigo-400 font-semibold">APPS</span>
           </span>
+          {/* Audit commerciale pre-lancio: /info ospita i Termini e
+              Condizioni (uniche presenti nel prodotto) ma non era linkata
+              da nessuna pagina — irraggiungibile per un visitatore. */}
+          <Link href="/info" className="hover:text-slate-300 transition-colors">
+            Termini e Condizioni
+          </Link>
           <span>{t('sidebar_by')}</span>
         </div>
       </footer>
