@@ -12,35 +12,36 @@
 //   `instanceof` nelle route funzionano) con `callAiRouter` sostituita da una
 //   coda di risposte configurabili dal test. MAI una chiamata di rete verso
 //   OpenRouter/Groq.
+// ENTRAMBI i redirect passano dal resolve hook STABILE di
+// route-test-loader.mjs (fake-supabase-module.ts / fake-ai-router-module.ts),
+// non da mock.module(): vedi il commento in testa a route-mock-state.ts per
+// il perché — mock.module() con l'opzione `exports` è rotto su Node 22.x
+// per entrambi questi specifier ("does not provide an export named ..."),
+// mai su Node 24.x (fix per la CI, PR #24).
 // Tutto il resto (design system loader, orchestrator, patch engine,
 // validator, ecc.) gira TALE E QUALE al codice di produzione.
 //
-// Richiede il flag --experimental-test-module-mocks (node:test mock.module)
-// e il loader di risoluzione alias (route-test-loader.mjs, registrato una
-// volta sola per processo qui sotto).
+// Non richiede più il flag --experimental-test-module-mocks: nessun
+// mock.module() rimasto in questo file (era l'unico uso in tutto il
+// frontend), quindi il flag è stato rimosso anche dallo script "test" di
+// package.json. Il loader di risoluzione alias (route-test-loader.mjs)
+// resta comunque necessario — API stabile, non richiede alcun flag — ed è
+// registrato una volta sola per processo qui sotto.
 //
-// Perché i mock sono registrati UNA SOLA VOLTA per processo (mock.module
-// globale, non t.mock.module per-test): l'auto-restore di t.mock.module tra
-// test dello stesso file, quando più test dello stesso file mockano LO
-// STESSO specifier ("@/src/lib/ai-router"/"@supabase/supabase-js"), si è
-// rivelato inaffidabile in pratica con questa API ancora sperimentale (un
-// test successivo può ritrovarsi a intercettare ancora la coda di risposte
-// AI/il fake Supabase di un test precedente già esaurito, con fallimenti
-// intermittenti dipendenti dall'ordine). Soluzione più robusta: un solo
-// mock.module per specifier per l'intero processo, che delega a
-// un'indirezione mutabile (`currentSupabase`/`currentAiHandler`)
-// riassegnata da ogni singolo test in setupRouteTest() — node:test esegue i
-// test di un file in sequenza (nessuna concorrenza qui), quindi non c'è
-// alcuna race tra la riassegnazione di un test e le richieste HTTP del test
-// precedente, già tutte completate.
+// Perché lo stato dei fake è registrato/riassegnato UNA VOLTA per test, non
+// ricreato ad ogni richiesta: `currentSupabase`/`currentAiHandler` (vedi
+// route-mock-state.ts) vengono riassegnati da ogni singolo test in
+// setupRouteTest() — node:test esegue i test di un file in sequenza
+// (nessuna concorrenza qui), quindi non c'è alcuna race tra la
+// riassegnazione di un test e le richieste HTTP del test precedente, già
+// tutte completate.
 
-import { mock } from 'node:test';
 import { register } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { makeFakeSupabase, type FakeSupabaseOptions } from './fake-supabase.ts';
-import * as RealAiRouter from '../ai-router.ts';
-import type { AiRouterCallOptions, AiRouterResult } from '../ai-router.ts';
+import { setCurrentSupabaseForTests, setCurrentAiHandlerForTests, type FakeAiCall } from './route-mock-state.ts';
+import type { AiRouterCallOptions } from '../ai-router.ts';
 
 const FRONTEND_ROOT = path.resolve(fileURLToPath(import.meta.url), '../../../../');
 
@@ -49,82 +50,6 @@ function ensureRouteAliasLoader() {
   if (loaderRegistered) return;
   register(pathToFileURL(path.join(FRONTEND_ROOT, 'src/lib/test-helpers/route-test-loader.mjs')).href, import.meta.url);
   loaderRegistered = true;
-}
-
-export type FakeAiCall = (options: AiRouterCallOptions) => Promise<AiRouterResult> | AiRouterResult;
-
-// ─── Indirezione mutabile, riassegnata ad ogni setupRouteTest() ────────────
-let currentSupabase: ReturnType<typeof makeFakeSupabase> | null = null;
-let currentAiHandler: FakeAiCall = async () => {
-  throw new Error('route-test-harness: setupRouteTest() non è stato chiamato prima di questa richiesta');
-};
-let globalMocksRegistered = false;
-
-// @types/node non è ancora allineato al runtime su questo punto: Node
-// accetta/preferisce `exports` in mock.module() (usare `namedExports`, il
-// solo nome che il tipo installato conosce, produce un DeprecationWarning ad
-// ogni chiamata — verificato empiricamente), ma MockModuleOptions qui non lo
-// elenca ancora. `as any` mirato SOLO al parametro options di questa
-// chiamata (TS rifiuta anche un cast diretto: "no properties in common",
-// la regola sui weak type per un'interfaccia interamente opzionale) —
-// nessun impatto sul type-checking del resto del file.
-function ensureGlobalMocks() {
-  if (globalMocksRegistered) return;
-  ensureRouteAliasLoader();
-
-  mock.module('@supabase/supabase-js', {
-    // Solo createClient è realmente usato dalle route/lib coinvolte. La
-    // maggior parte delle route lo chiama con firma/generic diversi
-    // (createClient<Database>(url, serviceRoleKey)) e nessuna opzione
-    // "global.headers" — per quelle ritorna sempre `currentSupabase`,
-    // riassegnata ad ogni test, così ogni modulo del grafo di import (route,
-    // creator-server.ts, rate-limit.ts, comandi-provisioning.ts) condivide
-    // lo stesso DB in memoria del test in corso.
-    //
-    // Alcune route (es. app/api/apps/[id]/route.ts) creano invece un client
-    // "authClient" dedicato con createClient(url, anonKey, {global:{headers:
-    // {Authorization:'Bearer <token>'}}}) e poi chiamano .auth.getUser() SENZA
-    // argomenti (il vero @supabase/supabase-js usa il token catturato in
-    // quell'header) — pattern diverso da getUserFromToken(supabase, token)
-    // (creator-server.ts), che passa il token esplicitamente ad ogni
-    // chiamata e per cui il fake sopra basta già. Per supportare ANCHE il
-    // primo pattern, quando createClient riceve quell'header intercettiamo
-    // SOLO .auth.getUser() con un wrapper che inoltra il token catturato al
-    // fake condiviso (findAppVersionForTenant ecc. restano sullo stesso
-    // `currentSupabase.from(...)`, nessun DB separato) — additivo, il
-    // percorso senza quell'header resta identico a prima.
-    exports: {
-      createClient: (
-        _url?: string,
-        _key?: string,
-        options?: { global?: { headers?: Record<string, string> } }
-      ) => {
-        const authHeader = options?.global?.headers?.Authorization || options?.global?.headers?.authorization;
-        const capturedToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-        if (!capturedToken || !currentSupabase) return currentSupabase;
-        const base = currentSupabase;
-        return {
-          ...base,
-          auth: {
-            ...base.auth,
-            getUser: (explicitToken?: string) => base.auth.getUser(explicitToken ?? capturedToken),
-          },
-        };
-      },
-    },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vedi commento sopra ensureGlobalMocks
-  } as any);
-
-  mock.module('@/src/lib/ai-router', {
-    // Spread del modulo REALE: extractJsonFromAiContent/AiRouterError/
-    // AiRouterConfigError restano le implementazioni vere (gli `instanceof`
-    // nelle route continuano a funzionare), solo callAiRouter è sostituita
-    // da un'indirezione verso `currentAiHandler`, riassegnata ad ogni test.
-    exports: { ...RealAiRouter, callAiRouter: (options: AiRouterCallOptions) => currentAiHandler(options) },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- vedi commento sopra ensureGlobalMocks
-  } as any);
-
-  globalMocksRegistered = true;
 }
 
 export interface RouteTestSetup {
@@ -137,9 +62,10 @@ export interface RouteTestSetup {
 
 /**
  * Configura Supabase (fake in-memory) + ai-router (coda di risposte) per il
- * test corrente. Nessun parametro `t` richiesto (i mock sono globali per
- * processo, vedi sopra) — mantenuto comunque nella firma per un'API stabile
- * e per eventuali futuri usi di TestContext, es. diagnostica.
+ * test corrente. Nessun parametro `t` richiesto (i fake sono condivisi per
+ * processo tramite route-mock-state.ts, vedi sopra) — mantenuto comunque
+ * nella firma per un'API stabile e per eventuali futuri usi di TestContext,
+ * es. diagnostica.
  *
  * `aiResponses`: coda di risposte per callAiRouter, consumate in ordine di
  * chiamata (una per ogni chiamata AI attesa nel flusso della route — es.
@@ -157,17 +83,17 @@ export function setupRouteTest(
     aiResponses?: Array<{ content: string } | Error>;
   }
 ): RouteTestSetup {
-  ensureGlobalMocks();
+  ensureRouteAliasLoader();
 
   const supabase = makeFakeSupabase(opts.defaultsByTable || {}, opts.seedTables || {}, {
     rpcHandlers: opts.rpcHandlers,
     authUsers: opts.authUsers,
   });
-  currentSupabase = supabase;
+  setCurrentSupabaseForTests(supabase);
 
   const queue = [...(opts.aiResponses || [])];
   const aiCalls: AiRouterCallOptions[] = [];
-  currentAiHandler = async (options) => {
+  const aiHandler: FakeAiCall = async (options) => {
     aiCalls.push(options);
     const next = queue.length > 1 ? queue.shift()! : queue[0];
     if (next instanceof Error) throw next;
@@ -182,6 +108,7 @@ export function setupRouteTest(
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
     };
   };
+  setCurrentAiHandlerForTests(aiHandler);
 
   return { supabase, aiCalls };
 }

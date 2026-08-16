@@ -36,22 +36,56 @@ function resolveAliasedPath(rel) {
   return null;
 }
 
+// '@supabase/supabase-js' e '@/src/lib/ai-router' durante i test: redirect
+// stabile (via questo stesso resolve hook, non mock.module() — sperimentale
+// e rotto su Node 22.x per ENTRAMBI questi specifier, "does not provide an
+// export named ...", vedi il commento in testa a route-mock-state.ts) verso
+// i rispettivi fake, veri file locali mai risolti/usati fuori dai test
+// (questo loader è registrato solo da route-test-harness.ts, mai in
+// produzione).
+const SUPABASE_FAKE_URL = pathToFileURL(path.join(FRONTEND_ROOT, 'src/lib/test-helpers/fake-supabase-module.ts')).href;
+const AI_ROUTER_REAL_URL = pathToFileURL(path.join(FRONTEND_ROOT, 'src/lib/ai-router.ts')).href;
+const AI_ROUTER_FAKE_URL = pathToFileURL(path.join(FRONTEND_ROOT, 'src/lib/test-helpers/fake-ai-router-module.ts')).href;
+
 export async function resolve(specifier, context, nextResolve) {
-  if (specifier.startsWith('@/')) {
-    const resolved = resolveAliasedPath(specifier.slice(2));
-    if (resolved) {
-      return nextResolve(pathToFileURL(resolved).href, context);
-    }
-    // Nessun file trovato (es. un import type-only mai emesso a runtime, o
-    // un percorso non previsto): lascia che nextResolve fallisca con
-    // l'errore standard di Node, più chiaro di un errore custom qui.
+  if (specifier === '@supabase/supabase-js') {
+    return nextResolve(SUPABASE_FAKE_URL, context);
   }
   // 'next/server' bare (senza estensione) non è risolvibile dall'ESM
   // resolver di Node su un pacchetto CJS senza "exports" map — stesso
-  // problema degli alias sopra, stesso fix mirato (solo su questo specifier
+  // problema degli alias sotto, stesso fix mirato (solo su questo specifier
   // esatto, nessun altro sottopercorso di "next" viene toccato).
   if (specifier === 'next/server') {
     return nextResolve('next/server.js', context);
   }
-  return nextResolve(specifier, context);
+
+  let result;
+  if (specifier.startsWith('@/')) {
+    const resolved = resolveAliasedPath(specifier.slice(2));
+    // Nessun file trovato (es. un import type-only mai emesso a runtime, o
+    // un percorso non previsto): lascia che nextResolve fallisca con
+    // l'errore standard di Node, più chiaro di un errore custom qui.
+    result = await nextResolve(resolved ? pathToFileURL(resolved).href : specifier, context);
+  } else {
+    result = await nextResolve(specifier, context);
+  }
+
+  // '@/src/lib/ai-router' è importato SIA con l'alias sopra SIA con
+  // percorsi relativi da moduli nella stessa cartella (es.
+  // '../ai-router.ts' da route-test-harness.ts) — invece di elencare ogni
+  // forma possibile dello specifier, confrontiamo il risultato GIÀ
+  // risolto: se punta esattamente al file reale di ai-router.ts, lo
+  // sostituiamo col fake, qualunque sia stato lo specifier di partenza.
+  //
+  // ECCEZIONE necessaria: fake-ai-router-module.ts stesso fa
+  // `export * from '../ai-router.ts'` per re-esportare le implementazioni
+  // reali (extractJsonFromAiContent, AiRouterError, ecc.) — quell'IMPORT
+  // SPECIFICO deve raggiungere il file VERO, altrimenti si crea un loop
+  // (il fake che reindirizza a se stesso). Riconosciuto guardando
+  // `context.parentURL`: solo quando il modulo che sta facendo l'import è
+  // il fake stesso, lasciamo passare la risoluzione reale.
+  if (result.url === AI_ROUTER_REAL_URL && context.parentURL !== AI_ROUTER_FAKE_URL) {
+    return nextResolve(AI_ROUTER_FAKE_URL, context);
+  }
+  return result;
 }
