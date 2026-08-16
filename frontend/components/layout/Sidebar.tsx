@@ -392,9 +392,9 @@ export default function Sidebar({
             <img
               src="/favicon.png"
               alt="ShardApps"
-              className="h-14 w-14 rounded-full object-cover"
+              className="h-14 w-14 rounded-xl object-cover"
             />
-            <p className="text-xs font-semibold text-slate-400">{t('sidebar_by')}</p>
+            <p className="text-[11px] font-semibold text-slate-400">{t('sidebar_by')}</p>
           </div>
         </div>
       </aside>

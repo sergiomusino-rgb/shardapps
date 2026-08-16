@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import Image from 'next/image';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { resolveSidebarBranding } from './sidebar-branding';
 
 /** Forma minima di una tabella personalizzata usata solo per il nav della sidebar. */
 export interface SidebarCustomTable {
@@ -107,40 +108,40 @@ export function SidebarLogo({ logoUrl, companyName }: { logoUrl: string; company
 
 // Stesso logo/layout del footer sidebar di ShardApps (components/layout/
 // Sidebar.tsx) e di Comand AI (components/comandi/ComandiSidebar.tsx):
-// stesso file (/favicon.png), stessa forma (cerchio, non rettangolo
-// arrotondato), stessa disposizione verticale — un solo aspetto per il
-// branding "ShardApps by MUSINO" in ogni app, generata o no.
+// stesso file (/favicon.png), stessa forma (quadrata arrotondata, non
+// cerchio — il cerchio ritagliava il wordmark dentro l'icona), stessa
+// disposizione verticale — un solo aspetto per il branding "ShardApps by
+// MUSINO" in ogni app, generata o no.
 //
 // White label (piano Business, vedi "Brandizza la tua app" in
-// dashboard/projects/[id]/page.tsx): se il creator ha caricato un proprio
-// logo in config.branding.footer_logo_url, sostituisce logo+testo
+// dashboard/projects/[id]/page.tsx, e il pannello Branding di CreatorAI):
+// se il creator ha caricato un proprio logo/nome in
+// config.branding.footer_logo_url/footer_label, sostituisce logo/testo
 // ShardApps qui — stesso posto, stessa forma, nessun altro cambiamento di
-// layout per non rompere lo spazio riservato nella sidebar.
+// layout per non rompere lo spazio riservato nella sidebar. Vedi
+// resolveSidebarBranding (sidebar-branding.ts) per il fallback per-campo.
 export function SidebarBrandFooter({ logoUrl, label }: { logoUrl?: string; label?: string }) {
-  if (logoUrl) {
-    return (
-      <div className="flex flex-col items-center gap-2 px-5 py-3">
-        <img
-          src={logoUrl}
-          alt={label || 'App'}
-          className="h-14 w-14 shrink-0 rounded-full object-cover"
-        />
-        {label && <p className="m-0 max-w-full truncate text-xs font-semibold text-tenant-sidebar-text/50">{label}</p>}
-      </div>
-    );
-  }
+  const effective = resolveSidebarBranding(logoUrl, label);
 
   return (
     <div className="flex flex-col items-center gap-2 px-5 py-3">
-      <Image
-        src="/favicon.png"
-        alt="ShardApps"
-        width={56}
-        height={56}
-        className="h-14 w-14 shrink-0 rounded-full object-cover"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-      />
-      <p className="m-0 text-xs font-semibold text-tenant-sidebar-text/50">by MUSINO</p>
+      {effective.logoUrl ? (
+        <img
+          src={effective.logoUrl}
+          alt={effective.label}
+          className="h-14 w-14 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <Image
+          src="/favicon.png"
+          alt="ShardApps"
+          width={56}
+          height={56}
+          className="h-14 w-14 shrink-0 rounded-xl object-cover"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      <p className="m-0 max-w-full truncate text-[11px] font-semibold text-tenant-sidebar-text/50">{effective.label}</p>
     </div>
   );
 }

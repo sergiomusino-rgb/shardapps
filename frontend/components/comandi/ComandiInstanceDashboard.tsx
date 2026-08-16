@@ -61,6 +61,7 @@ import { COMANDI_PWA_THEME_COLOR, COMANDI_PWA_APPLE_TOUCH_ICON, COMANDI_PWA_APP_
 import InstallAppBanner from '@/components/InstallAppBanner';
 import InstallAppCard from '@/components/comandi/InstallAppCard';
 import { useAppInfo } from '@/app/a/[slug]/AppInfoContext';
+import { extractBrandingFromConfig } from '@/app/a/[slug]/app/sidebar-branding';
 import { daysRemaining } from '@/app/a/[slug]/app/subscription-status';
 import type { CatalogItem, Customer, Order, OrderItem, OrderStatus, ProductSynonym, TenantMemberRole } from '@/types/comandi';
 
@@ -161,6 +162,17 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
   const { t } = useLanguage();
   const router = useRouter();
 
+  // Branding reseller (CreatorAI Engine 2.0): stesso apps.config.branding
+  // già usato da ogni altra app generata da ShardApps (SidebarBrandFooter,
+  // app/a/[slug]/app/sidebar-primitives.tsx) — letto qui da AppInfoContext
+  // (già disponibile in questo albero di route, nessun nuovo fetch) e
+  // passato a ComandiSidebar sotto. Diverso da companyLogoUrl/companyName
+  // sopra (tenants.logo_url/name, icona PWA installabile): questo è il
+  // brand del RESELLER mostrato al SUO cliente, non l'icona che il titolare
+  // vede sul proprio telefono.
+  const appInfo = useAppInfo();
+  const resellerBranding = extractBrandingFromConfig(appInfo.config);
+
   // Icona e nome dell'app installabile: quelli scelti dal titolare in Azienda
   // (tenants.logo_url / name), non il brand fisso "Comand AI" — stesso
   // criterio già usato dalla console Agente (app/a/[slug]/app/agente).
@@ -240,6 +252,8 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
           agentLabel={t('comandi_dashboard_go_to_console')}
           onLogout={handleLogout}
           logoutLabel={t('comandi_dashboard_logout')}
+          brandingLogoUrl={resellerBranding?.footer_logo_url}
+          brandingLabel={resellerBranding?.footer_label}
         />
       </div>
 
@@ -269,6 +283,8 @@ export default function ComandiInstanceDashboard({ slug, tenantId }: ComandiInst
               onLogout={handleLogout}
             logoutLabel={t('comandi_dashboard_logout')}
             onClose={() => setMobileMenuOpen(false)}
+            brandingLogoUrl={resellerBranding?.footer_logo_url}
+            brandingLabel={resellerBranding?.footer_label}
           />
         </div>
       </div>
