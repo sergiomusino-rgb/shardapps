@@ -6,6 +6,15 @@ import type { NextConfig } from "next";
 //   parti caricato dal browser (Google Fonts in app/layout.tsx). Nessun
 //   altro script esterno nel repo (niente Stripe.js: i pagamenti passano
 //   per Stripe Payment Link via redirect a pagina intera, non embed).
+//   Presenti anche in connect-src, non solo in style-src/font-src: il
+//   service worker (public/sw.js) intercetta OGNI richiesta cross-origin
+//   (url.hostname !== self.location.hostname) e la ri-esegue con un
+//   proprio fetch() per popolare la cache — quel fetch() dentro il SW è
+//   soggetto a connect-src, non a style-src/font-src (quelli valgono solo
+//   per il <link>/@font-face caricati direttamente dal documento). Senza
+//   questa voce il fetch del SW veniva bloccato dalla CSP, mai dalla
+//   richiesta diretta del browser (verificato: l'errore compariva solo da
+//   sw.js, mai come violazione diretta di style-src/font-src).
 // - Supabase (ujdyqnzofclzztmppxea.supabase.co): client browser (src/lib/supabase.ts)
 //   fa fetch REST diretti; stesso host serve anche i video generati da
 //   Vision (riscaricati da fal.ai e ri-caricati su Supabase Storage, mai
@@ -31,7 +40,7 @@ const cspHeader = `
   img-src 'self' data: blob: https:;
   font-src 'self' https://fonts.gstatic.com data:;
   media-src 'self' blob: ${SUPABASE_ORIGIN};
-  connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_WS_ORIGIN} ${BACKEND_ORIGIN}${isDev ? ' http://127.0.0.1:5005 http://localhost:5005 ws://localhost:3000 ws://127.0.0.1:3000' : ''};
+  connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_WS_ORIGIN} ${BACKEND_ORIGIN} https://fonts.googleapis.com https://fonts.gstatic.com${isDev ? ' http://127.0.0.1:5005 http://localhost:5005 ws://localhost:3000 ws://127.0.0.1:3000' : ''};
   frame-src 'none';
   object-src 'none';
   base-uri 'self';
