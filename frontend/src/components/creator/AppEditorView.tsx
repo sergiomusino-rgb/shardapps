@@ -13,10 +13,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Send, Loader2, Sparkles, AlertCircle,
-  Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff,
+  Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff, Clock,
 } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 import SitePreview from './SitePreview';
+// Hardening 2/2 (CreatorAI Engine 2.0): pannello "Versioni" + rollback, vedi
+// commento in testa a VersionHistoryPanel.tsx per il contratto/sicurezza.
+import VersionHistoryPanel from './VersionHistoryPanel';
 import { useVoiceInput } from '@/src/lib/useVoiceInput';
 import { promptSuggestsStateButMissing, type SiteBlueprintJSON } from '@/src/lib/site-schema';
 
@@ -44,6 +47,9 @@ export interface AppEditorViewLabels {
   publishButton: string;
   publishingButton: string;
   saveButton: string;
+  /** Hardening 2/2: etichetta del pulsante che apre il pannello Versioni
+   * (visibile solo dopo la prima pubblicazione, vedi render sotto). */
+  versionsButton: string;
 }
 
 const DEFAULT_LABELS: AppEditorViewLabels = {
@@ -56,6 +62,7 @@ const DEFAULT_LABELS: AppEditorViewLabels = {
   publishButton: 'Pubblica Gestionale',
   publishingButton: 'Pubblicazione in corso…',
   saveButton: 'Salva Modifiche',
+  versionsButton: 'Versioni',
 };
 
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -178,6 +185,14 @@ export default function AppEditorView({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
 
+  // Hardening 2/2: pannello Versioni/rollback — visibile solo per un'app già
+  // pubblicata (publishedAppId), perché app_versions esiste solo a partire
+  // dalla prima ripubblicazione (nessuna riga alla primissima pubblicazione,
+  // vedi app-versions.ts). rollbackNotice è un messaggio di successo
+  // transitorio (auto-dismiss), stesso trattamento "leggero" di publishError.
+  const [showVersions, setShowVersions] = useState(false);
+  const [rollbackNotice, setRollbackNotice] = useState<string | null>(null);
+
   // Hot-reload locale: qualunque aggiornamento di `schema` (via chat o da un
   // eventuale editor esterno tramite `initialSchema`) si riflette subito
   // nell'anteprima, senza ricaricare la pagina — SitePreview è puramente
@@ -190,6 +205,12 @@ export default function AppEditorView({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!rollbackNotice) return;
+    const timer = setTimeout(() => setRollbackNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [rollbackNotice]);
 
   const handleSend = async () => {
     const message = input.trim();
@@ -278,6 +299,37 @@ export default function AppEditorView({
     }
   };
 
+  // Hardening 2/2 — Versioni/rollback: il token viene recuperato al momento
+  // dell'apertura (mai riusato "vecchio"), stesso pattern di handleSend/
+  // handlePublish sopra. Il pannello stesso decide/valida tenant e ownership
+  // lato server (API /api/creator/rollback, invariata) — qui non si fa
+  // altro che passargli appId + token.
+  const [versionsAccessToken, setVersionsAccessToken] = useState<string | null>(null);
+  const handleOpenVersions = async () => {
+    const { data: { session } } = await supabaseBrowser.auth.getSession();
+    if (!session?.access_token) {
+      setPublishError('Sessione scaduta, effettua di nuovo il login.');
+      return;
+    }
+    setVersionsAccessToken(session.access_token);
+    setShowVersions(true);
+  };
+
+  // Invocata dal pannello SOLO dopo un rollback riuscito (mai automatico):
+  // aggiorna editor + preview con lo schema ripristinato, propaga al
+  // chiamante esterno (stesso contratto di handleSend/handlePublish) e
+  // mostra conferma esplicita all'utente.
+  const handleRollback = (restoredSchema: SiteBlueprintJSON) => {
+    setSchema(restoredSchema);
+    setActivePageSlug((prev) => (restoredSchema.pages.some((p) => p.slug === prev) ? prev : restoredSchema.pages[0]?.slug));
+    onSchemaChange?.(restoredSchema);
+    setShowVersions(false);
+    // Il rollback aggiorna apps.config direttamente lato server (stesso
+    // contratto già in produzione, invariato): l'app pubblicata è già
+    // ripristinata a questo punto, non serve un ulteriore "Salva Modifiche".
+    setRollbackNotice('Versione ripristinata: l\'app pubblicata è già stata aggiornata.');
+  };
+
   return (
     <div className="flex h-full flex-col gap-3">
       {/* ── Header: nome app + pubblica/salva ── */}
@@ -289,15 +341,32 @@ export default function AppEditorView({
               <AlertCircle size={12} className="shrink-0" /> {publishError}
             </div>
           )}
+          {rollbackNotice && !publishError && (
+            <div className="mt-0.5 flex items-center gap-1 text-xs text-emerald-400">
+              <CheckCircle2 size={12} className="shrink-0" /> {rollbackNotice}
+            </div>
+          )}
         </div>
-        <button
-          onClick={handlePublish}
-          disabled={isPublishing}
-          className="flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:bg-gray-700"
-        >
-          {isPublishing ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
-          {isPublishing ? t.publishingButton : publishedAppId ? t.saveButton : t.publishButton}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Hardening 2/2: solo per un'app già pubblicata almeno una volta
+              (publishedAppId) — nessuna cronologia possibile prima. */}
+          {publishedAppId && (
+            <button
+              onClick={handleOpenVersions}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
+            >
+              <Clock size={14} /> {t.versionsButton}
+            </button>
+          )}
+          <button
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 disabled:bg-gray-700"
+          >
+            {isPublishing ? <Loader2 size={15} className="animate-spin" /> : <Rocket size={15} />}
+            {isPublishing ? t.publishingButton : publishedAppId ? t.saveButton : t.publishButton}
+          </button>
+        </div>
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
@@ -418,6 +487,16 @@ export default function AppEditorView({
 
       {publishResult && (
         <PublishSuccessModal result={publishResult} onClose={() => setPublishResult(null)} />
+      )}
+
+      {showVersions && publishedAppId && versionsAccessToken && (
+        <VersionHistoryPanel
+          appId={publishedAppId}
+          currentSchema={schema}
+          accessToken={versionsAccessToken}
+          onRollback={handleRollback}
+          onClose={() => setShowVersions(false)}
+        />
       )}
     </div>
   );

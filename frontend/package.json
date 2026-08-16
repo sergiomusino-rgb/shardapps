@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test src/lib/**/*.test.js"
+    "test": "node --experimental-test-module-mocks --test \"src/lib/**/*.test.js\" \"src/lib/**/*.test.ts\" \"app/api/creator/**/route.test.ts\""
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",
