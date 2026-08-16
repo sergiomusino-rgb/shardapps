@@ -29,10 +29,11 @@ import {
 // dell'hero, deve reggere da solo il "wow" — sidebar, KPI, grafico, tabella,
 // badge "AI Generated". ────────────────────────────────────────────────
 function DashboardMockup() {
+  const { t } = useLanguage();
   const kpis = [
-    { label: 'Ordini', value: '1.284', trend: '+12%' },
-    { label: 'Ricavi', value: '€8.4k', trend: '+6%' },
-    { label: 'Clienti', value: '342', trend: '+3%' },
+    { label: t('landing_mockup_kpi_orders'), value: '1.284', trend: '+12%' },
+    { label: t('landing_mockup_kpi_revenue'), value: '€8.4k', trend: '+6%' },
+    { label: t('landing_mockup_kpi_clients'), value: '342', trend: '+3%' },
   ];
   const bars = [40, 65, 50, 80, 55, 90, 70];
 
@@ -43,7 +44,7 @@ function DashboardMockup() {
       <div className="relative rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-2xl shadow-[0_20px_80px_-20px_rgba(79,70,229,0.5)] overflow-hidden animate-[float_6s_ease-in-out_infinite]">
         <div className="absolute top-4 right-4 z-10 flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 backdrop-blur-md">
           <Sparkles className="w-3 h-3 text-cyan-300" />
-          <span className="text-[11px] font-semibold text-cyan-200 tracking-wide">AI Generated</span>
+          <span className="text-[11px] font-semibold text-cyan-200 tracking-wide">{t('landing_mockup_badge')}</span>
         </div>
 
         <div className="flex">
@@ -103,21 +104,25 @@ function DashboardMockup() {
 // verificate nel codice (generazione AI, database/CRUD dinamico, workflow,
 // custom tables, branding, versioning/rollback) — vedi audit commerciale. ──
 
+// Contenuti tradotti via chiavi i18n (landing_*, vedi messages/simple/*.json):
+// gli array restano a livello di modulo (icone/ordine sono statici), solo
+// title/text sono chiavi risolte con t() in fase di render — permette la
+// localizzazione completa senza spostare questi array dentro il componente.
 const HOW_IT_WORKS = [
-  { n: '01', icon: MessageSquareText, title: 'Crea', text: 'Descrivi l\'app che ti serve: l\'AI genera database, gestionale e interfaccia.' },
-  { n: '02', icon: Wand2, title: 'Personalizza', text: 'Modifica dal vivo via chat. Ogni versione resta salvata, puoi tornare indietro quando vuoi.' },
-  { n: '03', icon: Palette, title: 'Brandizza', text: 'Sul piano Business, il tuo logo e il tuo nome al posto di ShardApps: il cliente vede te.' },
-  { n: '04', icon: Rocket, title: 'Rivendi', text: 'Consegni le credenziali al tuo cliente. Decidi tu quanto fargli pagare ogni mese.' },
+  { n: '01', icon: MessageSquareText, titleKey: 'landing_how_step1_title', textKey: 'landing_how_step1_text' },
+  { n: '02', icon: Wand2, titleKey: 'landing_how_step2_title', textKey: 'landing_how_step2_text' },
+  { n: '03', icon: Palette, titleKey: 'landing_how_step3_title', textKey: 'landing_how_step3_text' },
+  { n: '04', icon: Rocket, titleKey: 'landing_how_step4_title', textKey: 'landing_how_step4_text' },
 ];
 
 const FEATURES = [
-  { icon: Wand2, title: 'Generazione AI', desc: 'Da un prompt a un\'app funzionante: struttura, database e interfaccia già pronti.' },
-  { icon: Database, title: 'Database & CRUD', desc: 'Ogni entità del gestionale ha già creazione, modifica, ricerca e cancellazione.' },
-  { icon: Workflow, title: 'Workflow & automazioni', desc: 'Stati, transizioni, azioni e notifiche: il gestionale segue i processi reali del cliente.' },
-  { icon: Table2, title: 'Custom tables', desc: 'Aggiungi tabelle su misura oltre a quelle generate, senza scrivere codice.' },
-  { icon: Smartphone, title: 'Web App & PWA', desc: 'Installabile su desktop e smartphone, pronta all\'uso da subito.' },
-  { icon: History, title: 'Versioning & rollback', desc: 'Ogni pubblicazione crea una versione. Sbagliato qualcosa? Ripristini quella precedente in un click.' },
-  { icon: Sparkles, title: 'AI Vision', desc: 'I crediti inclusi in ogni piano generano spot video AI per promuovere le app che crei.' },
+  { icon: Wand2, titleKey: 'landing_feature_ai_title', descKey: 'landing_feature_ai_desc' },
+  { icon: Database, titleKey: 'landing_feature_db_title', descKey: 'landing_feature_db_desc' },
+  { icon: Workflow, titleKey: 'landing_feature_workflow_title', descKey: 'landing_feature_workflow_desc' },
+  { icon: Table2, titleKey: 'landing_feature_tables_title', descKey: 'landing_feature_tables_desc' },
+  { icon: Smartphone, titleKey: 'landing_feature_pwa_title', descKey: 'landing_feature_pwa_desc' },
+  { icon: History, titleKey: 'landing_feature_versioning_title', descKey: 'landing_feature_versioning_desc' },
+  { icon: Sparkles, titleKey: 'landing_feature_vision_title', descKey: 'landing_feature_vision_desc' },
 ];
 
 export default function HomeClient() {
@@ -156,10 +161,10 @@ export default function HomeClient() {
           </Link>
 
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
-            <a href="#reseller" className="hover:text-white transition-colors">Reseller</a>
-            <a href="#features" className="hover:text-white transition-colors">Funzionalità</a>
-            <a href="#pricing" className="hover:text-white transition-colors">Prezzi</a>
-            <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
+            <a href="#reseller" className="hover:text-white transition-colors">{t('landing_nav_reseller')}</a>
+            <a href="#features" className="hover:text-white transition-colors">{t('landing_nav_features')}</a>
+            <a href="#pricing" className="hover:text-white transition-colors">{t('landing_nav_pricing')}</a>
+            <a href="#faq" className="hover:text-white transition-colors">{t('landing_nav_faq')}</a>
           </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -167,7 +172,7 @@ export default function HomeClient() {
               href="/login"
               className="hidden sm:inline-flex items-center justify-center rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold px-4 py-2 transition"
             >
-              Accedi
+              {t('login_button_login')}
             </Link>
             <FullscreenToggle color="#ffffff" hoverBackground="rgba(255,255,255,0.12)" />
             <LanguageSelector />
@@ -187,16 +192,15 @@ export default function HomeClient() {
           <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-14 items-center w-full">
             <div className="text-center lg:text-left">
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.05] mb-5">
-                Crei app per i tuoi clienti.
+                {t('landing_hero_title_line1')}
                 <br />
                 <span className="bg-gradient-to-r from-indigo-400 via-cyan-300 to-violet-400 bg-clip-text text-transparent">
-                  Le vendi col tuo brand.
+                  {t('landing_hero_title_line2')}
                 </span>
               </h1>
 
               <p className="text-base sm:text-lg text-slate-300 leading-relaxed max-w-md mx-auto lg:mx-0 mb-8">
-                ShardApps genera con l&apos;AI gestionali e app web/PWA complete di database, CRUD e workflow.
-                Le personalizzi, le brandizzi col tuo logo e le rivendi ai tuoi clienti. Tu decidi il prezzo.
+                {t('landing_hero_description')}
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-5">
@@ -204,19 +208,19 @@ export default function HomeClient() {
                   href="/login"
                   className="group inline-flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-7 py-3.5 rounded-xl shadow-[0_10px_40px_-10px_rgba(99,102,241,0.7)] transition"
                 >
-                  Crea la tua prima app
+                  {t('landing_hero_cta_primary')}
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
                 </Link>
                 <Link
                   href="/pricing"
                   className="inline-flex items-center justify-center gap-2 border border-white/15 bg-white/5 hover:bg-white/10 text-white font-semibold px-7 py-3.5 rounded-xl backdrop-blur transition"
                 >
-                  Vedi i piani
+                  {t('landing_hero_cta_secondary')}
                 </Link>
               </div>
 
               <p className="text-xs text-slate-500 font-semibold tracking-widest">
-                AI &bull; DATABASE &bull; WORKFLOW &bull; WHITE LABEL &bull; RIVENDIBILE
+                {t('landing_hero_tagline')}
               </p>
             </div>
 
@@ -230,15 +234,12 @@ export default function HomeClient() {
         <section className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-4xl mx-auto text-center">
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-5">
-              Ogni cliente vuole un gestionale su misura.
+              {t('landing_problem_title_line1')}
               <br className="hidden sm:block" />
-              Farlo da zero costa settimane.
+              {t('landing_problem_title_line2')}
             </h2>
             <p className="text-slate-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
-              Come agenzia o freelancer, ogni nuovo progetto significa ripartire da capo: analisi, sviluppo,
-              database, interfaccia. Con ShardApps generi un&apos;app completa e funzionante in pochi minuti,
-              la personalizzi per quel cliente specifico e la pubblichi con il tuo brand — pronta per essere
-              venduta come tua.
+              {t('landing_problem_description')}
             </p>
           </div>
         </section>
@@ -246,7 +247,7 @@ export default function HomeClient() {
         {/* ─── COME FUNZIONA ───────────────────────────────────────────── */}
         <section className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">Come funziona</h2>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">{t('landing_how_title')}</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {HOW_IT_WORKS.map((s) => (
                 <div key={s.n} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -256,8 +257,8 @@ export default function HomeClient() {
                     </div>
                     <span className="text-xs font-black text-indigo-400 tracking-wide">{s.n}</span>
                   </div>
-                  <h3 className="font-bold text-white mb-1.5">{s.title}</h3>
-                  <p className="text-sm text-slate-400 leading-snug">{s.text}</p>
+                  <h3 className="font-bold text-white mb-1.5">{t(s.titleKey)}</h3>
+                  <p className="text-sm text-slate-400 leading-snug">{t(s.textKey)}</p>
                 </div>
               ))}
             </div>
@@ -273,28 +274,26 @@ export default function HomeClient() {
             <div className="grid lg:grid-cols-2 gap-10 items-center">
               <div>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-300 tracking-wide mb-4">
-                  <Users className="w-3.5 h-3.5" /> PER AGENZIE, FREELANCER E RESELLER
+                  <Users className="w-3.5 h-3.5" /> {t('landing_reseller_badge')}
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight mb-4">
-                  &quot;Creo app per i miei clienti.
+                  &quot;{t('landing_reseller_quote_line1')}
                   <br />
-                  Le rivendo con il mio brand.&quot;
+                  {t('landing_reseller_quote_line2')}&quot;
                 </h2>
                 <p className="text-slate-400 leading-relaxed mb-6">
-                  ShardApps è l&apos;infrastruttura dietro le quinte: tu resti il fornitore che il tuo cliente
-                  conosce e paga. Ogni app che pubblichi ha credenziali proprie per il tuo cliente, e sul piano
-                  Business puoi sostituire il nostro brand con il tuo.
+                  {t('landing_reseller_description')}
                 </p>
                 <ul className="space-y-3">
                   {[
-                    'Crei app dedicate per ciascun cliente, in autonomia',
-                    'White label: il tuo logo e il tuo nome al posto di ShardApps',
-                    'Decidi tu il prezzo dell\'abbonamento mensile che il cliente paga',
-                    'Gestisci tutte le app dei tuoi clienti da un\'unica dashboard',
-                  ].map((item) => (
-                    <li key={item} className="flex items-start gap-2.5 text-sm text-slate-300">
+                    'landing_reseller_bullet1',
+                    'landing_reseller_bullet2',
+                    'landing_reseller_bullet3',
+                    'landing_reseller_bullet4',
+                  ].map((key) => (
+                    <li key={key} className="flex items-start gap-2.5 text-sm text-slate-300">
                       <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      {item}
+                      {t(key)}
                     </li>
                   ))}
                 </ul>
@@ -306,19 +305,19 @@ export default function HomeClient() {
                     <Palette className="w-5 h-5 text-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-white">Il tuo brand, non il nostro</p>
-                    <p className="text-xs text-slate-500">Piano Business</p>
+                    <p className="text-sm font-bold text-white">{t('landing_reseller_card_title')}</p>
+                    <p className="text-xs text-slate-500">{t('landing_reseller_card_plan')}</p>
                   </div>
                 </div>
                 <div className="space-y-3">
                   {[
-                    { label: 'App pubblicata per', value: 'Cliente finale' },
-                    { label: 'Brand visibile', value: 'La tua agenzia' },
-                    { label: 'Prezzo cliente', value: 'Lo decidi tu' },
+                    { labelKey: 'landing_reseller_card_row1_label', valueKey: 'landing_reseller_card_row1_value' },
+                    { labelKey: 'landing_reseller_card_row2_label', valueKey: 'landing_reseller_card_row2_value' },
+                    { labelKey: 'landing_reseller_card_row3_label', valueKey: 'landing_reseller_card_row3_value' },
                   ].map((row) => (
-                    <div key={row.label} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-4 py-2.5 text-sm">
-                      <span className="text-slate-400">{row.label}</span>
-                      <span className="font-semibold text-white">{row.value}</span>
+                    <div key={row.labelKey} className="flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-4 py-2.5 text-sm">
+                      <span className="text-slate-400">{t(row.labelKey)}</span>
+                      <span className="font-semibold text-white">{t(row.valueKey)}</span>
                     </div>
                   ))}
                 </div>
@@ -331,17 +330,17 @@ export default function HomeClient() {
         <section id="features" className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">
-              Tutto quello che serve per un gestionale vero
+              {t('landing_features_title')}
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {FEATURES.map((f) => (
-                <div key={f.title} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div key={f.titleKey} className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-gradient-to-br from-indigo-500/20 to-cyan-400/20 flex items-center justify-center">
                     <f.icon className="w-4 h-4 text-cyan-300" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-white">{f.title}</h3>
-                    <p className="text-xs text-slate-400 leading-snug mt-0.5">{f.desc}</p>
+                    <h3 className="font-bold text-sm text-white">{t(f.titleKey)}</h3>
+                    <p className="text-xs text-slate-400 leading-snug mt-0.5">{t(f.descKey)}</p>
                   </div>
                 </div>
               ))}
@@ -352,14 +351,14 @@ export default function HomeClient() {
         {/* ─── PRICING (riepilogo — dettagli/acquisto su /pricing) ─────── */}
         <section id="pricing" className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-3">Prezzi</h2>
-            <p className="text-center text-slate-400 mb-10">Un costo di attivazione una tantum + 25€/mese per ogni app attiva. Nessuna sorpresa.</p>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-3">{t('landing_nav_pricing')}</h2>
+            <p className="text-center text-slate-400 mb-10">{t('landing_pricing_subtitle')}</p>
 
             <div className="grid sm:grid-cols-3 gap-5">
               {[
-                { name: 'Starter', setup: '€10', slots: '1 app', highlight: false },
-                { name: 'Pro', setup: '€79', slots: '5 app', highlight: true },
-                { name: 'Business', setup: '€299', slots: '50 app · White Label', highlight: false },
+                { name: 'Starter', setup: '€10', slotsKey: 'landing_pricing_plan_starter_slots', highlight: false },
+                { name: 'Pro', setup: '€79', slotsKey: 'landing_pricing_plan_pro_slots', highlight: true },
+                { name: 'Business', setup: '€299', slotsKey: 'landing_pricing_plan_business_slots', highlight: false },
               ].map((p) => (
                 <div
                   key={p.name}
@@ -371,16 +370,16 @@ export default function HomeClient() {
                 >
                   {p.highlight && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 px-3 py-0.5 rounded-full text-[11px] font-bold">
-                      Più scelto
+                      {t('landing_pricing_badge_popular')}
                     </span>
                   )}
                   <h3 className="text-lg font-black mb-3">{p.name}</h3>
                   <div className="flex items-baseline gap-1.5 mb-1">
                     <span className="text-3xl font-black">{p.setup}</span>
-                    <span className="text-xs text-slate-400">attivazione</span>
+                    <span className="text-xs text-slate-400">{t('landing_pricing_setup_label')}</span>
                   </div>
-                  <p className="text-sm text-slate-400 mb-4">+ 25€/mese per app attiva</p>
-                  <p className="text-xs font-semibold text-slate-300 bg-white/5 rounded-lg px-3 py-2">{p.slots}</p>
+                  <p className="text-sm text-slate-400 mb-4">{t('pricing_monthly_fee_line').replace('{fee}', '25')}</p>
+                  <p className="text-xs font-semibold text-slate-300 bg-white/5 rounded-lg px-3 py-2">{t(p.slotsKey)}</p>
                 </div>
               ))}
             </div>
@@ -390,7 +389,7 @@ export default function HomeClient() {
                 href="/pricing"
                 className="inline-flex items-center gap-2 text-indigo-300 hover:text-indigo-200 font-semibold text-sm transition"
               >
-                Vedi tutti i dettagli e attiva un piano <ArrowRight className="w-4 h-4" />
+                {t('landing_pricing_cta')} <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
           </div>
@@ -399,33 +398,18 @@ export default function HomeClient() {
         {/* ─── FAQ ────────────────────────────────────────────────────── */}
         <section id="faq" className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-3xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">Domande frequenti</h2>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-10">{t('landing_faq_title')}</h2>
             <div className="space-y-4">
               {[
-                {
-                  q: 'Serve saper programmare?',
-                  a: 'No. Descrivi l\'app in linguaggio naturale, l\'AI genera database, gestionale e interfaccia. Le modifiche successive si fanno via chat.',
-                },
-                {
-                  q: 'Posso rivendere le app ai miei clienti?',
-                  a: 'Sì, è pensato esattamente per questo. Ogni app pubblicata ha credenziali dedicate per il tuo cliente e tu decidi il prezzo del suo abbonamento.',
-                },
-                {
-                  q: 'L\'app avrà il mio brand o quello di ShardApps?',
-                  a: 'Dipende dal piano: sul piano Business puoi sostituire logo e nome ShardApps con i tuoi (white label).',
-                },
-                {
-                  q: 'Posso modificare un\'app dopo averla pubblicata?',
-                  a: 'Sì. Puoi chiedere modifiche via chat in qualsiasi momento. Ogni pubblicazione crea una versione: se qualcosa non va, ripristini quella precedente.',
-                },
-                {
-                  q: 'Quante app posso creare?',
-                  a: 'Dipende dal piano scelto (da 1 a 50 slot inclusi). Puoi acquistarne altri in qualsiasi momento.',
-                },
+                { qKey: 'landing_faq_q1', aKey: 'landing_faq_a1' },
+                { qKey: 'landing_faq_q2', aKey: 'landing_faq_a2' },
+                { qKey: 'landing_faq_q3', aKey: 'landing_faq_a3' },
+                { qKey: 'landing_faq_q4', aKey: 'landing_faq_a4' },
+                { qKey: 'landing_faq_q5', aKey: 'landing_faq_a5' },
               ].map((item) => (
-                <div key={item.q} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-                  <h3 className="font-bold text-white text-sm mb-1.5">{item.q}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">{item.a}</p>
+                <div key={item.qKey} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                  <h3 className="font-bold text-white text-sm mb-1.5">{t(item.qKey)}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">{t(item.aKey)}</p>
                 </div>
               ))}
             </div>
@@ -438,13 +422,13 @@ export default function HomeClient() {
             <div className="w-[28rem] h-[28rem] bg-gradient-to-tr from-indigo-600/20 via-violet-600/15 to-cyan-500/20 rounded-full blur-[100px]" />
           </div>
           <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">Il tuo prossimo cliente aspetta.</h2>
-            <p className="text-slate-400 mb-7">Crea la sua app oggi, brandizzala col tuo nome, falla tua.</p>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-2">{t('landing_cta_title')}</h2>
+            <p className="text-slate-400 mb-7">{t('landing_cta_subtitle')}</p>
             <Link
               href="/login"
               className="group inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold px-8 py-4 rounded-xl shadow-[0_10px_40px_-10px_rgba(99,102,241,0.7)] transition"
             >
-              Crea la tua prima app
+              {t('landing_hero_cta_primary')}
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
@@ -462,12 +446,15 @@ export default function HomeClient() {
               da nessuna pagina — irraggiungibile per un visitatore. */}
           <div className="flex items-center gap-4">
             <Link href="/info" className="hover:text-slate-300 transition-colors">
-              Termini e Condizioni
+              {t('login_terms_link')}
             </Link>
             {/* Pre-launch hardening: prima non esisteva alcun link pubblico
-                all'Informativa Privacy — vedi app/privacy/page.tsx. */}
+                all'Informativa Privacy — vedi app/privacy/page.tsx. Riusa
+                login_terms_link/login_privacy_link (stesso testo del checkbox
+                di signup) invece di "Privacy Policy" hardcoded in inglese
+                anche nelle pagine non-EN. */}
             <Link href="/privacy" className="hover:text-slate-300 transition-colors">
-              Privacy Policy
+              {t('login_privacy_link')}
             </Link>
           </div>
           <span>{t('sidebar_by')}</span>
