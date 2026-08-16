@@ -353,6 +353,11 @@ app.use((err, _req, res, _next) => {
 const { startExpiryCheck } = require('./jobs/expiry-check');
 startExpiryCheck();
 
+// CreatorAI Engine 2.0, Fase 4: sorgente dell'evento 'schedule.tick' per il
+// Logic/Workflow Engine — stesso pattern di startExpiryCheck() sopra.
+const { startWorkflowTick } = require('./jobs/workflow-schedule');
+startWorkflowTick();
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ ShardApps backend attivo su http://0.0.0.0:${PORT}`);
 });

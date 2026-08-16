@@ -18,7 +18,14 @@ export type AiTaskType =
   | 'text-edit'        // ritocchi di copy/testo
   | 'ui-tweak'         // piccoli aggiustamenti di stile/UI
   | 'micro-fix'        // fix puntuali, bug minori
-  | 'chat';            // assistente conversazionale generico (/api/chat)
+  | 'chat'             // assistente conversazionale generico (/api/chat)
+  // CreatorAI Engine 2.0, Fase 5 (AI Agent Orchestrator, vedi
+  // frontend/src/lib/creator-ai-orchestrator.ts): nessun nuovo provider/
+  // modello, solo due nuove etichette di task instradate sul tier "fast"
+  // già esistente (stesso tier di schema-edit/text-edit/ui-tweak/micro-fix)
+  // — servono solo a distinguere questi due step nei log dei costi.
+  | 'app-planning'     // Planner: piano breve/strutturato prima della generazione
+  | 'app-repair';      // Repair Agent: corregge una specification che non valida
 
 export type AiModelTier = 'advanced' | 'fast';
 
@@ -55,6 +62,8 @@ const TASK_TIER_MAP: Record<AiTaskType, AiModelTier> = {
   'ui-tweak': 'fast',
   'micro-fix': 'fast',
   'chat': 'fast',
+  'app-planning': 'fast',
+  'app-repair': 'fast',
 };
 
 // Soglia oltre la quale una singola chiamata viene segnalata come anomala nei

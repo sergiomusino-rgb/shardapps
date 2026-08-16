@@ -10,11 +10,22 @@
 // restituisce JSON quasi valido ma non conforme in ogni dettaglio.
 
 import { z } from 'zod';
-import { FieldSchema, type Field } from './blueprint-schema';
+// Estensione esplicita (Fase 1, stesso motivo di app-specification.ts,
+// tsconfig.json::allowImportingTsExtensions): permette a questo modulo di
+// essere eseguito anche direttamente da `node --test` (necessario per
+// site-schema.test.ts) — Next.js/webpack risolve un import relativo con o
+// senza estensione .ts in modo identico, nessun cambio di comportamento a
+// runtime nell'app.
+import { FieldSchema, type Field } from './blueprint-schema.ts';
 
 // ─── Tipo progetto ──────────────────────────────────────────────────────────
 
-export const ProjectTypeSchema = z.enum(['landing', 'webapp-pwa', 'ecommerce']);
+// CreatorAI Engine 2.0, Fase 1: 'gestionale' recupera la capacità
+// sector-agnostic del vecchio motore v1 (blueprint-engine.ts) dentro questo
+// stesso motore — vedi projectTypeGuide in app/api/creator/generate/route.ts
+// per la guida di generazione libera da vincoli di settore. Nessun altro
+// projectType cambia significato/comportamento.
+export const ProjectTypeSchema = z.enum(['landing', 'webapp-pwa', 'ecommerce', 'gestionale']);
 export type ProjectType = z.infer<typeof ProjectTypeSchema>;
 
 export const PROJECT_TYPES: { value: ProjectType; label: string; description: string; icon: string }[] = [
@@ -35,6 +46,12 @@ export const PROJECT_TYPES: { value: ProjectType; label: string; description: st
     label: 'E-Commerce Vetrina',
     description: 'Per negozi: catalogo prodotti, carrello, ordini via WhatsApp o cassa.',
     icon: '🛍️',
+  },
+  {
+    value: 'gestionale',
+    label: 'Gestionale',
+    description: 'CRM, helpdesk, project management, gestione immobili o qualunque altro dominio: tu descrivi, l\'AI progetta le entità.',
+    icon: '🗂️',
   },
 ];
 
@@ -175,6 +192,27 @@ function isObviouslyUnsafeWebhookHost(hostname: string): boolean {
 // resta un dispatch sicuro lato server (vedi backend/routes/client-app.js,
 // POST .../records/:recordId/actions/:actionId) invece di eseguire qualunque
 // cosa il modello abbia scritto.
+// Estratto da EntityActionSchema.webhookUrl (Fase 4, Workflow Engine): stessa
+// identica validazione, riusata ora anche da WorkflowActionSchema.webhookUrl
+// più sotto — un solo punto di verità invece di due copie della stessa
+// logica di prima linea di difesa SSRF (vedi isObviouslyUnsafeWebhookHost
+// sopra per i limiti di un check senza DNS; la barriera autoritativa resta
+// backend/lib/ssrf-guard.js, invocata ad ogni esecuzione).
+const WebhookUrlFieldSchema = z
+  .union([z.string(), z.null(), z.undefined()])
+  .optional()
+  .transform((v) => {
+    const s = (v || '').trim();
+    if (!/^https?:\/\//i.test(s)) return undefined;
+    try {
+      const hostname = new URL(s).hostname;
+      if (!hostname || isObviouslyUnsafeWebhookHost(hostname)) return undefined;
+    } catch {
+      return undefined;
+    }
+    return s;
+  });
+
 export const EntityActionSchema = z.object({
   id: z
     .union([z.string(), z.number()])
@@ -206,20 +244,7 @@ export const EntityActionSchema = z.object({
   // IP letterale privato/riservato o un hostname localhost-like viene
   // scartato già qui — prima linea di difesa, non l'unica (vedi
   // isObviouslyUnsafeWebhookHost sopra per i limiti di un check senza DNS).
-  webhookUrl: z
-    .union([z.string(), z.null(), z.undefined()])
-    .optional()
-    .transform((v) => {
-      const s = (v || '').trim();
-      if (!/^https?:\/\//i.test(s)) return undefined;
-      try {
-        const hostname = new URL(s).hostname;
-        if (!hostname || isObviouslyUnsafeWebhookHost(hostname)) return undefined;
-      } catch {
-        return undefined;
-      }
-      return s;
-    }),
+  webhookUrl: WebhookUrlFieldSchema,
 });
 export type EntityAction = z.infer<typeof EntityActionSchema>;
 
@@ -466,7 +491,12 @@ export const PageSectionSchema = z.discriminatedUnion('type', [
 export type PageSection = z.infer<typeof PageSectionSchema>;
 export type PageSectionType = PageSection['type'];
 
-const KNOWN_SECTION_TYPES: PageSectionType[] = [
+// Esportata (Fase 3 — Component Registry, frontend/src/lib/creator/component-registry.ts):
+// unica fonte di verità per "quali 9 type esistono oggi", riusata da
+// frontend/src/components/creator/sections/index.tsx per registrare le entry
+// predefinite del Registry senza duplicare l'elenco — comportamento di questo
+// modulo invariato, solo una `const` che diventa `export const`.
+export const KNOWN_SECTION_TYPES: PageSectionType[] = [
   'hero', 'about', 'gallery', 'list', 'form', 'contact', 'reviews', 'cta', 'text',
 ];
 
@@ -502,6 +532,122 @@ export const SiteUIConfigSchema = z.object({
 });
 export type SiteUIConfig = z.infer<typeof SiteUIConfigSchema>;
 
+// ─── workflows (CreatorAI Engine 2.0, Fase 4 — Application Logic/Workflow
+// Engine) ─────────────────────────────────────────────────────────────────
+// Modello EVENT -> TRIGGER -> CONDITION -> ACTION eseguito lato server da
+// backend/lib/event-router.js (condizioni valutate da
+// backend/lib/condition-evaluator.js, azioni eseguite da
+// backend/lib/workflow-action-executor.js — trigger_webhook/send_notification
+// sempre delegate a backend/lib/action-dispatcher.js, mai duplicate).
+// Campo top-level opzionale (default []): un'app senza workflows si comporta
+// esattamente come prima di questa fase, nessuna migrazione richiesta.
+
+export const WorkflowTriggerEventSchema = z.enum([
+  'record.created', 'record.updated', 'record.deleted',
+  'state.changed', 'user.action', 'schedule.tick', 'webhook.received',
+]);
+export type WorkflowTriggerEvent = z.infer<typeof WorkflowTriggerEventSchema>;
+
+export const WorkflowTriggerSchema = z.object({
+  event: WorkflowTriggerEventSchema,
+  // Nome dell'entità (adminPanel.entities[].name / schema.tables[].name /
+  // custom table) a cui il trigger si applica — facoltativo per
+  // 'schedule.tick' (un tick "a vuoto", senza contesto di record, vedi
+  // backend/jobs/workflow-schedule.js), richiesto di fatto per tutti gli
+  // altri eventi (un trigger senza entity su record.created/state.changed/
+  // ecc. semplicemente non troverà mai una corrispondenza, il router non lo
+  // vieta esplicitamente ma non ha alcun effetto).
+  entity: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+  // Solo per 'user.action': id dell'azione (adminPanel.entities[].actions[].id)
+  // che ha innescato l'evento — assente = il trigger reagisce a QUALUNQUE
+  // azione dell'entità.
+  actionId: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+  // Solo per 'state.changed': stato di destinazione/partenza a cui reagire —
+  // entrambi assenti = il trigger reagisce a QUALUNQUE cambio di stato.
+  toState: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+  fromState: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+});
+export type WorkflowTrigger = z.infer<typeof WorkflowTriggerSchema>;
+
+// ─── conditions (albero AND/OR ricorsivo) ───────────────────────────────────
+// NESSUN eval()/codice arbitrario: `operator` di una foglia è un vocabolario
+// chiuso confrontato da backend/lib/condition-evaluator.js, mai eseguito.
+export const ConditionOperatorSchema = z.enum([
+  'equals', 'not_equals', 'contains', 'not_contains',
+  'greater_than', 'less_than', 'greater_or_equal', 'less_or_equal',
+  'exists', 'not_exists',
+]);
+export type ConditionOperator = z.infer<typeof ConditionOperatorSchema>;
+
+// value: solo primitivi (compatibili con Json/apps.config e con
+// getFieldValue in backend/lib/condition-evaluator.js, che confronta sempre
+// via String()/Number() — un oggetto/array come termine di paragone non
+// avrebbe comunque un confronto sensato con nessuno dei 10 operatori).
+export type ConditionValue = string | number | boolean | null;
+
+export type ConditionNode =
+  | { field: string; operator: ConditionOperator; value?: ConditionValue }
+  | { operator: 'AND' | 'OR'; conditions: ConditionNode[] };
+
+// z.lazy per il riferimento ricorsivo (un gruppo contiene altri nodi dello
+// stesso tipo) — z.ZodType<ConditionNode> esplicito perché Zod non può
+// inferire da solo un tipo ricorsivo definito con z.lazy.
+export const ConditionNodeSchema: z.ZodType<ConditionNode> = z.lazy(() =>
+  z.union([
+    z.object({ field: z.string(), operator: ConditionOperatorSchema, value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional() }),
+    z.object({ operator: z.enum(['AND', 'OR']), conditions: z.array(ConditionNodeSchema) }),
+  ])
+);
+
+// ─── workflow actions ────────────────────────────────────────────────────────
+// change_state/trigger_webhook/send_notification: stessi 3 tipi di
+// EntityActionSchema sopra (compatibilità Fase 3, invariati). update_field/
+// create_related_record: nuovi in questa fase, eseguiti SOLO da un workflow
+// (nessun pulsante utente diretto li innesca).
+export const WorkflowActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('change_state'), targetState: z.string() }),
+  z.object({ type: z.literal('trigger_webhook'), webhookUrl: WebhookUrlFieldSchema }),
+  z.object({
+    type: z.literal('send_notification'),
+    // 'app_owner' (default): notifica il titolare dell'app (apps.client_email).
+    // 'record_field': notifica l'indirizzo email nel campo `recipientField`
+    // del record che ha innescato l'evento (es. il cliente di un ordine).
+    recipient: z.enum(['app_owner', 'record_field']).catch('app_owner'),
+    recipientField: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+    subject: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+    message: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+  }),
+  // value: solo primitivi compatibili con app_records.data (JSONB) — un
+  // update_field scrive sempre un valore scalare in un campo, mai un oggetto/
+  // array arbitrario (che richiederebbe di conoscere la forma del campo
+  // target, fuori scope di questa fase).
+  z.object({ type: z.literal('update_field'), field: z.string(), value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional() }),
+  z.object({
+    type: z.literal('create_related_record'),
+    targetEntity: z.string(),
+    // Mappa { campo_entità_target: campo_record_sorgente } — valorizzata dal
+    // valore del record che ha innescato l'evento, vedi
+    // backend/lib/workflow-action-executor.js::executeCreateRelatedRecord.
+    fieldMapping: z.record(z.string(), z.string()).optional().default({}),
+  }),
+]);
+export type WorkflowAction = z.infer<typeof WorkflowActionSchema>;
+
+export const WorkflowSchema = z.object({
+  id: z
+    .union([z.string(), z.number()])
+    .transform((v) => String(v).replace(/[^a-z0-9_]/gi, '_').toLowerCase())
+    .default('workflow'),
+  name: z.union([z.string(), z.number()]).transform((v) => String(v)).default('Workflow'),
+  enabled: z.union([z.boolean(), z.string()]).optional().transform((v) => v !== false && v !== 'false').default(true),
+  trigger: WorkflowTriggerSchema,
+  // Facoltative: assenti = il workflow esegue sempre le sue azioni quando il
+  // trigger scatta (vedi evaluateCondition in backend/lib/condition-evaluator.js).
+  conditions: ConditionNodeSchema.optional(),
+  actions: z.array(WorkflowActionSchema).min(1).max(20),
+});
+export type Workflow = z.infer<typeof WorkflowSchema>;
+
 export const SiteBlueprintSchema = z.object({
   projectType: ProjectTypeSchema.catch('landing'),
   appName: z.union([z.string(), z.number()]).transform((v) => String(v)).default('Il Mio Sito'),
@@ -515,6 +661,9 @@ export const SiteBlueprintSchema = z.object({
   // Facoltativo: assente = { enabled:false, ... } (default di AuthConfigSchema),
   // stesso comportamento di sempre (auth_mode 'legacy', vedi publish/route.ts).
   authConfig: AuthConfigSchema.optional().default({ enabled: false, supportedRoles: ['admin'], defaultRole: 'viewer' }),
+  // Facoltativo: assente = [] (Fase 4, Logic/Workflow Engine) — un'app senza
+  // workflows si comporta esattamente come prima di questa fase.
+  workflows: z.array(WorkflowSchema).optional().default([]),
 });
 export type SiteBlueprintJSON = z.infer<typeof SiteBlueprintSchema>;
 
@@ -653,8 +802,21 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
     ? authConfigParse.data
     : { enabled: false, supportedRoles: ['admin'], defaultRole: 'viewer' };
 
+  // workflows (Fase 4): stesso trattamento "prova il parse stretto per ogni
+  // elemento, scarta solo quelli malformati" — un workflow scritto male non
+  // deve far sparire l'intero blueprint recuperato qui, solo se stesso.
+  const workflowsRaw = Array.isArray(r.workflows) ? r.workflows : [];
+  const workflows: Workflow[] = workflowsRaw
+    .map((w: unknown) => WorkflowSchema.safeParse(w))
+    .filter((res: ReturnType<typeof WorkflowSchema.safeParse>): res is { success: true; data: Workflow } => res.success)
+    .map((res) => res.data);
+
   return {
-    projectType: (['landing', 'webapp-pwa', 'ecommerce'] as const).includes(r.projectType) ? r.projectType : 'landing',
+    // Stesso vocabolario di ProjectTypeSchema sopra (Fase 1, CreatorAI Engine
+    // 2.0): questo array era rimasto hardcoded a parte, un gestionale che
+    // fosse caduto in questo percorso di recupero manuale sarebbe stato
+    // silenziosamente riscritto a 'landing' senza questo fix.
+    projectType: (['landing', 'webapp-pwa', 'ecommerce', 'gestionale'] as const).includes(r.projectType) ? r.projectType : 'landing',
     appName: safeStr(r.appName ?? r.name, 'Il Mio Sito'),
     sector: safeStr(r.sector, 'custom'),
     description: safeStr(r.description),
@@ -663,6 +825,7 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
     authConfig,
     pages,
     actionButtons,
+    workflows,
     ui: {
       primaryColor: primaryColor.startsWith('#') ? primaryColor : `#${primaryColor}`,
       secondaryColor: uiRaw.secondaryColor ? safeStr(uiRaw.secondaryColor) : undefined,

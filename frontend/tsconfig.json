@@ -15,6 +15,16 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // CreatorAI Engine 2.0, Fase 0: consente import relativi con estensione
+    // esplicita (es. "./blueprint-schema.ts") in src/lib/app-specification.ts,
+    // necessario perché quel modulo deve poter essere eseguito anche
+    // direttamente da `node --test` (Node esegue TypeScript nativamente ma,
+    // a differenza del bundler di Next.js, il suo resolver ESM non risolve
+    // uno specifier relativo privo di estensione su un file .ts). Richiede
+    // noEmit:true (già presente sopra) — puramente additivo: nessun import
+    // esistente nel progetto (tutti extensionless) viene toccato o smette di
+    // essere valido, questa opzione aggiunge solo una forma alternativa.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "paths": {

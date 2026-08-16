@@ -14,7 +14,22 @@ const {
   clientAuthMiddleware,
 } = require('../lib/client-auth');
 const { dispatchAppAction, logAction } = require('../lib/action-dispatcher');
+const { routeEvent } = require('../lib/event-router');
 const { captureError } = require('../lib/error-tracking');
+
+// Fase 4 (Logic/Workflow Engine): emette un evento verso l'event router
+// SENZA MAI far fallire l'operazione CRUD/azione che lo ha generato — routeEvent
+// già non lancia per design (event-router.js), questo wrapper è solo una rete
+// di sicurezza aggiuntiva esplicita nel punto di chiamata, per rendere
+// impossibile che un futuro cambiamento a event-router.js rompa un endpoint
+// che oggi funziona indipendentemente dal motore di workflow.
+async function emitWorkflowEvent(supabase, event) {
+  try {
+    await routeEvent(supabase, event);
+  } catch (err) {
+    console.error('[client-app] emitWorkflowEvent error:', err);
+  }
+}
 
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -238,6 +253,14 @@ router.post('/client/apps/:appId/records', clientAuthMiddleware, async (req, res
       return res.status(500).json({ error: 'Errore interno' });
     }
 
+    // Fase 4: record.created — dopo l'insert riuscito, mai prima (un
+    // workflow non deve mai poter vedere/agire su un record che poi fallisce
+    // a salvarsi). Best-effort, non altera mai la risposta di questo endpoint.
+    await emitWorkflowEvent(supabase, {
+      type: 'record.created', appId: req.appId, tenantId: req.tenantId,
+      entity: table, record, actorRole: req.appUserRole, actorEmail: req.appUserEmail,
+    });
+
     res.status(201).json({ record });
   } catch (err) {
     console.error('POST client record exception:', err);
@@ -274,6 +297,15 @@ router.put('/client/apps/:appId/records/:recordId', clientAuthMiddleware, async 
       return res.status(404).json({ error: 'Record non trovato' });
     }
 
+    // Fase 4: record.updated — best-effort, non altera mai la risposta.
+    // Questo endpoint non riceve `table` nel body (aggiorna per id, già
+    // scoped ad app/tenant): l'entità viene letta da record.table_name,
+    // colonna sempre presente sulla riga appena aggiornata.
+    await emitWorkflowEvent(supabase, {
+      type: 'record.updated', appId: req.appId, tenantId: req.tenantId,
+      entity: record.table_name, record, actorRole: req.appUserRole, actorEmail: req.appUserEmail,
+    });
+
     res.json({ record });
   } catch (err) {
     console.error('PUT client record exception:', err);
@@ -288,16 +320,31 @@ router.delete('/client/apps/:appId/records/:recordId', clientAuthMiddleware, asy
     const { recordId } = req.params;
     const supabase = getSupabase();
 
-    const { error } = await supabase
+    // .select() su una DELETE (Postgres RETURNING via supabase-js): serve a
+    // recuperare la riga appena eliminata per l'evento record.deleted sotto
+    // (Fase 4) — comportamento della query invariato per il resto
+    // dell'endpoint, solo in più rispetto a prima.
+    const { data: deleted, error } = await supabase
       .from('app_records')
       .delete()
       .eq('id', recordId)
       .eq('app_id', req.appId)
-      .eq('tenant_id', req.tenantId);
+      .eq('tenant_id', req.tenantId)
+      .select()
+      .maybeSingle();
 
     if (error) {
       console.error('DELETE client record error:', error);
       return res.status(500).json({ error: 'Errore interno' });
+    }
+
+    // Fase 4: record.deleted — solo se la riga esisteva davvero (deleted
+    // non-null), best-effort, non altera mai la risposta di questo endpoint.
+    if (deleted) {
+      await emitWorkflowEvent(supabase, {
+        type: 'record.deleted', appId: req.appId, tenantId: req.tenantId,
+        entity: deleted.table_name, record: deleted, actorRole: req.appUserRole, actorEmail: req.appUserEmail,
+      });
     }
 
     res.json({ success: true });
@@ -394,10 +441,19 @@ router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAut
         recordId,
         entity: table,
         action,
+        record,
         // Attribution (Security Audit Fase 4, Focus 5): chi ha eseguito
         // l'azione, salvato in app_action_logs — mai nel payload esterno.
         actorRole: req.appUserRole,
         actorEmail: req.appUserEmail,
+      });
+      // Fase 4: user.action — un pulsante azione premuto può anche innescare
+      // un workflow (es. "quando viene premuto 'Conferma', notifica anche il
+      // team"), oltre al dispatch diretto già fatto sopra. Best-effort, non
+      // altera mai la risposta già calcolata.
+      await emitWorkflowEvent(supabase, {
+        type: 'user.action', appId: req.appId, tenantId: req.tenantId,
+        entity: table, record, actionId, actorRole: req.appUserRole, actorEmail: req.appUserEmail,
       });
       return res.json({ success: true, dispatched: result.dispatched, actionType: action.type });
     }
@@ -467,6 +523,22 @@ router.post('/client/apps/:appId/records/:recordId/actions/:actionId', clientAut
       appId: req.appId, tenantId: req.tenantId, recordId, entity: table, action,
       actorRole, actorEmail, status: 'delivered',
       payload: { fromState: currentState, targetState: action.targetState },
+    });
+
+    // Fase 4: state.changed + user.action — dopo l'aggiornamento riuscito,
+    // mai prima. Un workflow può reagire specificamente al cambio di stato
+    // (trigger.toState/fromState) o genericamente al pulsante premuto
+    // (trigger.actionId) — entrambi gli eventi vengono emessi, un workflow
+    // sceglie a quale reagire tramite il proprio trigger.event. Best-effort,
+    // non altera mai la risposta già calcolata sopra.
+    await emitWorkflowEvent(supabase, {
+      type: 'state.changed', appId: req.appId, tenantId: req.tenantId,
+      entity: table, record: updated, toState: action.targetState, fromState: currentState,
+      actorRole, actorEmail,
+    });
+    await emitWorkflowEvent(supabase, {
+      type: 'user.action', appId: req.appId, tenantId: req.tenantId,
+      entity: table, record: updated, actionId, actorRole, actorEmail,
     });
 
     res.json({ record: updated });

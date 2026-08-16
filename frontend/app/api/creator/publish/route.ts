@@ -19,6 +19,8 @@ import { randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
 import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
+// Fase 6 (CreatorAI Engine 2.0) — vedi commento sul punto di chiamata sotto.
+import { createAppVersion } from '@/src/lib/app-versions';
 import {
   getUserFromToken,
   getOrCreateTenant,
@@ -107,6 +109,25 @@ export async function POST(request: NextRequest) {
         }
       } else {
         (configToSave as { branding?: typeof existingBranding }).branding = existingBranding;
+      }
+
+      // Fase 6 — app_versions: snapshot dello stato PRIMA di sovrascriverlo,
+      // così una modifica indesiderata (patch scoped o riscrittura completa
+      // di refactor, entrambe pubblicate qui) resta ripristinabile. Come per
+      // app_credentials/app_rbac_users sotto: non blocca mai la
+      // pubblicazione, un fallimento qui resta solo loggato — l'app deve
+      // comunque potersi aggiornare anche se la cronologia versioni non è
+      // disponibile.
+      try {
+        await createAppVersion(supabase, {
+          appId: existingApp.id,
+          tenantId,
+          config: existingApp.config,
+          createdBy: user.id,
+          source: 'publish',
+        });
+      } catch (versionError) {
+        console.error('[creator/publish] app_versions snapshot error:', versionError);
       }
 
       const { error: updateError } = await supabase

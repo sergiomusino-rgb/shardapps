@@ -274,6 +274,29 @@ const BASELINE = {
     UPDATE: ['Tenant can update righe of own fatture'],
     DELETE: ['Tenant can delete righe of own fatture'],
   },
+  // CreatorAI Engine 2.0, Fase 5 (AI Agent Orchestrator, migration
+  // 20260823000000): macchina a stati persistita del processo planner->
+  // generator->validator->repair. Stesso principio di app_action_logs sopra:
+  // nessuna policy permissiva per anon/authenticated, ogni accesso passa
+  // dalle route Next.js server-side con service role, che filtrano
+  // esplicitamente per tenant_id (frontend/src/lib/creator-generation-jobs.ts).
+  generation_jobs: {
+    SELECT: ['generation_jobs_deny_anon_authenticated'],
+    INSERT: ['generation_jobs_deny_anon_authenticated'],
+    UPDATE: ['generation_jobs_deny_anon_authenticated'],
+    DELETE: ['generation_jobs_deny_anon_authenticated'],
+  },
+  // CreatorAI Engine 2.0, Fase 6 (refactor scoped, migration 20260824000000):
+  // cronologia snapshot di apps.config per il rollback. Stesso principio
+  // deny-all di generation_jobs sopra — solo le route Next.js server-side con
+  // service role vi accedono, filtrando esplicitamente per tenant_id
+  // (frontend/src/lib/app-versions.ts).
+  app_versions: {
+    SELECT: ['app_versions_deny_anon_authenticated'],
+    INSERT: ['app_versions_deny_anon_authenticated'],
+    UPDATE: ['app_versions_deny_anon_authenticated'],
+    DELETE: ['app_versions_deny_anon_authenticated'],
+  },
   messages: {
     SELECT: ['messages_deny_anon_authenticated'],
     INSERT: ['messages_deny_anon_authenticated'],

@@ -1,0 +1,369 @@
+// ─── Test isolati — CreatorAI Engine 2.0, Fase 5 (AI Agent Orchestrator) ────
+// node:test nativo (Node 24), stesso stile delle altre suite Fase 0/1/5:
+// nessuna chiamata di rete reale verso OpenRouter — planner/repair sono
+// iniettati come fake `aiCall`/`plannerCall`/`repairCall` (stesso pattern già
+// previsto dalla firma AiCallFn in creator-ai-orchestrator.ts proprio per
+// questo), il Generator è iniettato come funzione pura (mai la vera
+// callSiteSchemaGenerator, che chiamerebbe l'AI Router/OpenRouter). Il
+// Supabase reale è sostituito dal fake in-memory (test-helpers/fake-supabase.ts).
+//
+// Copre i requisiti Fase 5, punto 12 "PLANNER" e "ORCHESTRATOR".
+//
+// Uso: node --test src/lib/creator-ai-orchestrator.test.ts (dalla cartella frontend/).
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { makeFakeSupabase } from './test-helpers/fake-supabase.ts';
+import { findForbiddenSecretKey, getGenerationJobForTenant } from './creator-generation-jobs.ts';
+import {
+  runPlanner,
+  runGenerationOrchestrator,
+  PlannerError,
+  MAX_REPAIR_RETRIES,
+  type AiCallFn,
+} from './creator-ai-orchestrator.ts';
+
+const GENERATION_JOBS_DEFAULTS = {
+  app_id: null,
+  created_by: null,
+  plan: null,
+  specification: null,
+  artifacts: {},
+  error: null,
+  retry_count: 0,
+  fallback_used: false,
+};
+
+function freshSupabase() {
+  return makeFakeSupabase({ generation_jobs: GENERATION_JOBS_DEFAULTS });
+}
+
+// Schema minimale valido (stessa forma di gestionaleFixture in
+// site-schema.test.ts): passa sanitizeSiteBlueprint + AppSpecificationSchema
+// senza errori semantici — usato come output "sano" del Generator fake.
+function validRawSchema(overrides: Record<string, unknown> = {}) {
+  return {
+    projectType: 'gestionale',
+    appName: 'Gestionale Test',
+    sector: 'custom',
+    description: '',
+    businessConfig: { name: 'Gestionale Test', language: 'it' },
+    adminPanel: {
+      entities: [
+        {
+          name: 'clienti',
+          label: 'Cliente',
+          labelPlural: 'Clienti',
+          icon: '👤',
+          fields: [
+            { id: 'id', type: 'id', label: 'ID' },
+            { id: 'nome', type: 'text', label: 'Nome', required: true },
+          ],
+        },
+      ],
+    },
+    pages: [{ slug: 'home', label: 'Home', sections: [] }],
+    actionButtons: [],
+    ui: { primaryColor: '#6366f1' },
+    ...overrides,
+  };
+}
+
+// Schema che fallisce SEMPRE runValidator: un campo "relation" che punta a
+// un'entità inesistente sopravvive a sanitizeSiteBlueprint (degradato a
+// 'text' per il campo, ma qui forziamo l'errore semantico esplicito con un
+// riferimento rotto in una sezione "list", che runValidator verifica
+// esplicitamente — vedi creator-ai-orchestrator.ts).
+function invalidRawSchema() {
+  return {
+    projectType: 'webapp-pwa',
+    appName: 'Sito Rotto',
+    sector: 'custom',
+    description: '',
+    businessConfig: { name: 'Sito Rotto', language: 'it' },
+    adminPanel: { entities: [] },
+    pages: [{
+      slug: 'home',
+      label: 'Home',
+      sections: [{ type: 'list', title: 'Catalogo', entity: 'entita_inesistente', layout: 'grid' }],
+    }],
+    actionButtons: [],
+    ui: { primaryColor: '#6366f1' },
+  };
+}
+
+function fakeAiCall(response: unknown): AiCallFn {
+  return async () => ({ content: JSON.stringify(response) });
+}
+
+function throwingAiCall(message: string): AiCallFn {
+  return async () => { throw new Error(message); };
+}
+
+function garbageAiCall(): AiCallFn {
+  return async () => ({ content: 'questo non è JSON' });
+}
+
+const VALID_PLAN = {
+  projectType: 'gestionale',
+  sector: 'custom',
+  mainEntities: ['clienti'],
+  pages: ['home'],
+  workflows: [],
+  keyFeatures: ['gestione clienti'],
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLANNER
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('Planner: JSON valido -> GenerationPlan conforme allo schema minimo', async () => {
+  const plan = await runPlanner(
+    { userPrompt: 'Gestionale per una piccola officina', projectType: 'gestionale', lang: 'it' },
+    fakeAiCall(VALID_PLAN)
+  );
+  assert.equal(plan.projectType, 'gestionale');
+  assert.equal(plan.sector, 'custom');
+  assert.deepEqual(plan.mainEntities, ['clienti']);
+});
+
+test('Planner: JSON invalido (non parsabile) -> PlannerError, mai un piano fabbricato in silenzio', async () => {
+  await assert.rejects(
+    () => runPlanner({ userPrompt: 'x', projectType: 'gestionale', lang: 'it' }, garbageAiCall()),
+    PlannerError
+  );
+});
+
+test('Planner: JSON valido ma non conforme allo schema minimo (campo obbligatorio mancante) -> PlannerError', async () => {
+  // "sector" è obbligatorio (z.string(), nessun default) — vedi GenerationPlanSchema.
+  await assert.rejects(
+    () => runPlanner(
+      { userPrompt: 'x', projectType: 'gestionale', lang: 'it' },
+      fakeAiCall({ projectType: 'gestionale', mainEntities: [] })
+    ),
+    PlannerError
+  );
+});
+
+test('Planner: campi opzionali assenti applicano i default ([]), non richiesti esplicitamente', async () => {
+  const plan = await runPlanner(
+    { userPrompt: 'x', projectType: 'landing', lang: 'it' },
+    fakeAiCall({ projectType: 'landing', sector: 'artigianato' })
+  );
+  assert.deepEqual(plan.mainEntities, []);
+  assert.deepEqual(plan.pages, []);
+  assert.deepEqual(plan.workflows, []);
+  assert.deepEqual(plan.keyFeatures, []);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORCHESTRATOR — planner -> generator -> validator (successo diretto)
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('Orchestrator: planner -> generator -> validator, validazione riuscita al primo colpo -> status "ready"', async () => {
+  const supabase = freshSupabase();
+  let generateCalls = 0;
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Gestionale clienti per la mia officina',
+    projectType: 'gestionale',
+    lang: 'it',
+    generate: async (promptWithContext) => {
+      generateCalls += 1;
+      // Il Generator riceve il contesto del piano anteposto al prompt utente.
+      assert.match(promptWithContext, /Piano suggerito/);
+      assert.match(promptWithContext, /Gestionale clienti per la mia officina/);
+      return validRawSchema();
+    },
+    plannerCall: fakeAiCall(VALID_PLAN),
+  });
+
+  assert.equal(generateCalls, 1);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.job.status, 'ready');
+  assert.equal(result.job.retry_count, 0);
+  assert.ok(result.specification);
+  assert.ok(result.schema);
+  // Il piano è stato persistito nel job.
+  assert.deepEqual(result.job.plan, VALID_PLAN);
+});
+
+test('Orchestrator: validazione fallita -> repair -> successo al tentativo 1', async () => {
+  const supabase = freshSupabase();
+  let generateCalls = 0;
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Sito per un negozio',
+    projectType: 'webapp-pwa',
+    lang: 'it',
+    generate: async () => { generateCalls += 1; return invalidRawSchema(); },
+    plannerCall: fakeAiCall({ projectType: 'webapp-pwa', sector: 'retail' }),
+    repairCall: fakeAiCall(validRawSchema({ projectType: 'webapp-pwa' })),
+  });
+
+  assert.equal(generateCalls, 1);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.job.retry_count, 1);
+  assert.ok(result.job.artifacts.validationErrors_attempt1);
+});
+
+test('Orchestrator: repair fallisce ripetutamente -> retry_count arriva a MAX_REPAIR_RETRIES -> status "failed"', async () => {
+  const supabase = freshSupabase();
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Sito rotto',
+    projectType: 'webapp-pwa',
+    lang: 'it',
+    generate: async () => invalidRawSchema(),
+    plannerCall: fakeAiCall({ projectType: 'webapp-pwa', sector: 'retail' }),
+    // Il Repair "corregge" restituendo di nuovo uno schema non valido: non
+    // converge mai, deve esaurire i retry invece di ciclare all'infinito.
+    repairCall: fakeAiCall(invalidRawSchema()),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.job.status, 'failed');
+  assert.equal(result.job.retry_count, MAX_REPAIR_RETRIES);
+  assert.equal(MAX_REPAIR_RETRIES, 2); // requisito esplicito Fase 5 punto 6
+  assert.match(result.error!, /Validazione fallita dopo 2 tentativi di repair/);
+});
+
+test('Orchestrator: il Repair Agent stesso non produce JSON valido -> conta comunque come tentativo esaurito, nessun retry infinito', async () => {
+  const supabase = freshSupabase();
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Sito rotto',
+    projectType: 'webapp-pwa',
+    lang: 'it',
+    generate: async () => invalidRawSchema(),
+    plannerCall: fakeAiCall({ projectType: 'webapp-pwa', sector: 'retail' }),
+    repairCall: garbageAiCall(),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.job.retry_count, MAX_REPAIR_RETRIES);
+  assert.ok(result.job.artifacts.repairError_attempt1);
+  assert.ok(result.job.artifacts.repairError_attempt2);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ORCHESTRATOR — Planner facoltativo/best-effort
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('Orchestrator: skipPlanner=true salta completamente il Planner (facoltativo per il refactor)', async () => {
+  const supabase = freshSupabase();
+  let plannerCalled = false;
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Gestionale clienti',
+    projectType: 'gestionale',
+    lang: 'it',
+    skipPlanner: true,
+    generate: async (promptWithContext) => {
+      // Nessun contesto di piano anteposto: il prompt utente arriva invariato.
+      assert.equal(promptWithContext, 'Gestionale clienti');
+      return validRawSchema();
+    },
+    plannerCall: async () => { plannerCalled = true; return { content: '{}' }; },
+  });
+
+  assert.equal(plannerCalled, false);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.job.plan, null);
+});
+
+test('Orchestrator: un Planner che fallisce non blocca la generazione (best-effort, non bloccante)', async () => {
+  const supabase = freshSupabase();
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Gestionale clienti',
+    projectType: 'gestionale',
+    lang: 'it',
+    generate: async () => validRawSchema(),
+    plannerCall: throwingAiCall('OpenRouter non raggiungibile'),
+  });
+
+  assert.equal(result.status, 'ready');
+  assert.equal(result.job.plan, null);
+  assert.ok(result.job.artifacts.plannerError);
+  assert.equal(result.job.current_step, 'ready');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FALLBACK (requisito Fase 5, punto 7): esplicito e registrato nel job
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('fallback: se il Generator iniettato fallisce, il job persistito viene marcato failed+fallback_used PRIMA che l\'errore risalga al chiamante', async () => {
+  const supabase = freshSupabase();
+
+  let thrown: (Error & { generationJobId?: string }) | undefined;
+  try {
+    await runGenerationOrchestrator({
+      supabase,
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      userPrompt: 'Gestionale clienti',
+      projectType: 'gestionale',
+      lang: 'it',
+      generate: async () => { throw new Error('errore AI provider'); },
+      plannerCall: fakeAiCall(VALID_PLAN),
+    });
+    assert.fail('runGenerationOrchestrator doveva rilanciare l\'errore originale');
+  } catch (err) {
+    thrown = err as Error & { generationJobId?: string };
+  }
+
+  // L'errore originale risale invariato (route.ts continua a poterlo
+  // riconoscere con AiRouterError/AiRouterConfigError instanceof), solo
+  // taggato con l'id del job per la tracciabilità.
+  assert.match(thrown!.message, /errore AI provider/);
+  assert.ok(thrown!.generationJobId);
+
+  const job = await getGenerationJobForTenant(supabase, thrown!.generationJobId!, 'tenant-1');
+  assert.ok(job);
+  assert.equal(job?.status, 'failed');
+  assert.equal(job?.fallback_used, true);
+  assert.equal(job?.error, 'errore AI provider');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECURITY: nessun secret persistito nel job durante un run completo
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('security: un run completo (planner + repair) non lascia mai chiavi sospette di segreto nel job persistito', async () => {
+  const supabase = freshSupabase();
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Sito per un negozio',
+    projectType: 'webapp-pwa',
+    lang: 'it',
+    generate: async () => invalidRawSchema(),
+    plannerCall: fakeAiCall({ projectType: 'webapp-pwa', sector: 'retail' }),
+    repairCall: fakeAiCall(validRawSchema({ projectType: 'webapp-pwa' })),
+  });
+
+  assert.equal(findForbiddenSecretKey(result.job.context), null);
+  assert.equal(findForbiddenSecretKey(result.job.artifacts), null);
+  assert.equal(findForbiddenSecretKey(result.job.plan), null);
+});
