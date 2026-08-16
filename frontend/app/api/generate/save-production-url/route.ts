@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Costruisce l'URL di produzione reale
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`;
 
     console.log('[save-production-url] URL di produzione generato:', appUrl);
 

@@ -21,7 +21,7 @@ A los efectos de esta Política de Privacidad:
 - Servicio se refiere al Sitio Web.
 - Proveedor de Servicios significa cualquier persona física o jurídica que trate los datos en nombre de la Compañía. A los efectos del RGPD, los Proveedores de Servicios se consideran Encargados del Tratamiento (Data Processors).
 - Datos de Uso se refiere a los datos recopilados automáticamente, generados por el uso del Servicio o por la propia infraestructura del Servicio.
-- Sitio Web se refiere a ShardApps, accesible desde https://zeusxapps.com
+- Sitio Web se refiere a ShardApps, accesible desde https://shardapps.com
 - Usuario (también referido como "Usted" o "Su") significa la persona que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
 
 Recopilación y Uso de sus Datos Personales

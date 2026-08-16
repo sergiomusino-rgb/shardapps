@@ -5,7 +5,10 @@
 // ora è un Server Component sottile che esporta metadata e renderizza il
 // componente client esistente (rinominato *Client.tsx, stesso identico
 // contenuto/logica) — nessuna modifica al comportamento della pagina.
-export const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com').replace(/\/$/, '');
+// Dominio pubblico definitivo (domain cleanup): il fallback qui sotto è
+// usato solo se NEXT_PUBLIC_APP_URL non è configurata a runtime — copre
+// canonical/OG/sitemap per tutte le pagine pubbliche che importano SITE_URL.
+export const SITE_URL = (process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com').replace(/\/$/, '');
 export const SITE_NAME = 'ShardApps';
 // Nessuna immagine OG 1200x630 dedicata esiste ancora nel repo (solo asset
 // legacy non verificati o non a tema: vedi audit) — favicon.png è l'unico

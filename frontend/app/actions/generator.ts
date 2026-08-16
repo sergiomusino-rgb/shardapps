@@ -310,7 +310,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
         tenant_id: tenantId,
         client_password: clientPassword,
         client_active: true,
-        production_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`,
+        production_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`,
         config: {
           schema: generatedSchema.schema,
           ui: generatedSchema.ui || {},
@@ -373,7 +373,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
     }
 
     // Register app in app_registry for Management Console
-    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${slug}`;
+    const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`;
     const { error: registryError } = await supabaseAdmin
       .from('app_registry')
       .insert({

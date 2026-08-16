@@ -21,7 +21,7 @@ Im Sinne dieser Datenschutzerklärung:
 - Dienst bezieht sich auf die Website.
 - Dienstleister bezeichnet jede natürliche oder juristische Person, die Daten im Auftrag des Unternehmens verarbeitet. Im Sinne der DSGVO gelten Dienstleister als Auftragsverarbeiter.
 - Nutzungsdaten bezeichnet automatisch erhobene Daten, die entweder durch die Nutzung des Dienstes oder durch die Infrastruktur des Dienstes selbst generiert werden.
-- Website bezieht sich auf ShardApps, erreichbar unter https://zeusxapps.com
+- Website bezieht sich auf ShardApps, erreichbar unter https://shardapps.com
 - Benutzer (auch als "Sie" oder "Ihr" bezeichnet) bezeichnet die Person, die auf den Dienst zugreift oder ihn nutzt, oder das Unternehmen oder eine andere juristische Person, in deren Namen eine solche Person auf den Dienst zugreift oder ihn nutzt, je nach Anwendbarkeit.
 
 Erhebung und Verwendung Ihrer personenbezogenen Daten

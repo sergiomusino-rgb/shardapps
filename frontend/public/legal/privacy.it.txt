@@ -21,7 +21,7 @@ Ai fini della presente Informativa sulla Privacy:
 - Servizio si riferisce al Sito Web.
 - Fornitore di Servizi indica qualsiasi persona fisica o giuridica che elabora i dati per conto della Società. Si riferisce a società terze o individui impiegati dalla Società per facilitare il Servizio, per fornire il Servizio per conto della Società, per eseguire servizi correlati al Servizio o per assistere la Società nell'analisi dell'utilizzo del Servizio. Ai fini del GDPR, i Fornitori di Servizi sono considerati Responsabili del Trattamento (Data Processors).
 - Dati di Utilizzo si riferiscono ai dati raccolti automaticamente, generati dall'uso del Servizio o dall'infrastruttura del Servizio stesso (ad esempio, la durata della visita di una pagina).
-- Sito Web si riferisce a ShardApps, accessibile da https://zeusxapps.com
+- Sito Web si riferisce a ShardApps, accessibile da https://shardapps.com
 - Utente (indicato anche come "Tu" o "Vostro") indica l'individuo che accede o utilizza il Servizio, o la società o altra entità legale per conto della quale tale individuo accede o utilizza il Servizio, a seconda dei casi.
 
 Raccolta e Utilizzo dei Dati Personali

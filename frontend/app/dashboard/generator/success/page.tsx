@@ -37,7 +37,7 @@ export default function SuccessPage() {
       try {
         const { data: { session } } = await supabaseBrowser.auth.getSession();
         if (!session?.access_token) {
-          setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`);
+          setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
           setLoadingUrl(false);
           return;
         }
@@ -51,14 +51,14 @@ export default function SuccessPage() {
           if (data.production_url) {
             setAppUrl(data.production_url);
           } else {
-            setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`);
+            setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
           }
         } else {
-          setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`);
+          setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
         }
       } catch (error) {
         console.error('Error fetching production URL:', error);
-        setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://zeusxapps.com'}/a/${appSlug}`);
+        setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
       } finally {
         setLoadingUrl(false);
       }
