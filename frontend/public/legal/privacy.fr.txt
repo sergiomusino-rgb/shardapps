@@ -14,7 +14,7 @@ Les mots dont la première lettre est en majuscule ont des significations défin
 Définitions
 Aux fins de la présente Politique de Confidentialité :
 - Compte désigne un compte unique créé pour vous afin d'accéder à notre Service ou à une partie de celui-ci.
-- Société (dénommée "la Société", "Nous", "Notre" ou "Nos" dans la présente Politique) désigne zeusx.
+- Société (dénommée "la Société", "Nous", "Notre" ou "Nos" dans la présente Politique) désigne ShardApps. [À compléter : la raison sociale, l'adresse du siège, le numéro de TVA et les coordonnées légales du responsable ne sont pas vérifiables à partir de ce dépôt — à renseigner par le responsable du traitement/conseil juridique avant publication.]
 - Cookies sont de petits fichiers placés sur votre ordinateur, appareil mobile ou tout autre appareil par un site web, contenant les détails de votre historique de navigation sur ce site web parmi ses nombreuses utilisations.
 - Pays désigne : Italie
 - Titulaire du Traitement (au sens du RGPD) désigne la Société en tant qu'entité légale déterminant seule ou conjointement les finalités et les moyens du traitement des Données Personnelles.
@@ -22,7 +22,7 @@ Aux fins de la présente Politique de Confidentialité :
 - Service désigne le Site Web.
 - Prestataire de Services désigne toute personne physique ou morale qui traite les données pour le compte de la Société. Il s'agit de sociétés tierces ou d'individus employés par la Société pour faciliter le Service, fournir le Service pour le compte de la Société, exécuter des services liés au Service ou assister la Société dans l'analyse de l'utilisation du Service. Au sens du RGPD, les Prestataires de Services sont considérés comme des Sous-Titulaires (Data Processors).
 - Données d'Utilisation désignent les données collectées automatiquement, qu'elles soient générées par l'utilisation du Service ou provenant de l'infrastructure du Service lui-même (par exemple, la durée d'une visite de page).
-- Site Web désigne zeusx, accessible depuis https://zeusxapps.com
+- Site Web désigne ShardApps, accessible depuis https://zeusxapps.com
 - Vous désigne la personne accédant ou utilisant le Service, ou la société ou autre entité juridique pour le compte de laquelle une telle personne accède ou utilise le Service, selon le cas.
 
 Collecte et Utilisation des Données Personnelles
@@ -41,7 +41,7 @@ Les Données d'Utilisation sont collectées automatiquement lors de l'utilisatio
 Les Données d'Utilisation peuvent inclure des informations telles que l'adresse du protocole Internet de votre appareil (par exemple, l'adresse IP), le type de navigateur, la version du navigateur, les pages de notre Service que vous visitez, l'heure et la date de votre visite, le temps passé sur ces pages, les identifiants uniques de l'appareil et d'autres données de diagnostic.
 
 Technologies de Suivi et Cookies
-Nous utilisons des Cookies et des technologies de suivi similaires pour surveiller l'activité sur notre Service et stocker certaines informations. Les technologies de suivi que nous utilisons peuvent inclure des Cookies persistants administrés par nous-mêmes pour fournir des fonctionnalités essentielles, gérer les sessions des utilisateurs, prévenir la fraude et mémoriser vos préférences linguistiques ou de connexion.
+Le Service utilise uniquement des cookies techniques strictement nécessaires à son fonctionnement (en particulier la session d'authentification gérée par Supabase Auth) et des entrées de stockage local fonctionnelles (préférence de langue, état d'installation de la PWA). Nous n'utilisons aucun cookie ni technologie de suivi de profilage, analytique ou publicitaire de tiers (aucun Google Analytics, Meta Pixel ou outil équivalent n'est intégré au Service). Ces cookies étant uniquement techniques, aucune bannière de consentement n'est requise au titre de la réglementation ePrivacy. Vous pouvez néanmoins configurer votre navigateur pour refuser les cookies, sachant que cela peut empêcher l'accès aux espaces authentifiés du Service.
 
 Utilisation des Données Personnelles
 La Société peut utiliser les Données Personnelles aux fins suivantes :
@@ -56,6 +56,10 @@ Nous ne vendons ni ne cédons vos Données Personnelles à des tiers. Nous parta
 - Supabase : Utilisé pour le stockage sécurisé de la base de données des comptes utilisateurs et pour les services d'authentification protégée.
 - Stripe, Inc. : En tant que notre prestataire de paiement, gère indépendamment et en toute sécurité toutes les transactions de paiement, les données de facturation et les conformités fiscales. La Société ne stocke pas les données des cartes de crédit ou de paiement sur ses serveurs.
 - Vercel et Render : Utilisés comme fournisseurs d'hébergement (hosting) et d'infrastructure cloud pour la fourniture du Service.
+- Groq, Google (Gemini), OpenRouter et OpenAI : Fournisseurs de modèles d'intelligence artificielle utilisés pour générer des applications de gestion, du contenu et des réponses de chat à partir des prompts et données que vous saisissez dans le Service (CreatorAI et fonctionnalités de chat/génération associées).
+- fal.ai : Utilisé pour la génération de contenu vidéo par intelligence artificielle (fonctionnalité Vision) ; les fichiers obtenus sont téléchargés puis stockés sur Supabase Storage.
+- Resend : Utilisé pour l'envoi d'e-mails transactionnels et de notification liés au Service.
+- Totalum : Infrastructure utilisée pour une partie du pipeline de génération/provisionnement des projets ; vous n'y accédez que via des proxys côté serveur du Service, jamais directement depuis votre navigateur.
 
 Conservation des Données Personnelles
 La Société conservera vos Données Personnelles pendant la durée de la relation contractuelle et, par la suite, pendant les délais prévus par la loi applicable à des fins fiscales, comptables et de conformité aux obligations légales. Nous conserverons et utiliserons vos Données Personnelles dans la mesure nécessaire pour nous conformer à nos obligations légales, résoudre des litiges et faire respecter nos accords juridiques et nos politiques.

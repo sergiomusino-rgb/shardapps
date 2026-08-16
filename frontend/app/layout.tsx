@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/src/lib/LanguageContext";
+import { SITE_URL } from "@/lib/seo";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,6 +17,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Pre-launch hardening: metadataBase risolve le URL relative (icons, OG
+  // image) delle pagine che non ridefiniscono il proprio metadata — le
+  // pagine pubbliche principali (/, /pricing, /info, /login, /privacy)
+  // ora esportano metadata proprio, con canonical/OG assoluti espliciti;
+  // questo resta il default per tutto il resto (dashboard, /success, /cancel...).
+  metadataBase: new URL(SITE_URL),
   title: "ShardApps - Generazione Gestionali AI",
   description: "Crea gestionali personalizzati con intelligenza artificiale per il tuo business",
   // manifest.json esisteva in public/ ma non era mai collegato: il sito
@@ -57,7 +64,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      // Pre-launch hardening: era "en" mentre tutto il contenuto di default è
+      // in italiano. LanguageContext gestisce il locale lato client (persiste
+      // in localStorage) senza un cookie leggibile lato server da questo
+      // Server Component, quindi "it" è il default corretto qui — non un
+      // valore dinamico, per non introdurre un cookie/redirect solo per
+      // questo attributo.
+      lang="it"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>

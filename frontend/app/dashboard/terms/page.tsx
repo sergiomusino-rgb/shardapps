@@ -1,21 +1,17 @@
 'use client';
 
+// ─── Pre-launch hardening: prima questa pagina caricava un boilerplate
+// generico (public/legal/terms.it.txt via getLegalContentUrl) diverso e non
+// identico ai Termini realmente accettati al signup (/info) — due Terms
+// diversi pubblicamente raggiungibili. Ora renderizza la stessa fonte
+// canonica di /info tramite TermsContent, eliminando il rischio di
+// disallineamento. Nessuna nuova clausola: stesso identico testo di /info.
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { FileText } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { getLegalContentUrl } from '@/lib/legal-content';
+import TermsContent from '@/components/legal/TermsContent';
 
 export default function TermsPage() {
-  const { t, locale } = useLanguage();
-  const [content, setContent] = useState<string>('');
-
-  useEffect(() => {
-    // Fetch the legal content file for the current locale
-    fetch(getLegalContentUrl('terms', locale))
-      .then((res) => res.text())
-      .then((text) => setContent(text))
-      .catch(() => setContent(''));
-  }, [locale]);
+  const { t } = useLanguage();
 
   return (
     <div className="p-8">
@@ -31,14 +27,8 @@ export default function TermsPage() {
           </p>
         </div>
 
-        {/* Content */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8">
-          <div className="prose prose-invert max-w-none">
-            <pre className="whitespace-pre-wrap text-gray-300 leading-relaxed font-sans">
-              {content}
-            </pre>
-          </div>
-        </div>
+        {/* Content — stessa fonte canonica di /info (TermsContent) */}
+        <TermsContent />
       </div>
     </div>
   );

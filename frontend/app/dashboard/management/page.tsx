@@ -39,7 +39,6 @@ export default function ManagementConsolePage() {
   const highlightAppId = searchParams.get('appId');
   const [loading, setLoading] = useState(true);
   const [apps, setApps] = useState<App[]>([]);
-  const [userPlan, setUserPlan] = useState<string>('free');
   const [stripeConnectId, setStripeConnectId] = useState<string | null>(null);
   const [connectingStripe, setConnectingStripe] = useState(false);
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
@@ -65,16 +64,6 @@ export default function ManagementConsolePage() {
       router.push('/login');
       return;
     }
-
-    // Recupera il piano utente
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('plan')
-      .eq('owner_id', session.user.id)
-      .single();
-
-    const plan = tenant?.plan || 'free';
-    setUserPlan(plan);
 
     // Recupera stripe_connect_id dal profilo
     const { data: profile } = await supabase
@@ -195,8 +184,13 @@ export default function ManagementConsolePage() {
   const updatePrice = async (appId: string, totalumAppId: string | null) => {
     const price = parseFloat(priceInputs[appId] || '0');
 
-    // Validazione prezzo minimo per piano Starter
-    if (userPlan === 'starter' && price < 25) {
+    // Validazione prezzo minimo, su tutti i piani (pre-launch hardening: prima
+    // il controllo scattava solo per userPlan === 'starter' — Pro/Business
+    // potevano impostare un prezzo sotto costo senza alcun avviso lato UI).
+    // Guardia UX: il vincolo che conta è quello server-side in
+    // app/api/user/update-price/route.ts, qui solo per evitare un giro di
+    // rete inutile su un valore già sicuramente rifiutato.
+    if (price < ZEUSX_MINIMUM_FEE_EUR) {
       setError(t('mgmt_err_min_price_starter'));
       return;
     }

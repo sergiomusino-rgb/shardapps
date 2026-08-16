@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -12,7 +13,12 @@ function getSupabase() {
 /**
  * POST /api/user/update-price
  * Aggiorna il prezzo dell'abbonamento per un'app specifica
- * Con validazione: piano Starter richiede prezzo minimo di 25.00€
+ * Con validazione: prezzo minimo di 25.00€, su TUTTI i piani (Starter, Pro,
+ * Business). Pre-launch hardening: prima il controllo scattava solo per
+ * tenant.plan === 'starter' — un reseller Pro/Business poteva impostare
+ * client_subscription_price sotto ZEUSX_MINIMUM_FEE_EUR (25€, la quota che
+ * ShardApps trattiene comunque via la fee mensile per app attiva, vedi
+ * lib/pricing.ts) e operare sotto costo senza alcun guardrail server-side.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -62,16 +68,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nessun tenant associato all\'utente' }, { status: 403 });
     }
 
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('plan')
-      .eq('id', membership.tenant_id)
-      .single();
-
-    // Validazione vincolo prezzo minimo per piano Starter
-    if (tenant?.plan === 'starter' && client_subscription_price < 25.00) {
-      return NextResponse.json({ 
-        error: 'Il piano Starter richiede un prezzo minimo di 25.00€ per gli abbonamenti clienti' 
+    // Validazione vincolo prezzo minimo, su tutti i piani (vedi commento in testa al file).
+    // Non serve più leggere tenants.plan qui: il vincolo non dipende più dal piano.
+    if (client_subscription_price < ZEUSX_MINIMUM_FEE_EUR) {
+      return NextResponse.json({
+        error: `ShardApps richiede un prezzo minimo di ${ZEUSX_MINIMUM_FEE_EUR.toFixed(2)}€ per gli abbonamenti clienti, indipendentemente dal piano`
       }, { status: 400 });
     }
 

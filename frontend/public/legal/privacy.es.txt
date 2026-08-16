@@ -13,7 +13,7 @@ Las palabras cuya letra inicial está en mayúscula tienen significados definido
 Definiciones
 A los efectos de esta Política de Privacidad:
 - Cuenta significa una cuenta única creada para que Usted acceda a nuestro Servicio o a partes del mismo.
-- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en esta Política) se refiere a zeusx.
+- Compañía (referida como "la Compañía", "Nosotros", "Nos" o "Nuestro" en esta Política) se refiere a ShardApps. [Pendiente de completar: la razón social, domicilio, NIF/CIF y datos de contacto legales del responsable no son verificables desde este repositorio — a completar por el responsable del tratamiento/asesoría legal antes de su publicación.]
 - Cookies son pequeños archivos que un sitio web coloca en su ordenador, dispositivo móvil o cualquier otro dispositivo, y que contienen los datos de su historial de navegación en ese sitio web.
 - País se refiere a: Italia
 - Responsable del Tratamiento (a los efectos del RGPD) se refiere a la Compañía como la entidad legal que, por sí sola o conjuntamente con otras, determina los fines y los medios del tratamiento de los Datos Personales.
@@ -21,7 +21,7 @@ A los efectos de esta Política de Privacidad:
 - Servicio se refiere al Sitio Web.
 - Proveedor de Servicios significa cualquier persona física o jurídica que trate los datos en nombre de la Compañía. A los efectos del RGPD, los Proveedores de Servicios se consideran Encargados del Tratamiento (Data Processors).
 - Datos de Uso se refiere a los datos recopilados automáticamente, generados por el uso del Servicio o por la propia infraestructura del Servicio.
-- Sitio Web se refiere a zeusx, accesible desde https://zeusxapps.com
+- Sitio Web se refiere a ShardApps, accesible desde https://zeusxapps.com
 - Usuario (también referido como "Usted" o "Su") significa la persona que accede o utiliza el Servicio, o la empresa u otra entidad jurídica en cuyo nombre dicha persona accede o utiliza el Servicio, según corresponda.
 
 Recopilación y Uso de sus Datos Personales
@@ -39,7 +39,7 @@ Datos de Uso
 Los Datos de Uso se recopilan automáticamente al utilizar el Servicio. Pueden incluir información como la dirección IP de su dispositivo, el tipo y la versión del navegador, las páginas de nuestro Servicio que visita, la fecha y hora de su visita, el tiempo dedicado a esas páginas, identificadores únicos del dispositivo y otros datos de diagnóstico.
 
 Tecnologías de Seguimiento y Cookies
-Utilizamos Cookies y tecnologías de seguimiento similares para rastrear la actividad en Nuestro Servicio y almacenar cierta información. Usted puede configurar su navegador para que rechace todas las cookies o para que le indique cuándo se envía una cookie. Sin embargo, si no acepta las cookies, es posible que no pueda utilizar algunas partes de nuestro Servicio.
+El Servicio utiliza únicamente cookies técnicas estrictamente necesarias para su funcionamiento (en particular la sesión de autenticación gestionada por Supabase Auth) y entradas de almacenamiento local funcionales (preferencia de idioma, estado de instalación de la PWA). No utilizamos cookies ni tecnologías de seguimiento de perfilado, analítica o publicidad de terceros (no hay Google Analytics, Meta Pixel ni herramienta equivalente integrada en el Servicio). Al usarse únicamente cookies técnicas, no se requiere un banner de consentimiento de cookies conforme a la normativa ePrivacy aplicable. Usted puede configurar igualmente su navegador para rechazar cookies, teniendo en cuenta que ello puede impedir el acceso a las áreas autenticadas del Servicio.
 
 Uso de sus Datos Personales
 La Compañía puede utilizar los Datos Personales para las siguientes finalidades:
@@ -54,6 +54,10 @@ No vendemos ni cedemos sus Datos Personales a terceros. Compartimos información
 - Supabase: Utilizado para el almacenamiento seguro de la base de datos de cuentas de usuario y para los servicios de autenticación protegida.
 - Stripe, Inc.: Como nuestro procesador de pagos, gestiona de forma independiente y segura todas las transacciones de pago, los datos de facturación y el cumplimiento fiscal. La Compañía no almacena los datos de tarjetas de crédito o de pago en sus propios servidores.
 - Vercel y Render: Utilizados como proveedores de alojamiento (hosting) e infraestructura en la nube para la prestación del Servicio.
+- Groq, Google (Gemini), OpenRouter y OpenAI: Proveedores de modelos de inteligencia artificial utilizados para generar aplicaciones de gestión, contenido y respuestas de chat a partir de los prompts y datos que Usted introduce en el Servicio (CreatorAI y funcionalidades de chat/generación relacionadas).
+- fal.ai: Utilizado para la generación de contenido de vídeo mediante inteligencia artificial (funcionalidad Vision); los archivos resultantes se descargan y almacenan en Supabase Storage.
+- Resend: Utilizado para el envío de correos electrónicos transaccionales y de notificación relacionados con el Servicio.
+- Totalum: Infraestructura utilizada para parte del pipeline de generación/aprovisionamiento de proyectos; Usted solo interactúa con ella a través de proxies del lado del servidor del Servicio, nunca directamente desde su navegador.
 
 Conservación de sus Datos Personales
 La Compañía conservará Sus Datos Personales durante la duración de la relación contractual y, posteriormente, durante los plazos establecidos por la ley aplicable para fines fiscales, contables y de cumplimiento de obligaciones legales. Conservaremos y utilizaremos Sus Datos Personales en la medida necesaria para cumplir con nuestras obligaciones legales, resolver disputas y hacer cumplir nuestros acuerdos legales y políticas.

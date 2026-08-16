@@ -13,12 +13,12 @@ Definitions
 For the purposes of these Terms and Conditions:
 - Affiliate means an entity that controls, is controlled by, or is under common control with a party, where "control" means ownership of 50% or more of the shares, equity interest or other securities entitled to vote for election of directors or other managing authority.
 - Country refers to: Italy
-- Company (referred to as either "the Company", "We", "Us" or "Our" in these Terms and Conditions) refers to zeusx.
+- Company (referred to as either "the Company", "We", "Us" or "Our" in these Terms and Conditions) refers to ShardApps. [Legacy document, no longer linked from the app — the canonical Terms live at /info. To complete if this file is ever republished: the Company's registered legal name, address, VAT number and legal contact details.]
 - Device means any device that can access the Service such as a computer, a cell phone or a digital tablet.
 - Service refers to the Website.
 - Terms and Conditions (also referred to as "Terms") means these Terms and Conditions, including any documents expressly incorporated by reference, which govern Your access to and use of the Service and form the entire agreement between You and the Company regarding the Service.
 - Third-Party Social Media Service means any services or content (including data, information, products or services) provided by a third party that is displayed, included, made available, or linked to through the Service.
-- Website refers to zeusx, accessible from https://zeusxapps.com
+- Website refers to ShardApps, accessible from https://zeusxapps.com
 - You means the individual accessing or using the Service, or the company, or other legal entity on behalf of which such individual is accessing or using the Service, as applicable.
 
 Acknowledgment
@@ -50,7 +50,7 @@ Subscriptions, Billing, and Commercial Terms
 
 Payment Processing
 All subscription plans, commercial tiers, and financial transactions are handled through Stripe, Inc., our payment processor. Stripe, Inc. is responsible for billing, payment card compliance, tax collection, subscription lifecycles, and processing refunds.
-By purchasing a paid subscription tier or product tier to access specific features of zeusx, You agree to comply with Stripe's terms of service and billing conditions in addition to these Terms. Financial disputes, payment errors, and invoicing queries must be routed through Stripe's customer support.
+By purchasing a paid subscription tier or product tier to access specific features of ShardApps, You agree to comply with Stripe's terms of service and billing conditions in addition to these Terms. Financial disputes, payment errors, and invoicing queries must be routed through Stripe's customer support.
 
 Fees and Cancellations
 The Company reserves the right to modify subscription fees or tiers at any time, with a minimum 30 days' notice to active users. You may cancel Your subscription tier at any time through Your internal account settings dashboard via the billing section powered by Stripe. Upon cancellation, Your access to premium features will continue until the end of the current billing cycle.
