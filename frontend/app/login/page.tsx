@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import LanguageSelector from '@/components/LanguageSelector';
 import { supabase } from '@/src/lib/supabase';
+import { validateRegistrationSubmission } from '@/src/lib/terms-acceptance';
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -16,23 +17,21 @@ import { supabase } from '@/src/lib/supabase';
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  // Messaggio di redirect dopo registrazione: derivato dal query param al
+  // primo render (initializer lazy), non da un useEffect con setState nel
+  // corpo (evita cascading render, vedi react-hooks/set-state-in-effect).
+  const [successMsg, setSuccessMsg] = useState(() =>
+    searchParams.get('registered') === 'true' ? t('login_success_registered') : ''
+  );
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
-  const { t } = useLanguage();
-
-  // Messaggio di redirect dopo registrazione
-  useEffect(() => {
-    const registered = searchParams.get('registered');
-    if (registered === 'true') {
-      setSuccessMsg(t('login_success_registered'));
-    }
-  }, [searchParams, t]);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // ─── Handle Login ────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
@@ -78,8 +77,12 @@ function LoginForm() {
     setSuccessMsg('');
     setLoading(true);
 
-    if (password.length < 6) {
-      setError(t('login_error_password_length'));
+    // Accettazione Termini e Condizioni obbligatoria: se manca, la
+    // registrazione si blocca qui e supabase.auth.signUp non viene MAI
+    // chiamata (vedi validateRegistrationSubmission).
+    const validation = validateRegistrationSubmission({ password, termsAccepted });
+    if (!validation.ok) {
+      setError(t(validation.errorKey));
       setLoading(false);
       return;
     }
@@ -110,6 +113,7 @@ function LoginForm() {
         } else {
           setSuccessMsg(t('login_success_register_confirm'));
           setMode('login');
+          setTermsAccepted(false);
         }
       }
     } catch {
@@ -239,6 +243,32 @@ function LoginForm() {
               </div>
             )}
 
+            {/* Accettazione Termini e Condizioni (solo registrazione) */}
+            {isRegister && (
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="terms-accept"
+                  required
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 cursor-pointer rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-2 focus:ring-indigo-500/40 focus:ring-offset-0"
+                />
+                <label htmlFor="terms-accept" className="cursor-pointer select-none text-sm text-slate-400">
+                  {t('login_terms_accept_prefix')}{' '}
+                  <Link
+                    href="/info"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-semibold text-indigo-400 underline underline-offset-2 transition-colors hover:text-indigo-300"
+                  >
+                    {t('login_terms_link')}
+                  </Link>
+                </label>
+              </div>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
@@ -265,7 +295,7 @@ function LoginForm() {
                 <p className="text-slate-500">
                   {t('login_no_account')}{' '}
                   <button
-                    onClick={() => { setMode('register'); setError(''); setSuccessMsg(''); }}
+                    onClick={() => { setMode('register'); setError(''); setSuccessMsg(''); setTermsAccepted(false); }}
                     className="font-semibold text-indigo-400 transition-colors hover:text-indigo-300"
                   >
                     {t('login_register_link')}
@@ -278,7 +308,7 @@ function LoginForm() {
               <p className="text-slate-500">
                 {t('login_has_account')}{' '}
                 <button
-                  onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); }}
+                  onClick={() => { setMode('login'); setError(''); setSuccessMsg(''); setTermsAccepted(false); }}
                   className="font-semibold text-indigo-400 transition-colors hover:text-indigo-300"
                 >
                   {t('login_login_link')}
