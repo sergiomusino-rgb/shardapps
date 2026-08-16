@@ -74,13 +74,23 @@ self.addEventListener('fetch', (event) => {
     return response;
   };
 
+  // Fallback usato da ogni .catch() sotto: caches.match() risolve a
+  // `undefined` quando non c'è nulla in cache (prima richiesta mai andata
+  // a buon fine, es. bloccata dalla CSP o offline al primo utilizzo) —
+  // event.respondWith(undefined) fa fallire il fetch event con
+  // "TypeError: Failed to convert value to 'Response'", non un errore di
+  // rete "pulito" gestibile lato pagina. Garantisce SEMPRE una vera
+  // Response, anche quando non c'è nulla da servire.
+  const respondFromCacheOrFallback = () =>
+    caches.match(request).then((cached) => cached || new Response(null, { status: 504, statusText: 'Gateway Timeout' }));
+
   // Navigazioni HTML - network first: in sviluppo/uso online mostra sempre
   // la versione corrente della route, cade sulla cache solo se offline.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then(cachePut)
-        .catch(() => caches.match(request))
+        .catch(respondFromCacheOrFallback)
     );
     return;
   }
@@ -90,7 +100,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then(cachePut)
-        .catch(() => caches.match(request))
+        .catch(respondFromCacheOrFallback)
     );
     return;
   }
@@ -105,6 +115,6 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then(cachePut)
-      .catch(() => caches.match(request))
+      .catch(respondFromCacheOrFallback)
   );
 });
