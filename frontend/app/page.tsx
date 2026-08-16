@@ -348,7 +348,7 @@ export default function Home() {
         <section id="pricing" className="px-4 sm:px-6 py-16 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-center mb-3">Prezzi</h2>
-            <p className="text-center text-slate-400 mb-10">Un costo di attivazione una tantum + un canone mensile fisso. Nessuna sorpresa.</p>
+            <p className="text-center text-slate-400 mb-10">Un costo di attivazione una tantum + 25€/mese per ogni app attiva. Nessuna sorpresa.</p>
 
             <div className="grid sm:grid-cols-3 gap-5">
               {[
@@ -374,7 +374,7 @@ export default function Home() {
                     <span className="text-3xl font-black">{p.setup}</span>
                     <span className="text-xs text-slate-400">attivazione</span>
                   </div>
-                  <p className="text-sm text-slate-400 mb-4">+ 25€/mese</p>
+                  <p className="text-sm text-slate-400 mb-4">+ 25€/mese per app attiva</p>
                   <p className="text-xs font-semibold text-slate-300 bg-white/5 rounded-lg px-3 py-2">{p.slots}</p>
                 </div>
               ))}
