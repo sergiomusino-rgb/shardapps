@@ -102,6 +102,35 @@ const userManagementLimiter = rateLimit({
   message: { error: 'Troppe richieste di gestione utenti, riprova tra qualche minuto' },
 });
 
+// ─── Data Export + Public API, Fase 8 — rate limit per API key ─────────────
+// Chiave = solo l'id della API key (req.apiKeyId, impostato da
+// requireApiKey in lib/public-api-auth.js, montato SEMPRE prima di questo
+// limiter nella catena di routes/public-api.js): un rate limit "per API key"
+// come richiesto dal task, non globale su tutto ShardApps né sulla sola IP
+// (più chiavi/app possono condividere lo stesso IP dietro un unico backend
+// integrato lato cliente). Fallback sull'IP nel solo caso limite in cui il
+// limiter giri senza che requireApiKey abbia già impostato apiKeyId (non
+// dovrebbe mai accadere nell'ordine reale delle route, difensivo).
+//
+// Finestra/soglia: stesso ordine di grandezza di actionLimiter (finestra
+// corta, così un uso legittimo a raffica — es. un import via API — resta
+// fluido) ma più permissivo perché qui il chiamante è un sistema esterno
+// integrato (non un click umano): 100 richieste/minuto per chiave. Una
+// chiave compromessa non può quindi generare traffico illimitato verso i
+// dati dell'app.
+function apiKeyOrIpKey(req) {
+  return req.apiKeyId ? `apikey:${req.apiKeyId}` : `ip:${ipKeyGenerator(req.ip)}`;
+}
+
+const publicApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: apiKeyOrIpKey,
+  message: { error: 'Rate limit superato per questa API key, riprova tra un minuto' },
+});
+
 module.exports = {
   aiLimiter,
   checkoutLimiter,
@@ -109,4 +138,5 @@ module.exports = {
   changePasswordLimiter,
   actionLimiter,
   userManagementLimiter,
+  publicApiLimiter,
 };

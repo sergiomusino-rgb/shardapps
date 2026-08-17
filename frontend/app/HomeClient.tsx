@@ -23,6 +23,9 @@ import {
   Users,
   Check,
   MessageSquareText,
+  Globe,
+  ShieldCheck,
+  Tags,
 } from 'lucide-react';
 
 // ─── Mockup dashboard (puro CSS/HTML, nessuna immagine): l'unico visual
@@ -108,6 +111,15 @@ function DashboardMockup() {
 // gli array restano a livello di modulo (icone/ordine sono statici), solo
 // title/text sono chiavi risolte con t() in fase di render — permette la
 // localizzazione completa senza spostare questi array dentro il componente.
+// ─── Trust / social proof: nessuna metrica numerica non verificabile (niente
+// "N app create", "N clienti", percentuali) — solo posizionamento (target,
+// mercato europeo/internazionale, affidabilità, modello white-label). ──────
+const TRUST_PILLS = [
+  { icon: Globe, textKey: 'landing_trust_pill1' },
+  { icon: ShieldCheck, textKey: 'landing_trust_pill2' },
+  { icon: Tags, textKey: 'landing_trust_pill3' },
+];
+
 const HOW_IT_WORKS = [
   { n: '01', icon: MessageSquareText, titleKey: 'landing_how_step1_title', textKey: 'landing_how_step1_text' },
   { n: '02', icon: Wand2, titleKey: 'landing_how_step2_title', textKey: 'landing_how_step2_text' },
@@ -241,6 +253,39 @@ export default function HomeClient() {
             <p className="text-slate-400 text-base sm:text-lg leading-relaxed max-w-2xl mx-auto">
               {t('landing_problem_description')}
             </p>
+          </div>
+        </section>
+
+        {/* ─── TRUST / SOCIAL PROOF ───────────────────────────────────────
+            Nessun numero non verificabile (niente "N app create/clienti"):
+            comunica target (agenzie/freelancer/reseller), mercato europeo,
+            affidabilità e modello white-label solo tramite posizionamento,
+            senza statistiche inventate, loghi cliente o recensioni. ────── */}
+        <section className="px-4 sm:px-6 py-16 border-t border-white/5">
+          <div className="max-w-4xl mx-auto text-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300 tracking-wide mb-4">
+              <Users className="w-3.5 h-3.5 text-cyan-300" /> {t('landing_trust_eyebrow')}
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-3">
+              {t('landing_trust_title')}
+            </h2>
+            <p className="text-slate-400 text-base leading-relaxed max-w-2xl mx-auto mb-10">
+              {t('landing_trust_subtitle')}
+            </p>
+
+            <div className="grid sm:grid-cols-3 gap-4">
+              {TRUST_PILLS.map((p) => (
+                <div
+                  key={p.textKey}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3.5 text-left"
+                >
+                  <div className="w-9 h-9 shrink-0 rounded-lg border border-white/10 bg-gradient-to-br from-indigo-500/20 to-cyan-400/20 flex items-center justify-center">
+                    <p.icon className="w-4 h-4 text-cyan-300" />
+                  </div>
+                  <span className="text-sm font-semibold text-slate-200">{t(p.textKey)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 

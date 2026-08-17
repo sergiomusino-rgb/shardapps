@@ -5,6 +5,7 @@
 // (separato) risolve inoltre il bug per cui un visitatore senza sessione
 // veniva rediretto a /login prima di vedere i prezzi.
 import { useEffect, useState } from 'react';
+import { Info } from 'lucide-react';
 import { supabaseBrowser as supabase } from '@/src/lib/supabase-browser';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
@@ -267,9 +268,20 @@ export default function PricingClient() {
     <div className="p-12">
       <div className="max-w-6xl mx-auto">
         <h1 className="text-5xl font-black text-center mb-4">{t('pricing_title')}</h1>
-        <p className="text-center text-slate-400 mb-12 text-lg">
+        <p className="text-center text-slate-400 mb-6 text-lg">
           {t('pricing_subtitle')}
         </p>
+
+        {/* Policy slot app: permanenza dello slot al momento della creazione,
+            anche in caso di eliminazione successiva dell'app. Deve restare
+            visibile PRIMA dei pulsanti di acquisto qui sotto — unica fonte
+            del testo, riusata anche come tooltip nella pagina Management
+            (dashboard/management/page.tsx) tramite la stessa chiave i18n
+            pricing_slot_policy, per non duplicare il testo in più punti. */}
+        <div className="max-w-3xl mx-auto mb-10 flex items-start gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-5 py-4">
+          <Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+          <p className="text-sm text-slate-300 leading-relaxed">{t('pricing_slot_policy')}</p>
+        </div>
 
         {/* Info piano attuale */}
         {userId && (

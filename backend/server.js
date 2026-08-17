@@ -343,6 +343,12 @@ app.use('/api', require('./routes/invoices'));
 // --- GENERATE ROUTE (Totalium Dynamic UI) ---
 app.use('/api', require('./routes/generate'));
 
+// --- DATA EXPORT + PUBLIC API (gestione API key, lato proprietario) ---
+app.use('/api', require('./routes/api-keys'));
+
+// --- PUBLIC API v1 (accesso esterno ai dati di un'app, via API key) ---
+app.use('/api/v1/apps', require('./routes/public-api'));
+
 // --- ERROR HANDLER ---
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
