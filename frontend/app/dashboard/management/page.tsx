@@ -390,7 +390,11 @@ export default function ManagementConsolePage() {
             <div className="text-xs text-gray-500 mt-1">{t('mgmt_net_margin_desc')}</div>
           </div>
 
-          <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4">
+          {/* title = stessa policy slot mostrata su /pricing (chiave i18n
+              pricing_slot_policy, unica fonte del testo): qui solo come
+              tooltip nativo, per non duplicare il paragrafo in questo
+              widget compatto. */}
+          <div className="bg-slate-800/50 rounded-xl p-3 sm:p-4" title={t('pricing_slot_policy')}>
             <div className="flex items-center gap-2 text-gray-400 text-xs uppercase tracking-wide mb-1.5">
               <LayoutGrid size={14} /> {t('mgmt_slot_status')}
             </div>

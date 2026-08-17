@@ -20,6 +20,7 @@
     "@google/generative-ai": "^0.24.1",
     "@huggingface/inference": "^4.13.19",
     "@supabase/supabase-js": "^2.108.2",
+    "archiver": "^7.0.1",
     "cors": "^2.8.6",
     "csv-parser": "^3.2.1",
     "csv-stringify": "^6.8.0",
