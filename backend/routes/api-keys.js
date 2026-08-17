@@ -19,8 +19,8 @@ const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 
-const { generateApiKey } = require('../lib/api-key-crypto');
 const { loadExportData, streamExportZip } = require('../lib/data-export');
+const { listApiKeys, createApiKey, revokeApiKey } = require('../lib/api-key-management');
 
 function getSupabase() {
   return createClient(
@@ -29,6 +29,22 @@ function getSupabase() {
   );
 }
 
+// ─── Fix produzione 2026-08-17 (E2E live test) ─────────────────────────────
+// Causa reale (stack trace Render): "Error: supabaseKey is required" in
+// `new SupabaseClient` — la createClient(SUPABASE_URL, SUPABASE_ANON_KEY, ...)
+// che c'era qui prima falliva perché process.env.SUPABASE_ANON_KEY risultava
+// vuoto/assente in questo processo, e la chiamata era FUORI dal try/catch
+// sottostante (throw sincrono dentro una funzione async = Promise rejected
+// non gestita → Express 5 la inoltra al suo error handler generico, da cui
+// il 500 "Errore interno del server" invece di un 401 pulito).
+//
+// Fix minimo: niente nuovo client con l'anon key. supabase.auth.getUser(jwt)
+// accetta il token esplicitamente come argomento e verifica la sua firma
+// contro il server Auth di Supabase indipendentemente dalla chiave con cui
+// il client è stato istanziato — riusa quindi getSupabase() (service role),
+// già provato affidabile in questo stesso file (tenantMiddleware, sotto, non
+// ha mai fallito). Non introduce alcuna chiave nuova, non tocca RLS: questa
+// chiamata è solo verifica del JWT lato Auth, non una query dati.
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
 
@@ -38,14 +54,9 @@ async function authMiddleware(req, res, next) {
 
   const token = authHeader.substring(7);
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL || '',
-    process.env.SUPABASE_ANON_KEY || '',
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  );
-
   try {
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user) {
       return res.status(401).json({ error: 'Token non valido' });
     }
@@ -87,46 +98,15 @@ async function tenantMiddleware(req, res, next) {
   next();
 }
 
-const ALLOWED_SCOPES = ['read', 'write'];
-
-function sanitizeScopes(rawScopes) {
-  if (!Array.isArray(rawScopes) || rawScopes.length === 0) return ['read'];
-  const cleaned = [...new Set(rawScopes.filter((s) => ALLOWED_SCOPES.includes(s)))];
-  return cleaned.length > 0 ? cleaned : ['read'];
-}
-
-// Non espone mai key_hash — solo i metadati necessari alla dashboard.
-function toPublicKey(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    keyPrefix: row.key_prefix,
-    scopes: row.scopes,
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at,
-    expiresAt: row.expires_at,
-    revokedAt: row.revoked_at,
-    status: row.revoked_at ? 'revoked' : (row.expires_at && new Date(row.expires_at) < new Date() ? 'expired' : 'active'),
-  };
-}
-
 // GET /api/apps/:appId/api-keys — elenco chiavi (Fase 10).
 router.get('/apps/:appId/api-keys', authMiddleware, tenantMiddleware, async (req, res) => {
   try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('app_api_keys')
-      .select('id, name, key_prefix, scopes, created_at, last_used_at, expires_at, revoked_at')
-      .eq('app_id', req.appId)
-      .eq('tenant_id', req.tenantId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[api-keys] GET list error:', error);
-      return res.status(500).json({ error: 'Errore interno' });
+    const result = await listApiKeys(getSupabase(), req.appId, req.tenantId);
+    if (!result.ok) {
+      console.error('[api-keys] GET list error');
+      return res.status(result.status).json({ error: result.error });
     }
-
-    res.json({ keys: (data || []).map(toPublicKey) });
+    res.json({ keys: result.keys });
   } catch (err) {
     console.error('[api-keys] GET list exception:', err);
     res.status(500).json({ error: 'Errore interno' });
@@ -139,44 +119,12 @@ router.get('/apps/:appId/api-keys', authMiddleware, tenantMiddleware, async (req
 router.post('/apps/:appId/api-keys', authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const { name, scopes, expiresAt } = req.body || {};
-    const trimmedName = typeof name === 'string' ? name.trim() : '';
-    if (!trimmedName) {
-      return res.status(400).json({ error: 'name obbligatorio' });
+    const result = await createApiKey(getSupabase(), { appId: req.appId, tenantId: req.tenantId, name, scopes, expiresAt });
+    if (!result.ok) {
+      if (result.status >= 500) console.error('[api-keys] POST create error');
+      return res.status(result.status).json({ error: result.error });
     }
-
-    let expiresAtIso = null;
-    if (expiresAt) {
-      const d = new Date(expiresAt);
-      if (Number.isNaN(d.getTime())) {
-        return res.status(400).json({ error: 'expiresAt non valido' });
-      }
-      expiresAtIso = d.toISOString();
-    }
-
-    const sanitizedScopes = sanitizeScopes(scopes);
-    const { fullKey, keyPrefix, keyHash } = generateApiKey();
-
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('app_api_keys')
-      .insert({
-        app_id: req.appId,
-        tenant_id: req.tenantId,
-        name: trimmedName,
-        key_prefix: keyPrefix,
-        key_hash: keyHash,
-        scopes: sanitizedScopes,
-        expires_at: expiresAtIso,
-      })
-      .select('id, name, key_prefix, scopes, created_at, last_used_at, expires_at, revoked_at')
-      .single();
-
-    if (error) {
-      console.error('[api-keys] POST create error:', error);
-      return res.status(500).json({ error: 'Errore interno' });
-    }
-
-    res.status(201).json({ apiKey: fullKey, key: toPublicKey(data) });
+    res.status(201).json({ apiKey: result.apiKey, key: result.key });
   } catch (err) {
     console.error('[api-keys] POST create exception:', err);
     res.status(500).json({ error: 'Errore interno' });
@@ -186,25 +134,12 @@ router.post('/apps/:appId/api-keys', authMiddleware, tenantMiddleware, async (re
 // POST /api/apps/:appId/api-keys/:keyId/revoke — revoca (Fase 10).
 router.post('/apps/:appId/api-keys/:keyId/revoke', authMiddleware, tenantMiddleware, async (req, res) => {
   try {
-    const supabase = getSupabase();
-    const { data, error } = await supabase
-      .from('app_api_keys')
-      .update({ revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('id', req.params.keyId)
-      .eq('app_id', req.appId)
-      .eq('tenant_id', req.tenantId)
-      .select('id, name, key_prefix, scopes, created_at, last_used_at, expires_at, revoked_at')
-      .maybeSingle();
-
-    if (error) {
-      console.error('[api-keys] POST revoke error:', error);
-      return res.status(500).json({ error: 'Errore interno' });
+    const result = await revokeApiKey(getSupabase(), { appId: req.appId, tenantId: req.tenantId, keyId: req.params.keyId });
+    if (!result.ok) {
+      if (result.status >= 500) console.error('[api-keys] POST revoke error');
+      return res.status(result.status).json({ error: result.error });
     }
-    if (!data) {
-      return res.status(404).json({ error: 'API key non trovata' });
-    }
-
-    res.json({ key: toPublicKey(data) });
+    res.json({ key: result.key });
   } catch (err) {
     console.error('[api-keys] POST revoke exception:', err);
     res.status(500).json({ error: 'Errore interno' });
