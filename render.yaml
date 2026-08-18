@@ -44,3 +44,60 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Pre-Beta Hardening, Blocco 2 (Cron/Billing reliability): impostare a
+      # "external" SOLO dopo aver applicato questo Blueprint e verificato che
+      # il servizio cron "shardapps-scheduled-jobs" sotto gira correttamente
+      # — disattiva lo scheduling in-process (node-cron) di expiry-check e
+      # workflow-tick su QUESTO servizio web, che su piano Free si addormenta
+      # per inattività e non garantisce più l'esecuzione. Finché questa env
+      # var resta assente/"in-process" (default), il comportamento è
+      # IDENTICO a prima di questo cambio — nessuna azione richiesta per non
+      # regredire, ma nessun problema viene risolto finché non viene
+      # impostata esplicitamente. Vedi backend/jobs/expiry-check.js e
+      # backend/jobs/workflow-schedule.js per il gate CRON_MODE.
+      - key: CRON_MODE
+        value: in-process
+
+  # Pre-Beta Hardening, Blocco 2: expiry-check (blocco automatico app scadute
+  # da >5gg, requisito di fatturazione) e il tick schedule.tick del Logic/
+  # Workflow Engine NON devono più dipendere dal servizio web sopra restando
+  # sveglio — un Render Cron Job dedicato ha la propria infrastruttura,
+  # indipendente dal traffico HTTP del servizio web. Esegue UNA volta per
+  # invocazione (scripts/run-scheduled-jobs.js, mai un proprio node-cron/
+  # scheduler interno: il timing è delegato interamente a `schedule` sotto)
+  # e termina — nessun keep-alive, nessun ping, nessuna richiesta periodica
+  # inutile: è la stessa identica infrastruttura schedulata di Render, non un
+  # workaround.
+  #
+  # Lock atomico (lib/cron-lock.js, tabella cron_job_runs) contro l'esecuzione
+  # doppia nella stessa finestra: sicuro anche prima che CRON_MODE=external
+  # venga impostato sul servizio web sopra (fase di transizione).
+  - type: cron
+    name: shardapps-scheduled-jobs
+    runtime: node
+    region: frankfurt
+    # Piano non specificato: Render assegna il piano cron di default in fase
+    # di applicazione del Blueprint — verificare/scegliere il piano più
+    # economico compatibile (i Render Cron Job sono fatturati per minuti di
+    # esecuzione, non come un servizio always-on) al momento del deploy.
+    branch: main
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node scripts/run-scheduled-jobs.js
+    # Ogni 15 minuti: stesso intervallo del tick del Logic/Workflow Engine
+    # (WORKFLOW_TICK_CRON, invariato). expiry-check è per natura giornaliero
+    # (lock su chiave = data, vedi todayRunKey()): le invocazioni delle
+    # 23:45 esaurienti del giorno restano no-op economici grazie al lock,
+    # nessuno spreco reale di minuti di esecuzione oltre la query iniziale.
+    schedule: "*/15 * * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: APP_URL
+        value: https://shardapps.com
