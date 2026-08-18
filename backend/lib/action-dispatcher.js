@@ -17,30 +17,20 @@
 // http(s) già applicato in site-schema.ts, che non può vedere a cosa risolve
 // davvero un hostname (né seguire redirect in modo sicuro).
 const { validateWebhookUrl } = require('./ssrf-guard');
+const { captureError } = require('./error-tracking');
+// send_notification (sotto): invio email centralizzato (Notifications, Pre-
+// Beta Hardening Round 2) — prima questo file inizializzava un proprio
+// client Resend con invio inline; ora delega a lib/email.js, l'unico punto
+// del backend che parla con Resend (timeout+retry+template condivisi, vedi
+// quel file). Nessun nuovo provider, stessa env var RESEND_API_KEY/
+// RESEND_FROM_EMAIL già in uso.
+const { sendTemplatedEmail } = require('./email');
 
 // Timeout esplicito sul fetch verso il webhook: senza, una destinazione lenta
 // o che non risponde terrebbe aperta la connessione indefinitamente — questo
 // endpoint è fire-and-forget rispetto al client, ma non deve poter esaurire
 // socket/memoria del processo backend (vedi audit, Focus 7 DoS).
 const WEBHOOK_FETCH_TIMEOUT_MS = 5000;
-
-// ─── Fase 4 (Logic/Workflow Engine): provider reale per send_notification ──
-// Stesso identico pattern difensivo di backend/jobs/expiry-check.js (unico
-// altro punto del backend che invia email oggi): require lazy, mai un throw
-// a module-load se il pacchetto o la env var mancano — send_notification
-// deve continuare a "funzionare" (loggare, mai rompere il workflow) anche
-// senza Resend configurato in un dato ambiente. NON un nuovo provider: stessa
-// integrazione, stessa env var RESEND_API_KEY/RESEND_FROM_EMAIL già in uso.
-let resend = null;
-try {
-  const { Resend } = require('resend');
-  if (process.env.RESEND_API_KEY) {
-    resend = new Resend(process.env.RESEND_API_KEY);
-  }
-} catch {
-  console.log('[action-dispatcher] Resend non configurato - send_notification resta solo log');
-}
-const NOTIFICATION_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'noreply@zeusx.com';
 
 // Log "dispatched" subito, poi un log separato asincrono con l'esito reale
 // della consegna (delivered/failed) quando conosciuto — stesso principio di
@@ -100,6 +90,121 @@ function buildPayload({ appId, recordId, entity, action }) {
   };
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── Retry (Pre-Beta Hardening, Blocco 8) ───────────────────────────────────
+// Al più MAX_WEBHOOK_RETRIES tentativi extra, SOLO su errori transitori
+// (timeout, 429, 5xx) — mai su un 4xx permanente (400/401/403/404/...): un
+// target che rifiuta la richiesta con un errore di validazione non
+// cambierebbe risposta riprovando. Backoff breve e crescente tra un
+// tentativo e l'altro, mai un loop indefinito.
+const MAX_WEBHOOK_RETRIES = 2;
+const WEBHOOK_RETRY_BACKOFF_MS = Number(process.env.WEBHOOK_RETRY_BACKOFF_MS || '1000');
+
+function isTransientWebhookFailure(status, isTimeoutOrNetwork) {
+  if (isTimeoutOrNetwork) return true;
+  if (status === 429) return true;
+  if (status !== undefined && status >= 500) return true;
+  return false;
+}
+
+// Header MAI sovrascrivibili da un'azione configurata dal tenant (http_request):
+// Host/Content-Length sono gestiti dal runtime fetch stesso (impostarli a
+// mano è comunque ignorato dai motori fetch moderni, ma li togliamo comunque
+// esplicitamente); Content-Type resta sempre quello deciso qui in base al
+// body, mai sovrascrivibile — un content-type inatteso è un vettore comune
+// di request smuggling/parsing ambiguo lato target, non un rischio che vale
+// la pena correre per un'azione "generica". Case-insensitive: gli header
+// HTTP non fanno distinzione di maiuscole/minuscole.
+const FORBIDDEN_HTTP_ACTION_HEADERS = new Set(['host', 'content-length', 'content-type']);
+const MAX_HTTP_ACTION_HEADERS = 10;
+
+// Sanifica gli header di un'azione http_request: whitelist "per esclusione"
+// (tutto ammesso tranne i pochi vietati sopra), tetto sul numero totale per
+// non permettere di gonfiare la richiesta. Usata SOLO da http_request:
+// trigger_webhook non accetta header custom, resta fisso su
+// Content-Type: application/json come sempre.
+function sanitizeHttpActionHeaders(rawHeaders) {
+  const entries = Object.entries(rawHeaders || {})
+    .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && !FORBIDDEN_HTTP_ACTION_HEADERS.has(k.toLowerCase()))
+    .slice(0, MAX_HTTP_ACTION_HEADERS);
+  return Object.fromEntries(entries);
+}
+
+// Un singolo tentativo di consegna: SEMPRE preceduto da una validazione SSRF
+// fresca (mai riusata da un tentativo precedente) — un retry a distanza di
+// secondi è una nuova finestra per un DNS rebinding, la stessa ragione per
+// cui la validazione originale non viene fatta una sola volta al salvataggio
+// dello schema (vedi commento storico più sotto). redirect:'manual' e il
+// timeout esplicito restano invariati ad ogni tentativo. `options` (Blocco
+// Integrations Round 2): method/headers/body configurabili per http_request,
+// default invariati (POST + JSON) per trigger_webhook.
+async function attemptWebhookDelivery(url, payload, options = {}) {
+  const validation = await validateWebhookUrl(url);
+  if (!validation.safe) {
+    return { delivered: false, blocked: true, error: `Bloccato da SSRF guard: ${validation.reason}` };
+  }
+  const method = options.method || 'POST';
+  const hasBody = method !== 'GET' && method !== 'DELETE';
+  const headers = { ...(options.headers || {}) };
+  let body;
+  if (hasBody) {
+    if (typeof options.body === 'string') {
+      body = options.body;
+      // Content-Type deciso qui, mai lasciato all'azione configurata (vedi
+      // FORBIDDEN_HTTP_ACTION_HEADERS): un body stringa esplicito (http_request)
+      // resta testo semplice a meno che sembri già JSON, il payload standard
+      // (trigger_webhook) è sempre JSON.
+      headers['Content-Type'] = headers['Content-Type'] || 'text/plain';
+    } else {
+      body = JSON.stringify(payload);
+      headers['Content-Type'] = 'application/json';
+    }
+  }
+  try {
+    const res = await fetch(url, {
+      method,
+      headers,
+      ...(hasBody ? { body } : {}),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS),
+    });
+    if (res.ok) return { delivered: true, status: res.status };
+    const isRedirect = res.status >= 300 && res.status < 400;
+    return {
+      delivered: false,
+      status: res.status,
+      error: isRedirect ? `Redirect non seguito (HTTP ${res.status})` : `HTTP ${res.status}`,
+    };
+  } catch (err) {
+    const isTimeout = err.name === 'TimeoutError';
+    return { delivered: false, isTimeoutOrNetwork: true, error: isTimeout ? `Timeout dopo ${WEBHOOK_FETCH_TIMEOUT_MS}ms` : (err.message || String(err)) };
+  }
+}
+
+// Orchestrazione retry: ritorna l'esito finale + `attempts` (per il log/
+// audit trail, vedi retry_count già supportato da app_action_logs). Ogni
+// tentativo rivalida SSRF da capo (vedi attemptWebhookDelivery).
+async function deliverWebhookWithRetry(url, payload, options = {}) {
+  let lastResult;
+  for (let attempt = 0; attempt <= MAX_WEBHOOK_RETRIES; attempt++) {
+    const result = await attemptWebhookDelivery(url, payload, options);
+    lastResult = result;
+    if (result.delivered || result.blocked) {
+      return { ...result, attempts: attempt + 1 };
+    }
+    const transient = isTransientWebhookFailure(result.status, result.isTimeoutOrNetwork);
+    if (!transient || attempt === MAX_WEBHOOK_RETRIES) {
+      return { ...result, attempts: attempt + 1 };
+    }
+    console.warn(`[action-dispatcher] webhook tentativo ${attempt + 1} fallito (${result.error}), retry breve...`);
+    await sleep(WEBHOOK_RETRY_BACKOFF_MS * (attempt + 1));
+  }
+  return { ...lastResult, attempts: MAX_WEBHOOK_RETRIES + 1 };
+}
+
 // trigger_webhook: se l'azione ha un target configurato (action.webhookUrl,
 // vedi EntityActionSchema in site-schema.ts), esegue una POST asincrona con
 // il payload standard — "asincrona" nel senso che non blocca la risposta
@@ -111,12 +216,13 @@ function buildPayload({ appId, recordId, entity, action }) {
 //
 // Fix SSRF (Security Audit Fase 4, BLOCKER): validateWebhookUrl risolve
 // l'hostname via DNS e verifica OGNI indirizzo risolto contro la denylist di
-// IP privati/riservati (vedi lib/ssrf-guard.js) — gira ad ogni esecuzione,
-// non solo al salvataggio dello schema, perché un dominio "pubblico" al
-// momento del salvataggio può risolvere altrove in seguito (DNS rebinding,
-// record modificato dal proprietario del dominio). Se non sicuro: NESSUNA
-// fetch viene eseguita, l'evento è loggato come 'failed' con il motivo —
-// fail-closed, mai un tentativo silenzioso.
+// IP privati/riservati (vedi lib/ssrf-guard.js) — gira ad ogni esecuzione
+// (ogni tentativo, non solo il primo — vedi attemptWebhookDelivery), non
+// solo al salvataggio dello schema, perché un dominio "pubblico" al momento
+// del salvataggio può risolvere altrove in seguito (DNS rebinding, record
+// modificato dal proprietario del dominio). Se non sicuro: NESSUNA fetch
+// viene eseguita, l'evento è loggato come 'failed' con il motivo —
+// fail-closed, mai un tentativo silenzioso, mai un retry su un blocco SSRF.
 async function dispatchTriggerWebhook(supabase, ctx) {
   const { appId, tenantId, recordId, entity, action, actorRole, actorEmail, workflowId, eventType } = ctx;
   const logBase = { appId, tenantId, recordId, entity, action, actorRole, actorEmail, workflowId, eventType };
@@ -140,37 +246,40 @@ async function dispatchTriggerWebhook(supabase, ctx) {
     });
     // dispatched:false — a differenza del caso "nessun webhookUrl", qui
     // l'azione era destinata a un target reale che abbiamo rifiutato: il
-    // chiamante non deve credere che qualcosa sia stato inviato.
+    // chiamante non deve credere che qualcosa sia stato inviato. Nessun
+    // retry: un blocco SSRF è deterministico sull'URL configurato, non un
+    // guasto transitorio del target.
     return { dispatched: false, delivered: false, blocked: true };
   }
 
   // Fire-and-forget: la promise non viene attesa da chi chiama
-  // dispatchAppAction, il log dell'esito arriva quando la fetch risolve.
-  // redirect:'manual' — un 3xx NON viene mai seguito automaticamente (un
-  // redirect potrebbe puntare a un indirizzo interno, bypassando il check
-  // sopra fatto solo sull'URL originale): trattato come consegna fallita.
-  // signal: timeout — un target lento/che non risponde non deve poter
-  // tenere aperta la connessione indefinitamente (vedi audit, Focus 7 DoS).
-  fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    redirect: 'manual',
-    signal: AbortSignal.timeout(WEBHOOK_FETCH_TIMEOUT_MS),
-  })
-    .then((res) => {
-      const isRedirect = res.status >= 300 && res.status < 400;
+  // dispatchAppAction, il log dell'esito arriva quando l'ultimo tentativo si
+  // conclude. Il primo tentativo qui dentro rivalida SSRF di nuovo (costo
+  // trascurabile, un secondo dns.lookup): resta corretto anche se in futuro
+  // questa funzione venisse richiamata da un percorso che salta il controllo
+  // sincrono sopra.
+  deliverWebhookWithRetry(url, payload)
+    .then((result) => {
+      if (!result.delivered && !result.blocked) {
+        // Pre-Beta Hardening, Blocco 7: visibilità su "webhook falliti" come
+        // categoria (deduplicata per route, non per singolo target — vedi
+        // lib/alerting.js), non un allarme per ogni singola consegna fallita.
+        captureError('action-dispatcher.trigger_webhook', new Error(result.error), { appId: logBase.appId, attempts: result.attempts });
+      }
       return logAction(supabase, {
         ...logBase,
-        status: res.ok ? 'delivered' : 'failed',
+        status: result.delivered ? 'delivered' : 'failed',
         payload,
-        error: res.ok ? undefined : (isRedirect ? `Redirect non seguito (HTTP ${res.status})` : `HTTP ${res.status}`),
+        error: result.delivered ? undefined : result.error,
+        retryCount: result.attempts - 1,
       });
     })
-    .catch((err) => logAction(supabase, {
-      ...logBase, status: 'failed', payload,
-      error: err.name === 'TimeoutError' ? `Timeout dopo ${WEBHOOK_FETCH_TIMEOUT_MS}ms` : (err.message || String(err)),
-    }));
+    .catch((err) => {
+      // Rete di sicurezza aggiuntiva: deliverWebhookWithRetry già non lancia
+      // in condizioni normali (ogni ramo ritorna un oggetto, mai un throw).
+      captureError('action-dispatcher.trigger_webhook', err, { appId: logBase.appId });
+      return logAction(supabase, { ...logBase, status: 'failed', payload, error: err.message || String(err) });
+    });
 
   await logAction(supabase, { ...logBase, status: 'dispatched', payload });
   return { dispatched: true, delivered: null };
@@ -201,9 +310,21 @@ function resolveNotificationRecipient(ctx) {
   return 'app_owner'; // default esplicito, sia per azione diretta sia per notification.recipient==='app_owner'
 }
 
-async function resolveAppOwnerEmail(supabase, appId) {
-  const { data } = await supabase.from('apps').select('client_email, name').eq('id', appId).maybeSingle();
-  return { email: data?.client_email || null, appName: data?.name || 'la tua app' };
+// Carica in una sola query sia i dati necessari a risolvere il destinatario
+// 'app_owner' sia la preferenza di notifica dell'app (notification_preferences,
+// Notifications Round 2): la preferenza si applica a QUALUNQUE destinatario
+// (anche 'record_field', es. il cliente di un ordine), non solo al titolare —
+// "questa app non deve mandare email automatiche" vale per tutte, quindi la
+// query serve comunque anche quando il destinatario finale non è l'owner.
+async function loadAppNotificationContext(supabase, appId) {
+  const { data } = await supabase.from('apps').select('client_email, name, notification_preferences').eq('id', appId).maybeSingle();
+  const prefs = data?.notification_preferences;
+  // Fail-open sul default (email:true) se la colonna manca ancora (migration
+  // non applicata su questo ambiente) o è null/malformata — MAI un blocco
+  // silenzioso delle notifiche per un dettaglio di migrazione, stesso
+  // principio già seguito da ai-usage.js sui budget mancanti.
+  const emailEnabled = prefs && typeof prefs === 'object' && prefs.email === false ? false : true;
+  return { email: data?.client_email || null, appName: data?.name || 'la tua app', emailEnabled };
 }
 
 async function dispatchSendNotification(supabase, ctx) {
@@ -220,46 +341,98 @@ async function dispatchSendNotification(supabase, ctx) {
     return { dispatched: false, delivered: false };
   }
 
-  let toEmail;
-  let appName = entity;
-  if (recipientKind === 'app_owner') {
-    const owner = await resolveAppOwnerEmail(supabase, appId);
-    toEmail = owner.email;
-    appName = owner.appName;
-  } else {
-    toEmail = recipientKind; // già un'email risolta da record_field
+  const appCtx = await loadAppNotificationContext(supabase, appId);
+
+  if (!appCtx.emailEnabled) {
+    // status resta nel vocabolario esistente di app_action_logs (CHECK
+    // constraint su 'dispatched'/'delivered'/'failed', migration
+    // 20260813000000): stesso pattern già in uso poco sotto per "Resend non
+    // configurato" — un dettaglio nel payload, non un nuovo valore di status.
+    await logAction(supabase, {
+      ...logBase, status: 'dispatched', payload: { ...payload, note: 'Notifiche email disattivate per questa app (notification_preferences.email=false): notifica registrata ma non inviata.' },
+    });
+    return { dispatched: true, delivered: false, skipped: true };
   }
+
+  const toEmail = recipientKind === 'app_owner' ? appCtx.email : recipientKind; // 'record_field': già un'email risolta
 
   if (!toEmail) {
     await logAction(supabase, { ...logBase, status: 'failed', payload, error: 'Nessun indirizzo email disponibile per il destinatario' });
     return { dispatched: false, delivered: false };
   }
 
-  if (!resend) {
+  const result = await sendTemplatedEmail(toEmail, 'workflow_notification', {
+    subject: notification?.subject,
+    message: notification?.message || `L'azione "${action.label}" è stata eseguita su un elemento di ${entity}.`,
+    appName: appCtx.appName,
+  }, { appId });
+
+  if (result.skipped) {
     await logAction(supabase, {
       ...logBase, status: 'dispatched',
-      payload: { ...payload, note: 'Resend non configurato in questo ambiente: notifica registrata ma non inviata.' },
+      payload: { ...payload, to: toEmail, note: result.reason || 'Resend non configurato in questo ambiente: notifica registrata ma non inviata.' },
     });
     return { dispatched: true, delivered: false };
   }
+  await logAction(supabase, {
+    ...logBase, status: result.sent ? 'delivered' : 'failed',
+    payload: { ...payload, to: toEmail }, error: result.sent ? undefined : result.error,
+  });
+  return { dispatched: true, delivered: result.sent };
+}
 
-  const subject = notification?.subject || `Notifica da ${appName}`;
-  const message = notification?.message || `L'azione "${action.label}" è stata eseguita su un elemento di ${entity}.`;
+// ─── http_request (Integrations — Pre-Beta Hardening Round 2) ──────────────
+// Azione HTTP generica: URL/metodo/header/body scelti dal tenant in fase di
+// creazione del workflow (WorkflowActionSchema in site-schema.ts). Stessa
+// identica infrastruttura di trigger_webhook (SSRF guard ad ogni tentativo,
+// timeout, retry su transitori, mai su blocco SSRF/4xx permanenti) — questa
+// funzione non duplica nulla, chiama deliverWebhookWithRetry con le opzioni
+// dell'azione invece del payload/metodo fissi di trigger_webhook.
+async function dispatchHttpRequest(supabase, ctx) {
+  const { appId, tenantId, recordId, entity, action, actorRole, actorEmail, workflowId, eventType } = ctx;
+  const logBase = { appId, tenantId, recordId, entity, action, actorRole, actorEmail, workflowId, eventType };
+  const payload = buildPayload(ctx);
+  const url = typeof action.url === 'string' ? action.url.trim() : '';
 
-  try {
-    await resend.emails.send({
-      from: NOTIFICATION_FROM_EMAIL,
-      to: toEmail,
-      subject,
-      html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;"><p>${message}</p></div>`,
-    });
-    await logAction(supabase, { ...logBase, status: 'delivered', payload: { ...payload, to: toEmail } });
-    return { dispatched: true, delivered: true };
-  } catch (err) {
-    console.error('[action-dispatcher] invio notifica fallito:', err.message || err);
-    await logAction(supabase, { ...logBase, status: 'failed', payload: { ...payload, to: toEmail }, error: err.message || String(err) });
-    return { dispatched: true, delivered: false };
+  if (!url) {
+    await logAction(supabase, { ...logBase, status: 'failed', payload, error: 'Nessun URL configurato sull\'azione http_request' });
+    return { dispatched: false, delivered: false };
   }
+
+  const method = typeof action.method === 'string' ? action.method.toUpperCase() : 'POST';
+  const headers = sanitizeHttpActionHeaders(action.headers);
+  const body = typeof action.body === 'string' ? action.body : undefined;
+
+  // Stesso identico blocco sincrono "prima risposta" di dispatchTriggerWebhook:
+  // un blocco SSRF va rilevato PRIMA di rispondere al chiamante, non solo nel
+  // retry asincrono in background.
+  const validation = await validateWebhookUrl(url);
+  if (!validation.safe) {
+    console.warn(`[action-dispatcher] http_request bloccato (SSRF guard): ${url} — ${validation.reason}`);
+    await logAction(supabase, { ...logBase, status: 'failed', payload, error: `Bloccato da SSRF guard: ${validation.reason}` });
+    return { dispatched: false, delivered: false, blocked: true };
+  }
+
+  deliverWebhookWithRetry(url, payload, { method, headers, body })
+    .then((result) => {
+      if (!result.delivered && !result.blocked) {
+        captureError('action-dispatcher.http_request', new Error(result.error), { appId: logBase.appId, attempts: result.attempts });
+      }
+      return logAction(supabase, {
+        ...logBase,
+        status: result.delivered ? 'delivered' : 'failed',
+        payload,
+        error: result.delivered ? undefined : result.error,
+        retryCount: result.attempts - 1,
+      });
+    })
+    .catch((err) => {
+      captureError('action-dispatcher.http_request', err, { appId: logBase.appId });
+      return logAction(supabase, { ...logBase, status: 'failed', payload, error: err.message || String(err) });
+    });
+
+  await logAction(supabase, { ...logBase, status: 'dispatched', payload: { ...payload, method, note: 'Chiamata HTTP in corso, esito registrato quando disponibile.' } });
+  return { dispatched: true, delivered: null };
 }
 
 /**
@@ -289,7 +462,20 @@ async function dispatchAppAction(supabase, ctx) {
   const { action } = ctx;
   if (action.type === 'trigger_webhook') return dispatchTriggerWebhook(supabase, ctx);
   if (action.type === 'send_notification') return dispatchSendNotification(supabase, ctx);
+  if (action.type === 'http_request') return dispatchHttpRequest(supabase, ctx);
   throw new Error(`dispatchAppAction: tipo azione non gestito "${action.type}"`);
 }
 
-module.exports = { dispatchAppAction, logAction };
+module.exports = {
+  dispatchAppAction,
+  logAction,
+  sanitizeHttpActionHeaders,
+  // Esportate per i test (Blocco 8 — retry webhook): dispatchTriggerWebhook
+  // stessa non è testabile in isolamento a livello di ESITO perché è
+  // fire-and-forget (ritorna prima che il retry finisca) — questi due sono
+  // il vero motore testabile direttamente, senza mockare l'intera catena
+  // Express/Supabase.
+  deliverWebhookWithRetry,
+  attemptWebhookDelivery,
+  MAX_WEBHOOK_RETRIES,
+};

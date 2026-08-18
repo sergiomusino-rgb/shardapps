@@ -14,7 +14,17 @@ const VALID_EVENTS = new Set([
 
 const VALID_ACTION_TYPES = new Set([
   'change_state', 'trigger_webhook', 'send_notification', 'update_field', 'create_related_record',
+  // http_request (Integrations — Pre-Beta Hardening Round 2): azione HTTP
+  // generica (URL/metodo/header/body configurabili), a differenza di
+  // trigger_webhook (sempre POST, payload fisso). Stessa barriera SSRF di
+  // trigger_webhook, applicata ad ogni tentativo dal dispatcher, mai qui.
+  'http_request',
 ]);
+
+// Metodi HTTP ammessi per http_request — stesso principio di
+// VALID_ACTION_TYPES: un vocabolario chiuso, mai una stringa arbitraria
+// passata al fetch.
+const VALID_HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
 function toId(value, fallback) {
   if (value == null) return fallback;
@@ -48,6 +58,19 @@ function normalizeAction(raw) {
     // la barriera autoritativa (risoluzione DNS reale) resta ssrf-guard.js,
     // invocata da action-dispatcher.js ad ogni esecuzione — non ridotta qui.
     return { type, webhookUrl: typeof raw.webhookUrl === 'string' ? raw.webhookUrl : undefined };
+  }
+  if (type === 'http_request') {
+    if (typeof raw.url !== 'string' || !raw.url) return null;
+    const method = typeof raw.method === 'string' && VALID_HTTP_METHODS.has(raw.method.toUpperCase())
+      ? raw.method.toUpperCase()
+      : 'POST';
+    // headers: whitelist libera lato forma, la sanificazione autoritativa
+    // (mai Host/Content-Length/Content-Type) resta in action-dispatcher.js
+    // al momento dell'esecuzione — stesso principio di SSRF guard sopra.
+    const headers = raw.headers && typeof raw.headers === 'object' && !Array.isArray(raw.headers)
+      ? Object.fromEntries(Object.entries(raw.headers).filter(([k, v]) => typeof k === 'string' && typeof v === 'string'))
+      : {};
+    return { type, url: raw.url, method, headers, body: typeof raw.body === 'string' ? raw.body : undefined };
   }
   if (type === 'send_notification') {
     return {
@@ -116,4 +139,5 @@ module.exports = {
   normalizeAction,
   VALID_EVENTS,
   VALID_ACTION_TYPES,
+  VALID_HTTP_METHODS,
 };

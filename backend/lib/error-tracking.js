@@ -19,6 +19,12 @@
 // MAI segreti/credenziali: chi chiama questo modulo resta responsabile di
 // non passare password/token nel context (stesso principio di data
 // minimization già seguito da action-dispatcher.js::buildPayload).
+// Pre-Beta Hardening, Blocco 7: ogni captureError innesca anche un tentativo
+// di alerting (lib/alerting.js) — fire-and-forget, mai un await bloccante,
+// mai un'eccezione propagata al chiamante di captureError. Se nessun canale
+// è configurato (env var assenti), maybeSendAlert è già un no-op silenzioso
+// di suo: questo require lazy evita solo un ciclo di dipendenze inutile a
+// module-load se in futuro alerting.js dovesse richiedere error-tracking.js.
 function captureError(route, err, context = {}) {
   const entry = {
     level: 'error',
@@ -29,6 +35,14 @@ function captureError(route, err, context = {}) {
     timestamp: new Date().toISOString(),
   };
   console.error('[error-tracking]', JSON.stringify(entry));
+
+  try {
+    const { maybeSendAlert } = require('./alerting');
+    maybeSendAlert({ route, message: entry.message, context }).catch(() => {});
+  } catch {
+    // alerting.js non disponibile per qualunque motivo: mai far fallire
+    // captureError per questo, che resta prima di tutto un logger.
+  }
 }
 
 module.exports = { captureError };

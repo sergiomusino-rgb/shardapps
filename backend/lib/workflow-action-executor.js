@@ -115,7 +115,7 @@ async function executeWorkflowAction(supabase, ctx) {
   const logCtx = { appId, tenantId, recordId: record?.id, entity, action, workflowId, eventType, actorRole, actorEmail };
 
   try {
-    if (action.type === 'trigger_webhook' || action.type === 'send_notification') {
+    if (action.type === 'trigger_webhook' || action.type === 'send_notification' || action.type === 'http_request') {
       // Delega al punto centrale unico — mai duplicato qui, logging incluso.
       return await dispatchAppAction(supabase, {
         appId, tenantId, recordId: record?.id, entity, action, actorRole, actorEmail,
