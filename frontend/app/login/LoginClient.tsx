@@ -257,7 +257,7 @@ function LoginForm() {
                 <label htmlFor="terms-accept" className="cursor-pointer select-none text-sm text-slate-400">
                   {t('login_terms_accept_prefix')}{' '}
                   <Link
-                    href="/info"
+                    href="/terms"
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
