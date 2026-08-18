@@ -59,7 +59,7 @@ export default function PrivacyClient() {
         </div>
 
         <p className="text-sm text-slate-500 mt-8">
-          {t('info_back_to_home')} · <Link href="/info" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Termini e Condizioni</Link>
+          {t('info_back_to_home')} · <Link href="/terms" className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Termini e Condizioni</Link>
         </p>
       </div>
     </div>
