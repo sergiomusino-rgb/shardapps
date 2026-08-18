@@ -490,7 +490,7 @@ export default function HomeClient() {
               Condizioni (uniche presenti nel prodotto) ma non era linkata
               da nessuna pagina — irraggiungibile per un visitatore. */}
           <div className="flex items-center gap-4">
-            <Link href="/info" className="hover:text-slate-300 transition-colors">
+            <Link href="/terms" className="hover:text-slate-300 transition-colors">
               {t('login_terms_link')}
             </Link>
             {/* Pre-launch hardening: prima non esisteva alcun link pubblico
