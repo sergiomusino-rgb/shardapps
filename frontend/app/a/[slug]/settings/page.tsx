@@ -8,7 +8,9 @@ import { supabase } from '@/src/lib/supabase';
 import ZeusXBrandingFooter from '@/components/ZeusXBrandingFooter';
 import CollectedDataSection from './CollectedDataSection';
 import PushNotificationSection from './PushNotificationSection';
+import NotificationPreferencesSection from './NotificationPreferencesSection';
 import DataApiSection from './DataApiSection';
+import ActionLogsSection from './ActionLogsSection';
 
 interface AppInfo {
   id: string;
@@ -404,9 +406,15 @@ export default function SettingsPage() {
 
         <PushNotificationSection appId={appInfo.id} />
 
+        <NotificationPreferencesSection appId={appInfo.id} />
+
         {/* Data & API: export completo + gestione API key per l'accesso
             esterno ai dati (Public API v1) — vedi DataApiSection.tsx. */}
         <DataApiSection appId={appInfo.id} slug={slug} />
+
+        {/* Log Azioni: viewer minimo di app_action_logs (Pre-Beta Hardening,
+            Blocco 8) — vedi ActionLogsSection.tsx. */}
+        <ActionLogsSection appId={appInfo.id} />
 
         {/* QR Code per accesso mobile */}
         <div className="bg-slate-900/40 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 mb-6">
