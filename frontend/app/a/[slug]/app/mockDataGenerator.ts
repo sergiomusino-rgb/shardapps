@@ -6,7 +6,17 @@
  * costo, niente latenza, deterministico).
  */
 
-import { TableDef, FieldDef, fieldName } from './table-definitions';
+// Estensione esplicita (stesso motivo/pattern di site-schema.ts,
+// tsconfig.json::allowImportingTsExtensions): permette a questo modulo di
+// essere eseguito anche direttamente da `node --test`
+// (mockDataGenerator.test.ts, Quality Pass v1) — Next.js/webpack risolve un
+// import relativo con o senza estensione .ts in modo identico, nessun
+// cambio di comportamento a runtime nell'app. TableDef/FieldDef separati con
+// `import type` (sono interface, nessun binding a runtime): il type-stripping
+// nativo di `node --test` non elide da solo un named import type-only che
+// non usa la keyword esplicita, a differenza del compilatore TS di Next.js.
+import { fieldName } from './table-definitions.ts';
+import type { TableDef, FieldDef } from './table-definitions.ts';
 import { getPlaceholderCategoryForTable, type PlaceholderCategory } from '@/lib/recordPlaceholderImages';
 
 const FIRST_NAMES = ['Marco', 'Giulia', 'Luca', 'Sara', 'Andrea', 'Chiara', 'Davide', 'Francesca', 'Matteo', 'Elena'];
@@ -42,6 +52,21 @@ function pick<T>(arr: T[], index: number): T {
 /** Normalizza per il matching sul nome campo: minuscolo, senza accenti. */
 function norm(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/**
+ * Spezza un nome campo normalizzato nei suoi "token" (separati da
+ * underscore/spazi/altri non-alfanumerici) — es. "nome_lead" -> ["nome",
+ * "lead"], "valoreStimato" (già in minuscolo da norm) resta un unico token
+ * ma "valore_stimato" -> ["valore", "stimato"]. Usato per i pattern che
+ * prima richiedevano una corrispondenza ESATTA sull'intero nome campo
+ * (es. /^nome$/, che non intercetta "nome_lead" o "nome_cliente_finale"):
+ * un campo con id composto è comunissimo nei blueprint generati dall'AI e
+ * prima ricadeva silenziosamente nel catch-all generico (bug osservato nel
+ * benchmark: "Elemento Epsilon" ripetuto su più campi dello stesso record).
+ */
+function tokens(fn: string): string[] {
+  return fn.split(/[^a-z0-9]+/).filter(Boolean);
 }
 
 function slugifyForEmail(s: string): string {
@@ -91,10 +116,27 @@ function randomRecentDate(index: number): string {
 
 function generateFieldValue(field: FieldDef, identity: MockIdentity, index: number): unknown {
   const fn = norm(fieldName(field));
+  const fnTokens = tokens(fn);
 
   switch (field.type) {
     case 'checkbox':
       return index % 2 === 0;
+    // Nessun case 'id' qui: FieldDef.type non lo include nemmeno (il campo
+    // riservato "id" viene già filtrato da stripReservedIdField prima che
+    // qualunque tabella arrivi a generateMockRecord, vedi page.tsx) — un
+    // case per un valore che questo switch non può mai ricevere sarebbe
+    // codice morto oltre che un errore di tipo.
+    case 'state': {
+      // Stesso trattamento di "select" sopra: un campo di stato (macchina a
+      // stati, site-schema.ts Fase 4) ha il proprio vocabolario in
+      // field.states, non in field.options. Prima non esisteva questo case:
+      // ricadeva nel "default" testuale, dove il nome del campo (es. "stato",
+      // "stato_pipeline") raramente incrocia le regex euristiche e collassa
+      // sul catch-all identity.categoryTitle — lo stesso identico bug del
+      // caso "id" sopra, osservato nel benchmark.
+      if (!field.states?.length) return 'Standard';
+      return pick(field.states, index);
+    }
     case 'select': {
       if (!field.options?.length) return 'Standard';
       return pick(field.options, index);
@@ -131,14 +173,30 @@ function generateFieldValue(field: FieldDef, identity: MockIdentity, index: numb
       // reali da collegare — restano compilabili a mano.
       return undefined;
     default: {
-      // text e simili: euristica sul nome del campo
+      // text e simili: euristica sul nome del campo. Gli anchor esatti
+      // (^nome$, ^via$, ^prodotto$, ^titolo$) di prima matchavano SOLO un
+      // campo chiamato letteralmente così — un id composto come "nome_lead"
+      // o "nome_cliente_finale" (comunissimo nei blueprint generati dall'AI)
+      // non incrociava nessuna regex e cadeva nel catch-all generico
+      // (identity.categoryTitle ripetuto su più campi dello stesso record,
+      // il bug osservato nel benchmark). Ora l'anchor esatto è sostituito da
+      // un controllo sui token del nome campo (fnTokens), che riconosce
+      // "nome" anche dentro "nome_lead" senza però confondersi con parole
+      // che lo contengono come sottostringa (es. "nomenclatura").
       if (/ragione.?sociale|azienda|societ|impresa|fornitore/.test(fn)) return identity.companyName;
       if (/cognome/.test(fn)) return identity.lastName;
-      if (/^nome$|cliente|titolare|referente|contatto|nominativo/.test(fn) && !/prodotto|nome.?prodotto/.test(fn)) return identity.firstName;
-      if (/indirizzo|^via$/.test(fn)) return identity.street;
+      if ((fnTokens.includes('nome') || /cliente|titolare|referente|contatto|nominativo/.test(fn)) && !/prodotto|nome.?prodotto/.test(fn)) return identity.firstName;
+      if (/indirizzo/.test(fn) || fnTokens.includes('via')) return identity.street;
       if (/citt|comune/.test(fn)) return identity.city;
       if (/targa/.test(fn)) return `${pick(['AB', 'CD', 'EF', 'GH', 'LM'], index)}${String(randomInt(100, 999, index + 900))}${pick(['ZX', 'YW', 'VU', 'TS', 'RQ'], index + 1)}`;
-      if (/nome.?prodotto|^prodotto$|articolo|modello|^titolo$|^nome$/.test(fn)) return identity.categoryTitle;
+      if (/nome.?prodotto|articolo|modello/.test(fn) || fnTokens.includes('prodotto') || fnTokens.includes('titolo')) return identity.categoryTitle;
+      // Fallback monetario: un campo TESTUALE (non "number"/"currency", già
+      // gestiti sopra) il cui nome indica comunque un valore economico —
+      // es. "valore_stimato" su un'entità tipo CRM/opportunità, scritto come
+      // testo libero anziché come number nel blueprint — merita comunque un
+      // numero plausibile, non lo stesso titolo generico degli altri campi
+      // non riconosciuti del record.
+      if (/valore|importo|prezzo|costo|totale|tariffa|stimato/.test(fn)) return randomInt(15, 1500, index + 250);
       return identity.categoryTitle;
     }
   }

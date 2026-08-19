@@ -32,6 +32,7 @@ import type {
   PageSection,
   ActionButton,
 } from '@/src/lib/site-schema';
+import { buildFallbackLandingSections } from '@/src/lib/site-schema';
 import { sectionComponentRegistry } from '@/src/lib/creator/component-registry';
 import { SectionFallback } from './sections';
 import { hexToRgba, resolveActionHref } from './site-preview-utils';
@@ -168,17 +169,29 @@ export default function SitePreview({
     return schema.pages.find((p) => p.slug === activePageSlug) || schema.pages[0];
   }, [schema.pages, activePageSlug]);
 
+  // Rete di sicurezza SOLO per app già pubblicate prima del Quality Pass v1
+  // (Fix #1) con "sections": [] già salvato in apps.config: sanitizeSiteBlueprint
+  // ora riempie sempre le pagine vuote per le generazioni nuove/rigenerate,
+  // ma non riscrive retroattivamente i blueprint già persistiti. Calcolata
+  // qui, mai persistita: un refresh della pagina la ricalcola identica dagli
+  // stessi dati (businessConfig/adminPanel.entities), zero stato nuovo da
+  // gestire lato server.
+  const displaySections: PageSection[] = useMemo(() => {
+    if (activePage.sections.length > 0) return activePage.sections;
+    return buildFallbackLandingSections(schema.businessConfig, schema.adminPanel.entities);
+  }, [activePage.sections, schema.businessConfig, schema.adminPanel.entities]);
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-white">
       <SiteNav schema={schema} activeSlug={activePage.slug} onNavigate={(slug) => onNavigate?.(slug)} />
       <div className="flex-1 overflow-y-auto">
-        {activePage.sections.length === 0 ? (
+        {displaySections.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-gray-400">
             <MenuIcon size={28} />
             <p className="text-sm">Questa pagina non ha ancora sezioni.</p>
           </div>
         ) : (
-          activePage.sections.map((section, i) => (
+          displaySections.map((section, i) => (
             <SectionRenderer key={i} section={section} schema={schema} onNavigate={onNavigate} slug={slug} />
           ))
         )}

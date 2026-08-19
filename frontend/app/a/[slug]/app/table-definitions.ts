@@ -91,6 +91,33 @@ export function sortTablesForSidebar<T extends { name: string }>(tables: T[]): T
 }
 
 /**
+ * Sceglie le tabelle da mostrare in "Azioni Rapide" nella Dashboard (Quality
+ * Pass v1, Fix #4): prima era sempre `tables.slice(0, 4)`, l'ordine grezzo di
+ * generazione del blueprint — per un CRM con adminPanel.entities
+ * [attività, note, clienti, aziende, opportunità] l'entità realmente
+ * centrale ("opportunità", quella con un flusso di lavoro/stato da far
+ * avanzare) restava fuori dalle prime 4 e quindi invisibile in Azioni
+ * Rapide, mentre entità anagrafiche/di contorno la precedevano solo per
+ * ordine di dichiarazione nel prompt.
+ *
+ * Euristica: le tabelle con un campo `type:'state'` (macchina a stati,
+ * site-schema.ts Fase 4) sono per definizione quelle con un flusso di
+ * lavoro operativo — il caso d'uso tipico di un'azione rapida ("segna come
+ * completato", "avanza lo stato") — quindi vengono anteposte; a parità di
+ * questo criterio l'ordine originale (= ordine del blueprint) è preservato.
+ * Le tabelle di sistema (fatture/dati aziendali) restano escluse, stesso
+ * criterio già usato da sortTablesForSidebar. Puramente additivo: non tocca
+ * la sidebar (che mostra ancora l'elenco completo, invariato) né
+ * sortTablesForSidebar stessa.
+ */
+export function selectQuickActionTables<T extends { name: string; fields: FieldDef[] }>(tables: T[], max = 4): T[] {
+  const work = tables.filter((t) => !SYSTEM_TABLE_NAMES.has(t.name));
+  const withState = work.filter((t) => t.fields.some((f) => f.type === 'state'));
+  const withoutState = work.filter((t) => !t.fields.some((f) => f.type === 'state'));
+  return [...withState, ...withoutState].slice(0, max);
+}
+
+/**
  * Trova il campo prezzo "da mostrare al cliente" (es. prezzo di vendita)
  * distinguendolo da campi di costo interno (prezzo di acquisto): tabelle
  * come "prodotti" hanno spesso ENTRAMBI prezzo_acquisto e prezzo_vendita —
@@ -115,6 +142,75 @@ export function stripReservedIdField(table: TableDef): TableDef {
   const filtered = table.fields.filter((f) => fieldName(f).toLowerCase() !== 'id');
   if (filtered.length === table.fields.length) return table;
   return { ...table, fields: filtered };
+}
+
+// ─── Dashboard KPI custom (Quality Pass v1, Fix #3) ─────────────────────────
+// Calcola il valore di una dashboardCard (site-schema.ts/blueprint-schema.ts,
+// stesso concetto riusato dai due motori) sui record REALMENTE scaricati
+// dalla Dashboard — mai un dato inventato, coerente col principio "KPI reali"
+// già seguito dalle 3 card generiche esistenti (Tabelle/Record Totali/Ultima
+// Attività). Vive qui (non in page.tsx) perché è puro/senza JSX, testabile
+// con `node --test` come selectQuickActionTables sopra.
+
+/** Sottoinsieme del DashboardCard di blueprint-schema.ts effettivamente letto
+ * qui — evita di dover importare Zod/il tipo completo in un modulo
+ * puramente client-side senza dipendenze pesanti. */
+export interface DashboardCardLike {
+  type: string;
+  table: string;
+  label: string;
+  field?: string;
+  filter?: Record<string, unknown>;
+}
+
+/** Un record già "appiattito" (solo i valori dei campi, come vengono salvati
+ * in record.data) più la data di creazione, usata solo dal type "latest". */
+export interface DashboardCardRecord {
+  data: Record<string, unknown>;
+  createdAt?: string | null;
+}
+
+// Unica forma di filtro supportata oggi (vedi DASHBOARD_CARDS_DOC in
+// creator-site-generator.ts): {"campo": {"in": ["valore1", "valore2"]}}.
+// Una condizione non riconosciuta (formato diverso da quello documentato)
+// NON filtra — fail-open, mai una card che sparisce per un JSON malformato
+// che l'AI può comunque generare.
+function matchesCardFilter(record: Record<string, unknown>, filter?: Record<string, unknown>): boolean {
+  if (!filter) return true;
+  return Object.entries(filter).every(([field, cond]) => {
+    if (cond && typeof cond === 'object' && Array.isArray((cond as { in?: unknown }).in)) {
+      return (cond as { in: unknown[] }).in.includes(record[field]);
+    }
+    return true;
+  });
+}
+
+/** Restituisce il valore da mostrare sulla card, già formattato come stringa. */
+export function computeDashboardCardValue(card: DashboardCardLike, records: DashboardCardRecord[]): string {
+  const matched = records.filter((r) => matchesCardFilter(r.data, card.filter));
+  switch (card.type) {
+    case 'sum': {
+      const sum = matched.reduce((acc, r) => acc + (Number(r.data[card.field || '']) || 0), 0);
+      return String(sum);
+    }
+    case 'avg': {
+      if (matched.length === 0) return '0';
+      const sum = matched.reduce((acc, r) => acc + (Number(r.data[card.field || '']) || 0), 0);
+      const avg = sum / matched.length;
+      return Number.isInteger(avg) ? String(avg) : avg.toFixed(1);
+    }
+    case 'latest': {
+      if (matched.length === 0) return '—';
+      const sorted = [...matched].sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      const v = card.field ? sorted[0].data[card.field] : undefined;
+      return v != null && v !== '' ? String(v) : '—';
+    }
+    case 'count':
+    default:
+      return String(matched.length);
+  }
 }
 
 /**

@@ -303,7 +303,16 @@ export function toAppSpecificationFromSiteBlueprint(source: SiteBlueprintJSON): 
     businessConfig: { ...source.businessConfig, openingHours: source.businessConfig.openingHours.map((h) => ({ ...h })) },
     authConfig: { ...source.authConfig, supportedRoles: [...source.authConfig.supportedRoles] },
     navigation: undefined, // v2 non ha questo concetto: mai fabbricato
-    dashboard: undefined,  // v2 non ha questo concetto: mai fabbricato
+    // Quality Pass v1 (Fix #3): v2 ora ha "dashboardCards" (site-schema.ts),
+    // stesso identico shape riusato da v1 sopra (DashboardCardSchema,
+    // blueprint-schema.ts) — stesso pattern "array vuoto -> undefined, mai un
+    // AppDashboard fabbricato con 0 card" già usato dal ramo v1 qui sopra.
+    // Un blueprint v2 pre-esistente (dashboardCards assente in DB, risolto a
+    // [] dal default Zod) produce undefined qui esattamente come prima di
+    // questo fix: nessun cambio di comportamento per gli schemi già in prod.
+    dashboard: source.dashboardCards && source.dashboardCards.length > 0
+      ? { cards: source.dashboardCards.map((c) => ({ ...c })) }
+      : undefined,
     // Fase 4: copia diretta (shallow, come businessConfig/authConfig sopra) —
     // il workflow shape è già stato validato a monte da sanitizeSiteBlueprint.
     workflows: source.workflows.map((w) => ({ ...w })),
