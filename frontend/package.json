@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test \"lib/**/*.test.ts\" \"src/lib/**/*.test.js\" \"src/lib/**/*.test.ts\" \"app/api/creator/**/route.test.ts\" \"app/a/**/*.test.ts\" \"app/api/apps/**/*.test.ts\" \"app/api/user/**/*.test.ts\""
+    "test": "node --test \"lib/**/*.test.ts\" \"src/lib/**/*.test.js\" \"src/lib/**/*.test.ts\" \"app/api/creator/**/route.test.ts\" \"app/a/**/*.test.ts\" \"app/api/a/**/*.test.ts\" \"app/api/apps/**/*.test.ts\" \"app/api/user/**/*.test.ts\" \"app/api/admin/**/*.test.ts\" \"app/api/beta/**/*.test.ts\""
   },
   "dependencies": {
     "@fal-ai/client": "^1.10.1",
