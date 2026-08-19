@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 // separato, altrimenti il type-stripping nativo di `node --test` cerca
 // (fallendo) un export reale con quel nome — stesso motivo/pattern già
 // applicato in mockDataGenerator.ts per lo stesso import.
-import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar } from './table-definitions.ts';
+import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar, pickIdentityFields, findDisplayPriceField } from './table-definitions.ts';
 import type { TableDef, FieldDef } from './table-definitions.ts';
 
 function field(overrides: Partial<FieldDef> & { name: string; type: FieldDef['type'] }): FieldDef {
@@ -126,4 +126,62 @@ test('un filtro su una condizione non riconosciuta non filtra nulla (fail-open, 
     RECORDS
   );
   assert.equal(v, '3');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — Fix TEST E (issue GitHub #39, punto 3): pickIdentityFields
+// non deve più scegliere ciecamente fields[0] come titolo quando non c'è un
+// campo testo — un campo relation/number/date/state come titolo veniva poi
+// mostrato come valore GREZZO (o vuoto) invece che tramite risoluzione della
+// relazione. Riproduce esattamente lo schema "subscription" osservato nel
+// benchmark reale (member_id relation, plan_type select, price number,
+// start_date/expiry_date date, status state — nessun campo "text").
+// ═══════════════════════════════════════════════════════════════════════════
+
+function subscriptionLikeFields(): FieldDef[] {
+  return [
+    field({ name: 'member_id', type: 'relation', label: 'Member', targetTable: 'member', targetLabel: 'full_name' }),
+    field({ name: 'plan_type', type: 'select', label: 'Plan Type', options: ['Monthly', 'Annual'] }),
+    field({ name: 'price', type: 'number', label: 'Price' }),
+    field({ name: 'start_date', type: 'date', label: 'Start Date' }),
+    field({ name: 'expiry_date', type: 'date', label: 'Expiry Date' }),
+    field({ name: 'status', type: 'state', label: 'Status', states: ['active', 'expired'] }),
+  ];
+}
+
+test('pickIdentityFields: senza alcun campo "text", sceglie il campo relation come titolo (mai un number/date/state grezzo)', () => {
+  const { titleField } = pickIdentityFields(subscriptionLikeFields());
+  assert.equal(titleField?.type, 'relation');
+  assert.equal(titleField && (titleField.name), 'member_id');
+});
+
+test('pickIdentityFields: il campo prezzo (anche in inglese, "price") è escluso dal sottotitolo grazie a findDisplayPriceField language-independent', () => {
+  const { subtitleFields, priceField } = pickIdentityFields(subscriptionLikeFields());
+  assert.equal(priceField?.name, 'price');
+  assert.ok(!subtitleFields.some((f) => f.name === 'price'), 'price non deve comparire tra i sottotitoli: è già il campo prezzo dedicato');
+});
+
+test('pickIdentityFields: con un campo "text" presente, il comportamento pre-esistente resta invariato (nessuna regressione)', () => {
+  const fields = [
+    field({ name: 'nome_prodotto', type: 'text', label: 'Nome Prodotto' }),
+    field({ name: 'categoria', type: 'select', label: 'Categoria', options: ['A', 'B'] }),
+    field({ name: 'prezzo', type: 'currency', label: 'Prezzo' }),
+  ];
+  const { titleField } = pickIdentityFields(fields);
+  assert.equal(titleField?.name, 'nome_prodotto');
+});
+
+test('findDisplayPriceField: riconosce "price" (EN) esattamente come "prezzo"/"costo" (IT) — nessuna dipendenza dalla lingua', () => {
+  const enFields = [field({ name: 'price', type: 'number', label: 'Price' })];
+  const itFields = [field({ name: 'prezzo', type: 'number', label: 'Prezzo' })];
+  assert.equal(findDisplayPriceField(enFields)?.name, 'price');
+  assert.equal(findDisplayPriceField(itFields)?.name, 'prezzo');
+});
+
+test('findDisplayPriceField: esclude "prezzo_acquisto"/"purchase_price" (costo interno), preferisce "prezzo_vendita"/"selling_price"', () => {
+  const fields = [
+    field({ name: 'prezzo_acquisto', type: 'number', label: 'Prezzo Acquisto' }),
+    field({ name: 'prezzo_vendita', type: 'number', label: 'Prezzo Vendita' }),
+  ];
+  assert.equal(findDisplayPriceField(fields)?.name, 'prezzo_vendita');
 });

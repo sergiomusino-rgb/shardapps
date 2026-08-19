@@ -37,6 +37,13 @@ interface RecordCardGridProps {
   role?: string;
   /** Esegue un'azione di entità (table.actions) su un record. */
   onExecuteAction?: (recordId: string, actionId: string) => void;
+  /** Record disponibili per risolvere le colonne di relazione (field.targetTable)
+   * nell'id salvato -> etichetta leggibile del record correlato, chiave = nome
+   * tabella target. Assente/vuota = le colonne di relazione mostrano l'id
+   * grezzo — stessa prop già usata da DynamicDataTable.tsx (CreatorAI V3,
+   * fix TEST E: pickIdentityFields può scegliere un campo relation come
+   * titolo/sottotitolo quando non c'è un campo testo, e va risolto anche qui). */
+  relationRecords?: Record<string, Array<{ id: string; [key: string]: unknown }>>;
 }
 
 // Stessa identica logica di getVisibleActions in DynamicDataTable.tsx —
@@ -69,12 +76,27 @@ function formatValue(val: unknown, type: string): string {
   return String(val);
 }
 
+// Stessa identica logica di resolveRelationLabel in DynamicDataTable.tsx —
+// duplicata (non importata) per lo stesso motivo di getVisibleActions sopra:
+// RecordCardGrid è un renderer alternativo indipendente.
+function resolveRelationLabel(
+  field: { targetTable?: string; targetLabel?: string },
+  value: unknown,
+  relationRecords: Record<string, Array<{ id: string; [key: string]: unknown }>>
+): string | undefined {
+  if (!field.targetTable) return undefined;
+  if (value == null || value === '') return '';
+  const related = (relationRecords[field.targetTable] || []).find((r) => String(r.id) === String(value));
+  if (!related) return '—';
+  return String((field.targetLabel ? related[field.targetLabel] : undefined) ?? related.id ?? '');
+}
+
 // Griglia di card fotografiche per tabelle "vetrina" (veicoli, immobili,
 // prodotti, piatti): sostituisce le righe di tabella piatte con card ricche
 // di immagine — foto reale del record se presente, altrimenti un placeholder
 // Unsplash contestuale — badge, titolo e prezzo in evidenza, in linea con lo
 // stile "vetrina invitante" richiesto invece delle "semplici caselle".
-export default function RecordCardGrid({ table, records, category, colors, onEdit, onDelete, role, onExecuteAction }: RecordCardGridProps) {
+export default function RecordCardGrid({ table, records, category, colors, onEdit, onDelete, role, onExecuteAction, relationRecords = {} }: RecordCardGridProps) {
   const { imageField, titleField, badgeField, priceField, subtitleFields } = pickIdentityFields(table.fields);
 
   if (records.length === 0) {
@@ -93,7 +115,15 @@ export default function RecordCardGrid({ table, records, category, colors, onEdi
       {records.map((record) => {
         const realImage = imageField ? (record[fieldName(imageField)] as string | undefined) : undefined;
         const imageUrl = realImage || getPlaceholderImageUrl(category, String(record.id));
-        const title = titleField ? String(record[fieldName(titleField)] ?? table.label) : table.label;
+        // CreatorAI V3 (fix TEST E — issue GitHub #39, punto 3): titleField
+        // può essere un campo relation (pickIdentityFields ora lo sceglie
+        // come fallback quando manca un campo testo) — deve risolvere l'id
+        // salvato nell'etichetta leggibile del record collegato, mai
+        // stringificare l'id grezzo.
+        const titleRelationLabel = titleField ? resolveRelationLabel(titleField, record[fieldName(titleField)], relationRecords) : undefined;
+        const title = titleRelationLabel !== undefined
+          ? (titleRelationLabel || table.label)
+          : (titleField ? String(record[fieldName(titleField)] ?? table.label) : table.label);
         const badgeValue = badgeField ? String(record[fieldName(badgeField)] ?? '') : '';
         // Una volta identificato come "il" campo prezzo (findDisplayPriceField),
         // formattalo sempre come valuta a prescindere dal type dichiarato
@@ -174,7 +204,10 @@ export default function RecordCardGrid({ table, records, category, colors, onEdi
               {subtitleFields.length > 0 && (
                 <p style={{ margin: 0, fontSize: '12px', color: colors.textSecondary }}>
                   {subtitleFields
-                    .map((f) => formatValue(record[fieldName(f)], f.type))
+                    .map((f) => {
+                      const rel = resolveRelationLabel(f, record[fieldName(f)], relationRecords);
+                      return rel !== undefined ? rel : formatValue(record[fieldName(f)], f.type);
+                    })
                     .filter(Boolean)
                     .join(' · ')}
                 </p>

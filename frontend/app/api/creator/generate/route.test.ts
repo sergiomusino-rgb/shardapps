@@ -23,7 +23,10 @@ const GENERATION_JOBS_DEFAULTS = {
   artifacts: {}, error: null, retry_count: 0, fallback_used: false,
 };
 
-const VALID_PLAN = { projectType: 'gestionale', sector: 'officina-meccanica', mainEntities: ['clienti'], pages: ['home'], workflows: [], keyFeatures: [] };
+// CreatorAI V3 (sezioni 10-11): relations/metrics/formulas esplicitati
+// (invece di lasciarli al default Zod), così il confronto deepEqual sul job
+// persistito resta la fonte di verità sull'intera forma del piano.
+const VALID_PLAN = { projectType: 'gestionale', sector: 'officina-meccanica', mainEntities: ['clienti'], pages: ['home'], workflows: [], keyFeatures: [], relations: [], metrics: [], formulas: [] };
 
 function validGestionaleRawSchema(overrides: Record<string, unknown> = {}) {
   return {

@@ -405,6 +405,162 @@ test('Caso E — campi numerici semanticamente INDIPENDENTI (numero_dipendenti, 
   assert.ok((rec.quantita_prodotti as number) >= 1 && (rec.quantita_prodotti as number) <= 50);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — multilingua: gli stessi test F.1/F.2/Relations, ma con nomi
+// campo in INGLESE, devono produrre lo stesso comportamento degli
+// equivalenti italiani già testati sopra (issue GitHub #39, punto 1).
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('V3 multilingua: campi in inglese (full_name, phone, price) NON ricadono più su frasi generiche di note/descrizione', () => {
+  const t = table('members', [
+    field({ name: 'full_name', type: 'text' }),
+    field({ name: 'phone', type: 'text' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  // Un nome vero (word bank), mai una frase (i pool GENERIC_* sono tutte
+  // frasi con spazi multipli/punteggiatura finale — un nome proprio no).
+  assert.ok(typeof rec.full_name === 'string' && !(rec.full_name as string).endsWith('.'));
+  assert.ok(typeof rec.phone === 'string' && (rec.phone as string).length > 0);
+});
+
+test('V3 multilingua: "labor_cost = hours_worked × hourly_rate" (EN) coerente esattamente come "costo_manodopera = ore_lavorate × tariffa_oraria" (IT)', () => {
+  const t = table('work_orders', [
+    field({ name: 'hours_worked', type: 'number' }),
+    field({ name: 'hourly_rate', type: 'number' }),
+    field({ name: 'labor_cost', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 1);
+  assert.equal(rec.labor_cost, (rec.hours_worked as number) * (rec.hourly_rate as number));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — sezione 6: nuove formule (subtotal = quantity × unit_price,
+// total = subtotal + tax - discount, margin = revenue - cost), indipendenti
+// dall'ordine dei campi nel blueprint (stesso principio già garantito per
+// ore×tariffa/costo_totale in v2 — vedi Caso B sopra).
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('V3 formule: subtotal = quantity × unit_price quando entrambi i campi esistono sullo stesso record', () => {
+  const t = table('order_items', [
+    field({ name: 'quantity', type: 'number' }),
+    field({ name: 'unit_price', type: 'number' }),
+    field({ name: 'subtotal', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(rec.subtotal, (rec.quantity as number) * (rec.unit_price as number));
+});
+
+test('V3 formule: subtotal = quantity × unit_price resta coerente indipendentemente dall\'ordine dei campi nel blueprint', () => {
+  const t = table('order_items', [
+    field({ name: 'subtotal', type: 'number' }),
+    field({ name: 'unit_price', type: 'number' }),
+    field({ name: 'quantity', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 2);
+  assert.equal(rec.subtotal, (rec.quantity as number) * (rec.unit_price as number));
+});
+
+test('V3 formule: total = subtotal + tax - discount quando tutti i campi esistono sullo stesso record', () => {
+  const t = table('orders', [
+    field({ name: 'quantity', type: 'number' }),
+    field({ name: 'unit_price', type: 'number' }),
+    field({ name: 'subtotal', type: 'number' }),
+    field({ name: 'tax', type: 'number' }),
+    field({ name: 'discount', type: 'number' }),
+    field({ name: 'total', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  const expected = (rec.subtotal as number) + (rec.tax as number) - (rec.discount as number);
+  assert.equal(rec.total, expected);
+});
+
+test('V3 formule: margin = revenue - total_cost quando entrambi disponibili sullo stesso record', () => {
+  const t = table('projects', [
+    field({ name: 'labor_cost', type: 'number' }),
+    field({ name: 'material_cost', type: 'number' }),
+    field({ name: 'total_cost', type: 'number' }),
+    field({ name: 'revenue', type: 'number' }),
+    field({ name: 'margin', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(rec.total_cost, (rec.labor_cost as number) + (rec.material_cost as number));
+  assert.equal(rec.margin, (rec.revenue as number) - (rec.total_cost as number));
+});
+
+test('V3 formule: "unit_price"/"subtotal" (entrambi NON riconosciuti da nessuna regex italiana) non collidono più sullo stesso valore (issue GitHub #39, punto 2)', () => {
+  const t = table('order_items', [
+    field({ name: 'unit_price', type: 'number' }),
+    field({ name: 'subtotal', type: 'number' }),
+  ]);
+  // Senza quantity, subtotal ricade sul fallback indipendente — il punto è
+  // che NON deve più condividere lo stesso seed di unit_price.
+  for (let i = 0; i < 5; i++) {
+    const rec = generateMockRecord(t, i);
+    assert.notEqual(rec.unit_price, rec.subtotal, `record ${i}: unit_price e subtotal non devono coincidere`);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — sezione 5: date semantiche. Due campi "date" diversi sullo
+// stesso record (es. start_date/expiry_date) non devono più ricevere lo
+// stesso valore identico (bug reale osservato in TEST E del benchmark v2,
+// issue GitHub #39 punto 2) — e quando i ruoli sono riconoscibili
+// (inizio/fine), la relazione start < end deve valere sempre.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('V3 date: "start_date" ed "expiry_date" (entrambi type:"date") NON ricevono più lo stesso valore identico sullo stesso record', () => {
+  const t = table('subscriptions', [
+    field({ name: 'start_date', type: 'date' }),
+    field({ name: 'expiry_date', type: 'date' }),
+  ]);
+  for (let i = 0; i < 5; i++) {
+    const rec = generateMockRecord(t, i);
+    assert.notEqual(rec.start_date, rec.expiry_date, `record ${i}: start_date ed expiry_date non devono coincidere`);
+  }
+});
+
+test('V3 date: "start_date" < "expiry_date" sempre, quando entrambi i ruoli sono riconoscibili (relazione plausibile inizio < fine)', () => {
+  const t = table('subscriptions', [
+    field({ name: 'start_date', type: 'date' }),
+    field({ name: 'expiry_date', type: 'date' }),
+  ]);
+  for (let i = 0; i < 5; i++) {
+    const rec = generateMockRecord(t, i);
+    const start = new Date(rec.start_date as string).getTime();
+    const end = new Date(rec.expiry_date as string).getTime();
+    assert.ok(start < end, `record ${i}: start_date (${rec.start_date}) deve precedere expiry_date (${rec.expiry_date})`);
+  }
+});
+
+test('V3 date: coerenza start < end indipendente dall\'ordine dei campi nel blueprint', () => {
+  const t = table('subscriptions', [
+    field({ name: 'expiry_date', type: 'date' }),
+    field({ name: 'start_date', type: 'date' }),
+  ]);
+  const rec = generateMockRecord(t, 3);
+  const start = new Date(rec.start_date as string).getTime();
+  const end = new Date(rec.expiry_date as string).getTime();
+  assert.ok(start < end);
+  // L'ordine delle chiavi resta comunque quello di dichiarazione originale.
+  assert.deepEqual(Object.keys(rec), ['expiry_date', 'start_date']);
+});
+
+test('V3 date: un campo "data_nascita" resta un\'età adulta plausibile, mai confuso con una data di creazione/scadenza recente', () => {
+  const t = table('members', [field({ name: 'data_nascita', type: 'date' })]);
+  const rec = generateMockRecord(t, 0);
+  const years = (Date.now() - new Date(rec.data_nascita as string).getTime()) / (365 * 24 * 3600 * 1000);
+  assert.ok(years >= 17 && years <= 71, `data_nascita deve essere un'età adulta plausibile, trovato ${years.toFixed(1)} anni`);
+});
+
+test('V3 date: due campi "date" senza ruolo inizio/fine riconoscibile restano comunque distinti (variazione per-campo)', () => {
+  const t = table('logs', [
+    field({ name: 'data_evento_a', type: 'date' }),
+    field({ name: 'data_evento_b', type: 'date' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.notEqual(rec.data_evento_a, rec.data_evento_b);
+});
+
 test('Caso E bis — campi indipendenti su una tabella che HA ANCHE campi di costo correlati: i due gruppi non si mescolano', () => {
   const t = table('interventi', [
     field({ name: 'ore_lavorate', type: 'number' }),

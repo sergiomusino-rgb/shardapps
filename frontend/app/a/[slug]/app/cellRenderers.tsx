@@ -1,5 +1,6 @@
 import React from 'react';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { classifyFieldConcept, isFinancialConcept } from '@/lib/semantic-fields';
 
 // ─── Badge di stato colorati ────────────────────────────────────────────────
 // Keyword-matching semantico sul valore (es. "Pagato"→verde, "In Attesa"→ambra,
@@ -50,7 +51,10 @@ export function renderCellValue(record: Record<string, unknown>, fieldName: stri
   }
   if (type === 'number') {
     const n = Number(val);
-    const looksLikePrice = /prezzo|totale|importo|costo/i.test(fieldName);
+    // CreatorAI V3: classificazione language-independent (semantic-fields.ts)
+    // — prima riconosceva SOLO nomi campo italiani, un campo "price"/"total"
+    // (blueprint generato in inglese) non veniva mai formattato come valuta.
+    const looksLikePrice = isFinancialConcept(classifyFieldConcept(fieldName));
     if (!isNaN(n) && looksLikePrice) {
       return `${n.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
     }

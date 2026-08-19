@@ -266,6 +266,7 @@ export default function DynamicDataTable({
           onDelete={onDelete}
           role={role}
           onExecuteAction={onExecuteAction}
+          relationRecords={relationRecords}
         />
       ) : (
         <Card className="overflow-hidden">
@@ -341,7 +342,20 @@ export default function DynamicDataTable({
                             />
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-tenant-text">
-                                {String(record[fieldName(titleField!)] ?? '')}
+                                {/* CreatorAI V3 (fix TEST E — issue GitHub #39,
+                                    punto 3): il campo titolo può essere una
+                                    relation (pickIdentityFields ora la sceglie
+                                    come fallback quando non c'è un campo testo)
+                                    — deve risolvere l'id salvato nell'etichetta
+                                    leggibile del record collegato, mai
+                                    stringificare l'id grezzo (o restare vuoto,
+                                    come accadeva prima di questo fix). */}
+                                {renderCellValue(
+                                  record,
+                                  fieldName(titleField!),
+                                  titleField!.type,
+                                  resolveRelationLabel(titleField!, record[fieldName(titleField!)])
+                                )}
                               </div>
                               {identitySubtitleField && (
                                 <div className="truncate text-xs text-tenant-text-secondary">
