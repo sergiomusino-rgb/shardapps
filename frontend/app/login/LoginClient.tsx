@@ -99,6 +99,16 @@ function LoginForm() {
       if (signUpError) {
         if (signUpError.message.includes('already registered')) {
           setError(t('login_error_already_registered'));
+        } else if (signUpError.message.includes('Database error') || signUpError.message.includes('BETA_ACCESS_REQUIRED')) {
+          // Private Beta: signUp è respinto lato Postgres (trigger
+          // enforce_beta_allowlist su auth.users, migration
+          // 20260830000000) se l'email non ha una candidatura
+          // beta_applications approvata. GoTrue incapsula l'eccezione del
+          // trigger in un messaggio generico ("Database error saving new
+          // user"): il match sul frammento è deliberatamente ampio per
+          // coprire quel caso comune, con BETA_ACCESS_REQUIRED come
+          // fallback se una versione di GoTrue propaga il messaggio originale.
+          setError(t('login_error_beta_access_required'));
         } else {
           setError(signUpError.message);
         }

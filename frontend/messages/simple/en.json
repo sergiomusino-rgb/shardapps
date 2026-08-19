@@ -68,6 +68,7 @@
   "login_error_email_not_confirmed": "Email not confirmed. Check your inbox.",
   "login_error_password_length": "Password must be at least 6 characters.",
   "login_error_already_registered": "An account with this email already exists. Try signing in.",
+  "login_error_beta_access_required": "ShardApps is currently an invite-only Private Beta. This email hasn't been approved yet: apply at /beta or wait for your application to be confirmed.",
   "login_error_connection": "Connection error",
   "login_success_registered": "Registration complete! Sign in with your credentials.",
   "login_success_register_confirm": "Registration complete! Check your email to confirm the account, then sign in.",
