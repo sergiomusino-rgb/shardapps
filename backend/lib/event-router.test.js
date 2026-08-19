@@ -180,6 +180,92 @@ test('evento senza appId/tenantId/type -> nessun crash, nessun workflow eseguito
 
 // ─── state.changed con matcher toState/fromState ────────────────────────────
 
+// ─── webhook.received (Integrations Round 2 — POST /:appId/webhooks/incoming) ─
+// Stesso identico shape di evento costruito da routes/public-api.js: nessun
+// record preesistente (id:null, data:payload) e actorRole:'external_webhook'.
+
+test('webhook.received con trigger corrispondente -> il workflow esegue (record.id null ammesso, create_related_record non richiede una riga preesistente)', async () => {
+  // update_field/change_state non hanno senso su un payload id:null (non
+  // c'è alcuna riga app_records da aggiornare): il caso realistico per un
+  // webhook "headless" è create_related_record (crea una NUOVA riga a
+  // partire dai dati ricevuti) o le azioni di notifica/HTTP (fire-and-
+  // forget, coperte a parte in workflow-action-executor.test.js).
+  const workflows = [
+    { id: 'wf_webhook', name: 'Su webhook ordini', enabled: true,
+      trigger: { event: 'webhook.received', entity: 'ordini' },
+      actions: [{ type: 'create_related_record', targetEntity: 'ordini_ricevuti', fieldMapping: { cliente: 'cliente' } }] },
+  ];
+  const supabase = makeFakeSupabase(baseTables(configWith(workflows)));
+  const payload = { id: null, data: { cliente: 'Mario', totale: 42 } };
+
+  const summary = await routeEvent(supabase, {
+    type: 'webhook.received', appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini',
+    record: payload, actorRole: 'external_webhook',
+  });
+
+  assert.equal(summary.matched, 1);
+  assert.equal(summary.executed, 1);
+  // record.id null non deve mai far lanciare l'esecuzione: create_related_record
+  // legge solo record.data, mai record.id.
+  const created = supabase._tables.app_records.find((r) => r.table_name === 'ordini_ricevuti');
+  assert.ok(created, 'una nuova riga deve essere stata creata dal webhook');
+  assert.equal(created.data.cliente, 'Mario');
+  assert.equal(created.app_id, APP_ID);
+  assert.equal(created.tenant_id, TENANT_ID);
+});
+
+test('webhook.received senza entity nel trigger -> matcha un trigger generico (senza entity)', async () => {
+  const workflows = [
+    { id: 'wf_generico', name: 'Qualunque webhook', enabled: true,
+      trigger: { event: 'webhook.received' },
+      actions: [{ type: 'update_field', field: 'toccato', value: true }] },
+  ];
+  const supabase = makeFakeSupabase(baseTables(configWith(workflows)));
+  const payload = { id: null, data: { qualunque: 'cosa' } };
+
+  const summary = await routeEvent(supabase, {
+    type: 'webhook.received', appId: APP_ID, tenantId: TENANT_ID, record: payload, actorRole: 'external_webhook',
+  });
+
+  assert.equal(summary.matched, 1);
+  assert.equal(summary.executed, 1);
+});
+
+test('webhook.received con entity diversa da quella del trigger -> non scatta', async () => {
+  const workflows = [
+    { id: 'wf_solo_clienti', name: 'Solo clienti', enabled: true,
+      trigger: { event: 'webhook.received', entity: 'clienti' },
+      actions: [{ type: 'update_field', field: 'toccato', value: true }] },
+  ];
+  const supabase = makeFakeSupabase(baseTables(configWith(workflows)));
+  const payload = { id: null, data: {} };
+
+  const summary = await routeEvent(supabase, {
+    type: 'webhook.received', appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record: payload, actorRole: 'external_webhook',
+  });
+
+  assert.equal(summary.matched, 0);
+});
+
+test('webhook.received isolamento: un evento per APP_ID non esegue mai i workflow webhook di un\'altra app', async () => {
+  const sameShapeWorkflows = [
+    { id: 'wf_hook', name: 'Hook', enabled: true, trigger: { event: 'webhook.received' },
+      actions: [{ type: 'create_related_record', targetEntity: 'ricevuti', fieldMapping: {} }] },
+  ];
+  const supabase = makeFakeSupabase(baseTables(configWith(sameShapeWorkflows), configWith(sameShapeWorkflows)));
+  const payloadApp1 = { id: null, data: {} };
+
+  const summary = await routeEvent(supabase, {
+    type: 'webhook.received', appId: APP_ID, tenantId: TENANT_ID, record: payloadApp1, actorRole: 'external_webhook',
+  });
+
+  assert.equal(summary.matched, 1);
+  const createdRows = supabase._tables.app_records.filter((r) => r.table_name === 'ricevuti');
+  assert.equal(createdRows.length, 1, 'esattamente una riga creata, solo per APP_ID');
+  assert.equal(createdRows[0].app_id, APP_ID);
+  assert.equal(createdRows[0].tenant_id, TENANT_ID);
+});
+
 test('trigger con toState specifico non scatta per una transizione diversa', async () => {
   const workflows = [
     { id: 'wf_pronto', name: 'Solo su pronto', enabled: true,
