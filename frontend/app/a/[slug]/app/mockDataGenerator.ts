@@ -45,8 +45,63 @@ const CATEGORY_TITLES: Record<PlaceholderCategory, string[]> = {
 };
 const GENERIC_TITLES = ['Elemento Alpha', 'Elemento Beta', 'Elemento Gamma', 'Elemento Delta', 'Elemento Epsilon'];
 
+// ─── Pool generici per campi testuali "di dominio" senza categoria nota ─────
+// (Quality Pass v1.1, Fix #1): prima OGNI campo testuale non riconosciuto da
+// nessuna euristica sotto — es. "descrizione", "note", "titolo",
+// "ore_lavorate" su un'entità come "lead"/"aziende"/"interventi" — ricadeva
+// sullo stesso identity.categoryTitle condiviso dal record (bug residuo
+// confermato dalla validazione reale del Quality Pass v1: due campi diversi
+// sullo stesso record mostravano il medesimo placeholder). Questi pool,
+// combinati con pickForField sotto, danno un valore diverso PER CAMPO e per
+// RECORD, restando deterministico.
+const GENERIC_DESCRIPTIONS = [
+  'Attività gestita secondo la procedura standard, nessuna criticità rilevata.',
+  'Richiede un aggiornamento periodico da parte del responsabile assegnato.',
+  'Prima valutazione già completata, in attesa di conferma finale.',
+  'Elemento monitorato con cadenza regolare dal team operativo.',
+  'Dettagli raccolti direttamente in fase di apertura della pratica.',
+];
+const GENERIC_NOTES = [
+  'Nessuna nota particolare al momento.',
+  'Da ricontattare per un aggiornamento.',
+  'Verificato, tutto in regola.',
+  'In attesa di documentazione aggiuntiva.',
+  'Priorità media, nessuna urgenza segnalata.',
+];
+const GENERIC_TITLES_FALLBACK = [
+  'Pratica in lavorazione',
+  'Richiesta standard',
+  'Nuova voce registrata',
+  'Aggiornamento recente',
+  'Elemento da completare',
+];
+
 function pick<T>(arr: T[], index: number): T {
   return arr[((index % arr.length) + arr.length) % arr.length];
+}
+
+/** Hash deterministico e stabile di una stringa (somma pesata dei code
+ * point, come tante implementazioni minimali di string-hash) — usato SOLO
+ * per far dipendere la scelta nel pool anche dal nome del campo, non solo
+ * dall'indice del record. */
+function stringHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/**
+ * Come pick(), ma l'offset nel pool dipende ANCHE da tabella+campo (via
+ * stringHash), non solo dall'indice del record — stesso identico
+ * meccanismo deterministico "stesso input -> stesso output" già usato da
+ * pick()/randomInt() in questo file, esteso con un secondo asse di
+ * variazione. Due campi diversi sullo stesso record (stesso index) pescano
+ * quindi voci diverse del pool; lo stesso campo su record diversi (stesso
+ * tableName+fieldId, index diverso) pesca comunque voci diverse tra loro.
+ */
+function pickForField<T>(pool: T[], tableName: string, field: FieldDef, index: number): T {
+  const offset = stringHash(`${tableName}:${fieldName(field)}`);
+  return pick(pool, index + offset);
 }
 
 /** Normalizza per il matching sul nome campo: minuscolo, senza accenti. */
@@ -81,6 +136,13 @@ interface MockIdentity {
   city: string;
   street: string;
   categoryTitle: string;
+  /** Quality Pass v1.1 (Fix #1): true solo se table.name è mappato a una
+   * categoria REALE (veicoli/immobili/prodotti/...), non al pool generico
+   * GENERIC_TITLES. Serve a distinguere, più a valle, i casi in cui
+   * categoryTitle è un valore genuinamente specifico del dominio (da
+   * preservare) da quelli in cui è solo il fallback condiviso "Elemento
+   * Alpha/Beta/..." (da NON riusare più su più campi dello stesso record). */
+  hasCategory: boolean;
 }
 
 function buildIdentity(table: TableDef, index: number): MockIdentity {
@@ -96,6 +158,7 @@ function buildIdentity(table: TableDef, index: number): MockIdentity {
     city: pick(CITIES, index),
     street: `${pick(STREETS, index)}, ${1 + ((index * 7) % 90)}`,
     categoryTitle: pick(titlePool, index),
+    hasCategory: Boolean(category),
   };
 }
 
@@ -114,7 +177,7 @@ function randomRecentDate(index: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function generateFieldValue(field: FieldDef, identity: MockIdentity, index: number): unknown {
+function generateFieldValue(field: FieldDef, identity: MockIdentity, index: number, tableName: string): unknown {
   const fn = norm(fieldName(field));
   const fnTokens = tokens(fn);
 
@@ -189,7 +252,15 @@ function generateFieldValue(field: FieldDef, identity: MockIdentity, index: numb
       if (/indirizzo/.test(fn) || fnTokens.includes('via')) return identity.street;
       if (/citt|comune/.test(fn)) return identity.city;
       if (/targa/.test(fn)) return `${pick(['AB', 'CD', 'EF', 'GH', 'LM'], index)}${String(randomInt(100, 999, index + 900))}${pick(['ZX', 'YW', 'VU', 'TS', 'RQ'], index + 1)}`;
-      if (/nome.?prodotto|articolo|modello/.test(fn) || fnTokens.includes('prodotto') || fnTokens.includes('titolo')) return identity.categoryTitle;
+      // "prodotto"/"articolo"/"modello": SEMPRE identity.categoryTitle —
+      // quando la tabella ha una categoria nota (veicoli/immobili/...) è
+      // esattamente il caso per cui quel pool esiste (es. "Fiat 500" per un
+      // campo nome_prodotto su una tabella "veicoli"), comportamento
+      // verificato e da NON toccare. Separato da "titolo" sotto (Quality
+      // Pass v1.1, Fix #1): un titolo generico senza contesto di prodotto
+      // non deve più condividere lo stesso valore quando manca una
+      // categoria reale.
+      if (/nome.?prodotto|articolo|modello/.test(fn) || fnTokens.includes('prodotto')) return identity.categoryTitle;
       // Fallback monetario: un campo TESTUALE (non "number"/"currency", già
       // gestiti sopra) il cui nome indica comunque un valore economico —
       // es. "valore_stimato" su un'entità tipo CRM/opportunità, scritto come
@@ -197,7 +268,36 @@ function generateFieldValue(field: FieldDef, identity: MockIdentity, index: numb
       // numero plausibile, non lo stesso titolo generico degli altri campi
       // non riconosciuti del record.
       if (/valore|importo|prezzo|costo|totale|tariffa|stimato/.test(fn)) return randomInt(15, 1500, index + 250);
-      return identity.categoryTitle;
+      // Campo "ore" (es. "ore_lavorate"): un intero plausibile, non testo —
+      // stesso principio del fallback monetario sopra, per un campo che il
+      // blueprint può dichiarare "text" anche quando concettualmente è un
+      // numero (Quality Pass v1.1, Fix #1 — osservato in produzione su
+      // un'entità "interventi").
+      if (fnTokens.includes('ore') || /ore.?lavorate|numero.?ore/.test(fn)) return randomInt(1, 40, index + 260);
+      // "note": pool dedicato SEMPRE, indipendentemente da hasCategory — una
+      // nota non è mai legittimamente rappresentata da un nome di categoria
+      // (es. "Villa con Giardino" su un campo note non ha senso). Substring,
+      // non anchor esatto: copre anche id composti come "note_libere_xyz".
+      if (/note|annotazion/.test(fn)) return pickForField(GENERIC_NOTES, tableName, field, index);
+      // "descrizione": stesso principio, pool dedicato sempre.
+      if (/descrizion/.test(fn)) return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
+      // "titolo"/"oggetto" generico (non prodotto, già gestito sopra): se la
+      // tabella ha una categoria reale, categoryTitle resta corretto e
+      // specifico del dominio (comportamento già funzionante, non
+      // regredito) — altrimenti, invece del pool generico CONDIVISO da ogni
+      // altro campo non riconosciuto dello stesso record, un pool dedicato
+      // variato per campo/indice.
+      if (fnTokens.includes('titolo') || fnTokens.includes('oggetto')) {
+        return identity.hasCategory ? identity.categoryTitle : pickForField(GENERIC_TITLES_FALLBACK, tableName, field, index);
+      }
+      // Ultimo fallback (nessuna euristica sopra ha riconosciuto il campo):
+      // stessa logica di "titolo" — la categoria reale resta prioritaria
+      // (comportamento pre-esistente, invariato), altrimenti un pool
+      // generico variato per campo/indice invece del valore condiviso da
+      // tutto il record (il bug residuo osservato nella validazione
+      // production del Quality Pass v1).
+      if (identity.hasCategory) return identity.categoryTitle;
+      return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
     }
   }
 }
@@ -207,7 +307,7 @@ export function generateMockRecord(table: TableDef, index: number): Record<strin
   const identity = buildIdentity(table, index);
   const record: Record<string, unknown> = {};
   for (const field of table.fields) {
-    const value = generateFieldValue(field, identity, index);
+    const value = generateFieldValue(field, identity, index, table.name);
     if (value !== undefined) record[fieldName(field)] = value;
   }
   return record;
