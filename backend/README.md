@@ -19,7 +19,6 @@ Copia `.env.example` in `.env` e compila le chiavi.
 
 - `GET /api/health` — Health check
 - `POST /api/chat` — Chat generica via AI Router centralizzato (`lib/ai-router.js`, OpenRouter, tier "fast")
-- `POST /api/vision/analyze` — Analisi immagini multi-provider (`groq`, `gemini`, `openai`)
 - `POST /api/generate-app` — Generazione blueprint app via AI Router centralizzato (OpenRouter, tier "advanced")
 
 ## Deploy
