@@ -42,6 +42,13 @@ export interface FakeSupabaseOptions {
    * token assente/non mappato risolve a user:null, come un token invalido
    * reale. */
   authUsers?: Record<string, { id: string; email?: string }>;
+  /** tableName -> operazione -> errore da restituire al posto del risultato
+   * normale (puramente additivo/opt-in: default undefined, nessun
+   * comportamento esistente cambia per i test che non lo passano). Serve a
+   * testare i rami "scrittura/lettura Supabase fallita" di una route senza
+   * un vero DB — es. `{ beta_applications: { insert: { message: '...' } } }`
+   * fa fallire SOLO il prossimo .insert() su quella tabella. */
+  forceErrors?: Record<string, Partial<Record<'select' | 'insert' | 'update' | 'upsert' | 'delete', { message: string; code?: string }>>>;
 }
 
 /**
@@ -65,6 +72,7 @@ export function makeFakeSupabase(
   }
   const rpcHandlers = options.rpcHandlers || {};
   const authUsers = options.authUsers || {};
+  const forceErrors = options.forceErrors || {};
 
   function ensureTable(name: string): Row[] {
     if (!tables[name]) tables[name] = [];
@@ -73,17 +81,35 @@ export function makeFakeSupabase(
 
   function makeBuilder(tableName: string) {
     const rows = ensureTable(tableName);
-    const filters: { field: string; value: unknown }[] = [];
-    let op: 'select' | 'insert' | 'update' | 'upsert' = 'select';
+    // cmp: 'eq' (default) o 'gte'/'lt' — aggiunto per ai-usage.ts (somma
+    // costo AI in una finestra temporale, es. `.gte('created_at', since)`).
+    // Puramente additivo: ogni filtro esistente senza `cmp` continua a
+    // risolvere come uguaglianza stretta, comportamento invariato.
+    const filters: { field: string; value: unknown; cmp?: 'eq' | 'gte' | 'lt' | 'is' }[] = [];
+    let op: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
     let payload: Row | null = null;
     let limitN: number | null = null;
     let upsertConflictKey: string | null = null;
+    let orderBy: { field: string; ascending: boolean } | null = null;
 
     function applyFilters(list: Row[]): Row[] {
-      return list.filter((row) => filters.every((f) => row[f.field] === f.value));
+      return list.filter((row) => filters.every((f) => {
+        const cmp = f.cmp || 'eq';
+        if (cmp === 'gte') return row[f.field] != null && (row[f.field] as string | number) >= (f.value as string | number);
+        if (cmp === 'lt') return row[f.field] != null && (row[f.field] as string | number) < (f.value as string | number);
+        // is: aggiunto per verify-password/route.ts (.is('owner_trial_ends_at',
+        // null)) — un campo assente (mai scritto in un seed di test) conta
+        // come NULL, stesso comportamento di una colonna Postgres reale mai
+        // valorizzata.
+        if (cmp === 'is') return f.value === null ? (row[f.field] === null || row[f.field] === undefined) : row[f.field] === f.value;
+        return row[f.field] === f.value;
+      }));
     }
 
     async function resolveMany() {
+      const forced = forceErrors[tableName]?.[op];
+      if (forced) return { data: null, error: forced };
+
       const now = new Date().toISOString();
       if (op === 'insert') {
         const defaults = defaultsByTable[tableName] || {};
@@ -112,7 +138,32 @@ export function makeFakeSupabase(
         matched.forEach((r) => Object.assign(r, payload, { updated_at: now }));
         return { data: matched.map((r) => ({ ...r })), error: null };
       }
+      if (op === 'delete') {
+        // Rimuove dall'array in-place le righe che matchano i filtri (stesso
+        // comportamento reale di un DELETE Postgres senza RETURNING esplicito
+        // nei chiamanti di questo repo, che non leggono mai `data` da un
+        // delete — solo `error`). Filtra per identità di riferimento, non per
+        // valore, così una riga mutata da un update precedente nello stesso
+        // test resta comunque trovabile.
+        const matched = applyFilters(rows);
+        const matchedSet = new Set(matched);
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (matchedSet.has(rows[i])) rows.splice(i, 1);
+        }
+        return { data: matched.map((r) => ({ ...r })), error: null };
+      }
       let result = applyFilters(rows);
+      if (orderBy) {
+        const { field, ascending } = orderBy;
+        result = [...result].sort((a, b) => {
+          const av = a[field] as string | number | undefined;
+          const bv = b[field] as string | number | undefined;
+          if (av === bv) return 0;
+          if (av === undefined || av === null) return ascending ? -1 : 1;
+          if (bv === undefined || bv === null) return ascending ? 1 : -1;
+          return (av < bv ? -1 : 1) * (ascending ? 1 : -1);
+        });
+      }
       if (limitN != null) result = result.slice(0, limitN);
       return { data: result.map((r) => ({ ...r })), error: null };
     }
@@ -130,10 +181,18 @@ export function makeFakeSupabase(
       select() { return builder; },
       insert(obj: Row) { op = 'insert'; payload = obj; return builder; },
       update(obj: Row) { op = 'update'; payload = obj; return builder; },
+      delete() { op = 'delete'; return builder; },
       upsert(obj: Row, upsertOpts?: { onConflict?: string }) { op = 'upsert'; payload = obj; upsertConflictKey = upsertOpts?.onConflict || null; return builder; },
-      eq(field: string, value: unknown) { filters.push({ field, value }); return builder; },
+      eq(field: string, value: unknown) { filters.push({ field, value, cmp: 'eq' }); return builder; },
+      gte(field: string, value: unknown) { filters.push({ field, value, cmp: 'gte' }); return builder; },
+      lt(field: string, value: unknown) { filters.push({ field, value, cmp: 'lt' }); return builder; },
+      is(field: string, value: unknown) { filters.push({ field, value, cmp: 'is' }); return builder; },
       limit(n: number) { limitN = n; return builder; },
-      order() { return builder; }, // no-op: nessun test dipende dall'ordinamento lato query
+      // ascending di default true (comportamento reale di supabase-js/Postgrest
+      // quando l'opzione è omessa) — implementato per davvero (non più un
+      // no-op) perché almeno una route reale ne dipende (GET /api/admin/
+      // beta-applications, ordinato per created_at decrescente).
+      order(field: string, opts?: { ascending?: boolean }) { orderBy = { field, ascending: opts?.ascending !== false }; return builder; },
       single() { return resolveOne(true); },
       maybeSingle() { return resolveOne(false); },
       // Await diretto del builder (nessun .single()/.maybeSingle()), usato da

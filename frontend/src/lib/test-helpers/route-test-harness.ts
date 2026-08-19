@@ -80,6 +80,7 @@ export function setupRouteTest(
     seedTables?: Record<string, Record<string, unknown>[]>;
     rpcHandlers?: FakeSupabaseOptions['rpcHandlers'];
     authUsers?: FakeSupabaseOptions['authUsers'];
+    forceErrors?: FakeSupabaseOptions['forceErrors'];
     aiResponses?: Array<{ content: string } | Error>;
   }
 ): RouteTestSetup {
@@ -88,6 +89,7 @@ export function setupRouteTest(
   const supabase = makeFakeSupabase(opts.defaultsByTable || {}, opts.seedTables || {}, {
     rpcHandlers: opts.rpcHandlers,
     authUsers: opts.authUsers,
+    forceErrors: opts.forceErrors,
   });
   setCurrentSupabaseForTests(supabase);
 
