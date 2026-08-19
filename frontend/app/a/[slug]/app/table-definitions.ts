@@ -240,6 +240,25 @@ export function computeDashboardCardValue(card: DashboardCardLike, records: Dash
   }
 }
 
+// ─── Fix blocker TEST D (debug V3, app "ristorazione") ─────────────────────
+// RestaurantLayoutContent (DynamicLayoutRenderer.tsx, layout dedicato al
+// settore "ristorazione", PRE-ESISTENTE — non toccato dall'evoluzione
+// CreatorAI v2/v3) ha una griglia "menu" hardcoded pensata per UNA SOLA
+// tabella, "piatti" — per qualunque altra tabella del blueprint (clienti,
+// ordini, righe_ordine...) tentava comunque di renderizzarla come card-piatto
+// (leggendo campi tipo "categoria"/"descrizione"/"prezzo" che quelle tabelle
+// non hanno), risultando in una griglia vuota SENZA alcuna azione disponibile
+// (né "Nuovo", né un messaggio "nessun record") — bug riprodotto in
+// produzione su un'app "Trattoria da Marco" con uno schema legittimo a
+// più tabelle (piatti/clienti/ordini/righe_ordine), non causato da CreatorAI
+// v3 (mai toccato il file), ma esposto da un blueprint realistico. Questa
+// funzione pura isola la decisione ("questa tabella è quella per cui la
+// griglia menu ha senso?") perché sia verificabile con `node --test` — il
+// file .tsx che la usa contiene JSX, non eseguibile direttamente da Node.
+export function isRestaurantMenuGridTable(tableName: string | undefined | null): boolean {
+  return tableName === 'piatti';
+}
+
 /**
  * Garantisce che una tabella abbia un campo Immagine, senza richiedere che
  * l'utente lo aggiunga a mano da "Modifica Tabella": ogni nuovo record deve

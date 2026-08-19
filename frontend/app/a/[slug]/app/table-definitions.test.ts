@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 // separato, altrimenti il type-stripping nativo di `node --test` cerca
 // (fallendo) un export reale con quel nome — stesso motivo/pattern già
 // applicato in mockDataGenerator.ts per lo stesso import.
-import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar, pickIdentityFields, findDisplayPriceField } from './table-definitions.ts';
+import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar, pickIdentityFields, findDisplayPriceField, isRestaurantMenuGridTable } from './table-definitions.ts';
 import type { TableDef, FieldDef } from './table-definitions.ts';
 
 function field(overrides: Partial<FieldDef> & { name: string; type: FieldDef['type'] }): FieldDef {
@@ -184,4 +184,33 @@ test('findDisplayPriceField: esclude "prezzo_acquisto"/"purchase_price" (costo i
     field({ name: 'prezzo_vendita', type: 'number', label: 'Prezzo Vendita' }),
   ];
   assert.equal(findDisplayPriceField(fields)?.name, 'prezzo_vendita');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX BLOCKER TEST D (debug V3, app "ristorazione") — isRestaurantMenuGridTable
+//
+// Bug reale riprodotto in produzione: RestaurantLayoutContent
+// (DynamicLayoutRenderer.tsx, layout dedicato al settore "ristorazione",
+// PRE-ESISTENTE — mai toccato da CreatorAI v2/v3) ha una griglia "menu"
+// hardcoded pensata per UNA SOLA tabella, "piatti" — ma la applicava a
+// QUALUNQUE tabella attiva del blueprint. Per un'app "Trattoria da Marco"
+// con schema legittimo a 4 tabelle (piatti/clienti/ordini/righe_ordine),
+// selezionare "Clienti", "Ordini" o "Righe Ordine" mostrava una griglia
+// vuota SENZA alcun pulsante "Nuovo" né messaggio "Nessun record presente"
+// — un vicolo cieco totale, non un semplice difetto estetico.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('isRestaurantMenuGridTable: "piatti" è l\'unica tabella per cui la griglia menu ha senso', () => {
+  assert.equal(isRestaurantMenuGridTable('piatti'), true);
+});
+
+test('isRestaurantMenuGridTable: le altre 3 tabelle reali dell\'app "Trattoria da Marco" (blocker TEST D) richiedono il fallback generico', () => {
+  assert.equal(isRestaurantMenuGridTable('clienti'), false);
+  assert.equal(isRestaurantMenuGridTable('ordini'), false);
+  assert.equal(isRestaurantMenuGridTable('righe_ordine'), false);
+});
+
+test('isRestaurantMenuGridTable: nessuna tabella attiva (null/undefined) -> false, mai un crash', () => {
+  assert.equal(isRestaurantMenuGridTable(undefined), false);
+  assert.equal(isRestaurantMenuGridTable(null), false);
 });
