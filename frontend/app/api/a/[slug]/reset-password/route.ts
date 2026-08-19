@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextResponse } from 'next/server';
 import { randomBytes, createHash } from 'crypto';
+import { sendTemplatedEmail } from '@/src/lib/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,47 +28,23 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-async function sendResetEmail(toEmail: string, slug: string, token: string): Promise<void> {
+// Invio centralizzato (Notifications, Pre-Beta Hardening Round 2): prima
+// questa funzione faceva una fetch raw verso Resend con un mittente
+// hardcoded DIVERSO da RESEND_FROM_EMAIL usato ovunque altrove nel progetto
+// ("noreply@zeusx.it" qui, "noreply@zeusx.com" altrove — un bug reale, non
+// solo un'inconsistenza), nessun timeout, nessun retry. Ora delega a
+// src/lib/email.ts (timeout+retry+template condiviso) — SEMPRE inviata
+// indipendentemente da notification_preferences: è l'utente stesso ad averla
+// richiesta pochi secondi prima, non una notifica applicativa disattivabile.
+async function sendResetEmail(toEmail: string, appName: string | null, slug: string, token: string): Promise<void> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com';
   const resetLink = `${appUrl}/a/${slug}/reset-password?token=${token}`;
-  const resendApiKey = process.env.RESEND_API_KEY;
 
-  if (!resendApiKey) {
-    // Nessuna chiave configurata (es. sviluppo locale): logga invece di
-    // fallire silenziosamente, stesso fallback già usato in
-    // admin/takeover/route.ts.
-    console.log(`[reset-password] RESEND_API_KEY assente, link di reset per ${toEmail}: ${resetLink}`);
-    return;
-  }
-
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'ShardApps <noreply@zeusx.it>',
-        to: [toEmail],
-        subject: 'Reimposta la tua password',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #1e293b;">Reimposta la password</h2>
-            <p>Hai richiesto di reimpostare la password per accedere alla tua app.</p>
-            <p><a href="${resetLink}" style="display:inline-block;background:#4f46e5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Reimposta password</a></p>
-            <p style="color: #64748b; font-size: 13px;">Il link scade tra 15 minuti e può essere usato una sola volta. Se non hai richiesto tu il reset, ignora questa email.</p>
-            <p style="color: #64748b; font-size: 14px; margin-top: 20px;">ShardApps Team</p>
-          </div>
-        `,
-      }),
-    });
-
-    if (!res.ok) {
-      console.error('[reset-password] Resend error:', res.status, await res.text().catch(() => ''));
-    }
-  } catch (err) {
-    console.error('[reset-password] Errore invio email:', err);
+  const result = await sendTemplatedEmail(toEmail, 'password_reset', { resetLink, appName: appName || undefined }, { route: 'reset-password' });
+  if (!result.sent && !result.skipped) {
+    console.error('[reset-password] invio email fallito:', result.error);
+  } else if (result.skipped) {
+    console.log(`[reset-password] ${result.reason}, link di reset per ${toEmail}: ${resetLink}`);
   }
 }
 
@@ -96,7 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
 
     const { data: app, error: appError } = await supabase
       .from('apps')
-      .select('id, client_email, client_active')
+      .select('id, name, client_email, client_active')
       .eq('slug', slug)
       .single();
 
@@ -120,7 +97,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return genericAcceptedResponse();
     }
 
-    await sendResetEmail(app.client_email, slug, token);
+    await sendResetEmail(app.client_email, app.name, slug, token);
 
     return genericAcceptedResponse();
   } catch (err) {
