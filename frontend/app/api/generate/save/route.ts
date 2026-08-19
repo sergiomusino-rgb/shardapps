@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
+import { hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -146,6 +147,12 @@ export async function POST(request: NextRequest) {
       console.log('[save-generated-app] Credenziali generate per:', clientEmail);
     }
 
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito sotto —
+    // `clientPassword` in chiaro resta usato SOLO per la risposta HTTP finale
+    // di questo endpoint (fornita dal chiamante o appena generata sopra,
+    // l'unico momento legittimo per mostrarla).
+    const hashedClientPassword = await hashPassword(clientPassword);
+
     // Prepara i dati per l'inserimento
     const productionAppUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`;
     const appData = {
@@ -162,7 +169,7 @@ export async function POST(request: NextRequest) {
         description: schema.description || ''
       },
       client_email: clientEmail,
-      client_password: clientPassword,
+      client_password: hashedClientPassword,
       client_active: true,
       status: 'trial',
       trial_ends_at: trialEndAt
@@ -217,7 +224,7 @@ export async function POST(request: NextRequest) {
     // compatibilità finché la pulizia finale non li azzera.
     await supabase
       .from('app_credentials')
-      .upsert({ app_id: newApp.id, client_password: clientPassword }, { onConflict: 'app_id' });
+      .upsert({ app_id: newApp.id, client_password: hashedClientPassword }, { onConflict: 'app_id' });
 
     // Registra l'app nella app_registry per la Management Console
     const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${newApp.slug}`;

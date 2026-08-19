@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextResponse } from 'next/server';
 import { createHash } from 'crypto';
+import { hashPassword } from '@/src/lib/password-hash';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,9 +87,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: 'Link di reset non valido o scaduto' }, { status: 400 });
     }
 
+    // Pre-Beta Hardening, Blocco 6: client_password (usato per il confronto
+    // ad ogni login) viene hashato; initial_password resta VOLUTAMENTE in
+    // chiaro (copia mostrata al reseller, mai usata per autenticare — vedi
+    // stesso principio in client-access/route.ts::regenerate-password).
+    const hashedPassword = await hashPassword(password);
+
     const { error: updateError } = await supabase
       .from('apps')
-      .update({ client_password: password, initial_password: password })
+      .update({ client_password: hashedPassword, initial_password: password })
       .eq('id', app.id);
 
     if (updateError) {
@@ -101,7 +108,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     await supabase
       .from('app_credentials')
       .upsert(
-        { app_id: app.id, client_password: password, initial_password: password },
+        { app_id: app.id, client_password: hashedPassword, initial_password: password },
         { onConflict: 'app_id' }
       );
 

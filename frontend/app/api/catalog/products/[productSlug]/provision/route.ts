@@ -24,6 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 import { randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
+import { hashPassword } from '@/src/lib/password-hash';
 import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 import {
   getUserFromToken,
@@ -213,6 +214,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const appName = product.name;
     const slug = generateCreatorSlug(appName, blueprint.sector);
     const clientPassword = generateClientPassword();
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito (apps/
+    // app_rbac_users/app_credentials sotto) — clientPassword in chiaro resta
+    // usato SOLO per la risposta HTTP di questo endpoint. Non applicabile ai
+    // prodotti comandi_ai (ramo separato più sotto, provisionComandiAppAction):
+    // quel modello usa un vero utente Supabase Auth, non un confronto
+    // applicativo su client_password.
+    const hashedClientPassword = await hashPassword(clientPassword);
     const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;
     const trialDays = product.trial_days ?? 30;
     const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
@@ -240,7 +248,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         trial_ends_at: trialEndsAt,
         client_active: true,
         client_email: blueprint.businessConfig.email || tenantEmail,
-        client_password: clientPassword,
+        client_password: hashedClientPassword,
         auth_mode: authMode,
         client_price: ZEUSX_MINIMUM_FEE_EUR,
         client_subscription_price: ZEUSX_MINIMUM_FEE_EUR,
@@ -269,7 +277,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           app_id: app.id,
           tenant_id: tenantId,
           client_email: clientEmail,
-          client_password: clientPassword,
+          client_password: hashedClientPassword,
           role: 'admin',
         } as any);
       if (rbacError) {
@@ -278,7 +286,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     } else {
       const { error: credError } = await supabase
         .from('app_credentials')
-        .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
+        .upsert({ app_id: app.id, client_password: hashedClientPassword }, { onConflict: 'app_id' });
       if (credError) {
         captureError('catalog.provision', credError, { appId: app.id, step: 'app_credentials upsert' });
       }

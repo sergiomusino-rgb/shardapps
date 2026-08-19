@@ -6,6 +6,7 @@ const csv = require('csv-parser');
 const { stringify } = require('csv-stringify/sync');
 const stream = require('stream');
 const XLSX = require('xlsx');
+const { hashPassword } = require('../lib/password-hash');
 
 // Nessun limite di dimensione prima permetteva a un tenant autenticato di
 // caricare un file arbitrariamente grande (tenuto interamente in memoria,
@@ -176,6 +177,11 @@ router.post('/apps', authMiddleware, async (req, res) => {
     
     // Genera password casuale per accesso client
     const clientPassword = Math.random().toString(36).slice(-8);
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito (sotto);
+    // `clientPassword` in chiaro resta in questa sola risposta HTTP (riga
+    // 247 circa), l'unico momento in cui il valore è legittimamente noto e
+    // mostrabile — mai più recuperabile dal DB dopo questo punto.
+    const hashedClientPassword = await hashPassword(clientPassword);
 
     // Costruisci config con blueprint
     const config = {
@@ -204,7 +210,7 @@ router.post('/apps', authMiddleware, async (req, res) => {
         name,
         slug,
         config,
-        client_password: clientPassword,
+        client_password: hashedClientPassword,
         trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         is_active: true,
       })
@@ -225,7 +231,7 @@ router.post('/apps', authMiddleware, async (req, res) => {
     // su apps.client_password sopra mantenuto per compatibilità.
     await supabaseAdmin
       .from('app_credentials')
-      .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
+      .upsert({ app_id: app.id, client_password: hashedClientPassword }, { onConflict: 'app_id' });
 
     // Incrementa contatore totale app create
     const { error: updateError } = await supabaseAdmin

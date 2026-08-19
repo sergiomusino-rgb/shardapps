@@ -287,6 +287,13 @@ export async function provisionComandiAppAction(
         app_type: 'comandi_ai',
         auth_mode: 'legacy',
         client_email: posEmail,
+        // Pre-Beta Hardening, Blocco 6: VOLUTAMENTE non hashato. A differenza
+        // del modello legacy/rbac, comandi_ai autentica con un vero utente
+        // Supabase Auth (createUser sopra, riga ~253) — client_password qui
+        // è solo la copia mostrata al tenant per accedere al terminale cassa,
+        // non partecipa MAI a un confronto applicativo (vedi client-auth.js,
+        // resolveClientIdentity ramo app_type==='comandi_ai': usa solo
+        // supabase.auth.getUser()/tenant_members, mai questo campo).
         client_password: posPassword,
         initial_password: posPassword,
         client_active: true,

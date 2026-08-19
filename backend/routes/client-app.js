@@ -12,10 +12,13 @@ const {
   verifyLegacyPassword,
   resolveClientIdentity,
   clientAuthMiddleware,
+  rehashLegacyCredential,
+  rehashLegacyRbacCredential,
 } = require('../lib/client-auth');
 const { dispatchAppAction, logAction } = require('../lib/action-dispatcher');
 const { routeEvent } = require('../lib/event-router');
 const { captureError } = require('../lib/error-tracking');
+const { hashPassword, verifyPassword } = require('../lib/password-hash');
 
 // Fase 4 (Logic/Workflow Engine): emette un evento verso l'event router
 // SENZA MAI far fallire l'operazione CRUD/azione che lo ha generato — routeEvent
@@ -46,9 +49,19 @@ function getSupabase() {
 // getClientCredentials ora vive in ../lib/client-auth.js (FASE 4B, Finding
 // #6): stessa identica logica, prima duplicata qui e in custom-tables.js.
 
+// Pre-Beta Hardening, Blocco 6: clientPassword viene sempre hashato prima di
+// qualunque scrittura (app_credentials E il dual-write legacy su apps) — è
+// l'unico campo usato per il confronto ad ogni login (verifyLegacyPassword/
+// resolveClientIdentity, lib/client-auth.js, entrambi ora hash-aware).
+// initialPassword resta VOLUTAMENTE in chiaro: è la copia mostrata al
+// reseller per la consegna della password al proprio cliente (dashboard
+// projects/[id]/page.tsx), non partecipa mai a un confronto di autenticazione
+// — non è quindi soggetta allo stesso rischio di un campo usato per il login.
 async function setClientPassword(supabase, appId, clientPassword, initialPassword) {
+  const hashedClientPassword = clientPassword !== undefined ? await hashPassword(clientPassword) : undefined;
+
   const payload = { app_id: appId, updated_at: new Date().toISOString() };
-  if (clientPassword !== undefined) payload.client_password = clientPassword;
+  if (hashedClientPassword !== undefined) payload.client_password = hashedClientPassword;
   if (initialPassword !== undefined) payload.initial_password = initialPassword;
 
   const { error } = await supabase.from('app_credentials').upsert(payload, { onConflict: 'app_id' });
@@ -57,7 +70,7 @@ async function setClientPassword(supabase, appId, clientPassword, initialPasswor
   // Dual-write sulla colonna legacy per compatibilità con eventuale codice
   // non ancora aggiornato, finché la pulizia finale non la azzera.
   const legacyUpdate = { updated_at: new Date().toISOString() };
-  if (clientPassword !== undefined) legacyUpdate.client_password = clientPassword;
+  if (hashedClientPassword !== undefined) legacyUpdate.client_password = hashedClientPassword;
   if (initialPassword !== undefined) legacyUpdate.initial_password = initialPassword;
   await supabase.from('apps').update(legacyUpdate).eq('id', appId);
 }
@@ -123,8 +136,15 @@ router.post('/a/:slug', loginLimiter, async (req, res) => {
         return res.status(400).json({ error: 'Email richiesta per questa app' });
       }
       const credential = await getRbacCredential(supabase, app.id, email);
-      if (!credential || credential.client_password !== password) {
+      if (!credential) {
         return res.status(401).json({ error: 'Credenziali errate' });
+      }
+      const verified = await verifyPassword(password, credential.client_password);
+      if (!verified.match) {
+        return res.status(401).json({ error: 'Credenziali errate' });
+      }
+      if (verified.needsRehash) {
+        await rehashLegacyRbacCredential(supabase, app.id, credential.client_email, password);
       }
       role = credential.role;
       // Token composito per le richieste dati successive (stesso formato
@@ -133,8 +153,12 @@ router.post('/a/:slug', loginLimiter, async (req, res) => {
       rbacAuthToken = `${credential.client_email}:${password}`;
     } else {
       const creds = await getClientCredentials(supabase, app.id, app);
-      if (creds.client_password !== password) {
+      const verified = await verifyPassword(password, creds.client_password);
+      if (!verified.match) {
         return res.status(401).json({ error: 'Password errata' });
+      }
+      if (verified.needsRehash) {
+        await rehashLegacyCredential(supabase, app.id, password);
       }
     }
 
@@ -629,13 +653,16 @@ router.post('/client/apps/:appId/users', clientAuthMiddleware, userManagementLim
     }
 
     const supabase = getSupabase();
+    // Pre-Beta Hardening, Blocco 6: hashato prima dell'insert — un nuovo
+    // utente rbac non deve mai avere la propria password già in chiaro nel DB.
+    const hashedPassword = await hashPassword(password);
     const { data, error } = await supabase
       .from('app_rbac_users')
       .insert({
         app_id: req.appId,
         tenant_id: req.tenantId,
         client_email: cleanEmail,
-        client_password: password,
+        client_password: hashedPassword,
         role,
       })
       .select('id, client_email, role, created_at')

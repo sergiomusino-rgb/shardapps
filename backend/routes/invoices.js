@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const { verifyPassword, hashPassword } = require('../lib/password-hash');
 
 function getSupabase() {
   return createClient(
@@ -14,6 +15,11 @@ function getSupabase() {
 // tenant indicato. Usato dalle route sotto che operano su tenant_id/fattura_id
 // senza uno slug in URL, per evitare che chiunque possa leggere/scrivere le
 // fatture di un tenant arbitrario.
+// Pre-Beta Hardening, Blocco 6: verifyPassword riconosce sia un hash bcrypt
+// reale sia un valore ancora in chiaro (account legacy) — vedi
+// lib/password-hash.js. Un match su un valore in chiaro innesca un rehash
+// immediato in app_credentials (stessa tabella preferita da
+// getClientCredentials/client-auth.js), mai una migrazione bulk forzata.
 async function verifyTenantPassword(supabase, tenantId, token) {
   if (!token) return false;
   const { data: apps } = await supabase
@@ -30,7 +36,22 @@ async function verifyTenantPassword(supabase, tenantId, token) {
     .in('app_id', apps.map((a) => a.id));
   const credsByAppId = new Map((creds || []).map((c) => [c.app_id, c.client_password]));
 
-  return apps.some((a) => (credsByAppId.get(a.id) ?? a.client_password) === token);
+  for (const app of apps) {
+    const stored = credsByAppId.get(app.id) ?? app.client_password;
+    const result = await verifyPassword(token, stored);
+    if (result.match) {
+      if (result.needsRehash) {
+        try {
+          const hash = await hashPassword(token);
+          await supabase.from('app_credentials').upsert({ app_id: app.id, client_password: hash }, { onConflict: 'app_id' });
+        } catch (err) {
+          console.error('[invoices] rehash tenant password fallito (accesso comunque consentito):', err);
+        }
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 function getBearerToken(req) {
@@ -65,8 +86,17 @@ router.get('/a/:slug/invoices', async (req, res) => {
     }
 
     const token = getBearerToken(req);
-    if (app.client_password !== token) {
+    const verified = await verifyPassword(token, app.client_password);
+    if (!verified.match) {
       return res.status(401).json({ error: 'Password errata' });
+    }
+    if (verified.needsRehash) {
+      try {
+        const hash = await hashPassword(token);
+        await supabase.from('apps').update({ client_password: hash }).eq('id', app.id);
+      } catch (err) {
+        console.error('[invoices] rehash fallito (accesso comunque consentito):', err);
+      }
     }
 
     // Load invoices from database

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { looksHashed } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -61,12 +62,14 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
+    // Pre-Beta Hardening, Blocco 6: vedi lo stesso commento in
+    // /api/apps/[id]/route.ts — un hash bcrypt non è una password mostrabile.
     return NextResponse.json({
       id: app.id,
       name: app.name,
       slug: app.slug,
       client_email: app.client_email,
-      client_password: app.client_password,
+      client_password: looksHashed(app.client_password) ? null : app.client_password,
       status: app.status,
       trial_ends_at: app.trial_ends_at,
       expires_at: app.expires_at

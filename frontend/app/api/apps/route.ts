@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
+import { hashPassword } from '@/src/lib/password-hash';
 import type { Database } from '@/types/database';
 import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 
@@ -271,6 +272,11 @@ export async function POST(req: Request) {
     const finalName = userAppName || blueprint.appName;
     const slug = generateSlug(finalName, sector);
     const clientPassword = generatePassword();
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito — la riga
+    // selezionata dopo l'insert (sotto) viene poi corretta con la password in
+    // chiaro prima di essere inviata nella risposta HTTP, l'unico momento
+    // legittimo per mostrarla.
+    const hashedClientPassword = await hashPassword(clientPassword);
 
      // Consumo atomico dello slot: canCreateApp() sopra è solo un pre-check
      // (SELECT poi confronto in memoria) per un errore rapido, ma non chiude
@@ -324,7 +330,7 @@ export async function POST(req: Request) {
          trial_ends_at: trialEndsAt.toISOString(),
          expires_at: expiresAt.toISOString(),
          slug,
-         client_password: clientPassword,
+         client_password: hashedClientPassword,
          client_email: user.email, // Email di default dell'utente ShardApps
          client_active: true,
          expiry_warning_sent: false,
@@ -338,6 +344,11 @@ export async function POST(req: Request) {
       console.error('[API /apps] app insert error:', appError);
       return NextResponse.json({ error: 'Errore salvataggio app' }, { status: 500 });
     }
+
+    // La password appena generata (in chiaro) sostituisce l'hash appena
+    // riletto dal DB: questa risposta è l'unico momento legittimo in cui va
+    // mostrata, mai più recuperabile in seguito da una query.
+    app.client_password = clientPassword;
 
     // Registra l'app nella app_registry per la Management Console
     const appUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`;
