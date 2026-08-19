@@ -43,6 +43,16 @@ import {
 
 // ─── Planner ─────────────────────────────────────────────────────────────────
 // Piano BREVE e strutturato, mai l'app intera — vedi requisito Fase 5, punto 3.
+// CreatorAI V3 (sezioni 10-11, "Business Understanding"/"Planning"): tre
+// campi opzionali in più (relations/metrics/formulas), stesso principio
+// "elenco di nomi/concetti, non i dettagli" già usato da mainEntities/pages/
+// workflows/keyFeatures — MAI un secondo modello parallelo, solo un piano
+// leggermente più ricco che il Generator riceve come contesto (vedi
+// planToPromptContext sotto). `.default([])` mantiene compatibilità con
+// piani già persistiti in generation_jobs prima di questa estensione (un
+// piano vecchio senza questi campi resta valido, semplicemente con array
+// vuoti) e con un Planner AI che non li produce (nessun campo obbligatorio
+// nuovo, nessun repair scatenato da questo).
 export const GenerationPlanSchema = z.object({
   projectType: z.string(),
   sector: z.string(),
@@ -50,6 +60,15 @@ export const GenerationPlanSchema = z.object({
   pages: z.array(z.string()).default([]),
   workflows: z.array(z.string()).default([]),
   keyFeatures: z.array(z.string()).default([]),
+  /** Relazioni principali attese fra le entità, in forma leggibile breve
+   * (es. "enrollment -> member", "ordini -> clienti"), non uno schema. */
+  relations: z.array(z.string()).default([]),
+  /** KPI/metriche principali attese in dashboard, in forma leggibile breve
+   * (es. "totale fatturato", "abbonamenti attivi"). */
+  metrics: z.array(z.string()).default([]),
+  /** Formule/dipendenze principali attese fra campi numerici, in forma
+   * leggibile breve (es. "subtotale = quantita × prezzo_unitario"). */
+  formulas: z.array(z.string()).default([]),
 });
 export type GenerationPlan = z.infer<typeof GenerationPlanSchema>;
 
@@ -72,9 +91,12 @@ Rispondi SOLO con un JSON valido con ESATTAMENTE questa struttura, nessun testo 
   "mainEntities": ["nome_entita_1", "nome_entita_2"],
   "pages": ["home", "altra-pagina-se-serve"],
   "workflows": ["descrizione breve di un eventuale flusso di lavoro/stato, es. 'ordine: nuovo->in_preparazione->pronto'"],
-  "keyFeatures": ["caratteristica principale 1", "caratteristica principale 2"]
+  "keyFeatures": ["caratteristica principale 1", "caratteristica principale 2"],
+  "relations": ["breve elenco di relazioni fra entità attese, es. 'ordine -> cliente', 'iscrizione -> corso'"],
+  "metrics": ["KPI/metriche principali attese in dashboard, es. 'fatturato totale', 'ordini aperti'"],
+  "formulas": ["eventuali formule/dipendenze fra campi numerici attese, es. 'totale = quantita × prezzo_unitario'"]
 }
-Non generare campi, tabelle dettagliate o pagine complete: solo l'elenco dei nomi/concetti principali. Se il dominio non ha workflow/stati, "workflows" resta []. Non aggiungere testo prima o dopo il JSON.`;
+Non generare campi, tabelle dettagliate o pagine complete: solo l'elenco dei nomi/concetti principali. Se il dominio non ha workflow/stati/relazioni/formule espliciti, il relativo campo resta []. Non aggiungere testo prima o dopo il JSON.`;
 
 export async function runPlanner(
   input: { userPrompt: string; projectType: ProjectType; lang: string; context?: { userId?: string; tenantId?: string } },
@@ -117,6 +139,9 @@ export function planToPromptContext(plan: GenerationPlan | null): string {
     plan.pages.length ? `Pagine: ${plan.pages.join(', ')}` : '',
     plan.workflows.length ? `Workflow/stati: ${plan.workflows.join('; ')}` : '',
     plan.keyFeatures.length ? `Caratteristiche chiave: ${plan.keyFeatures.join(', ')}` : '',
+    plan.relations?.length ? `Relazioni attese: ${plan.relations.join('; ')}` : '',
+    plan.metrics?.length ? `KPI/metriche attese: ${plan.metrics.join('; ')}` : '',
+    plan.formulas?.length ? `Formule/dipendenze attese: ${plan.formulas.join('; ')}` : '',
   ].filter(Boolean);
   return lines.length > 1 ? `${lines.join('\n')}\n\n` : '';
 }
@@ -306,10 +331,165 @@ export function runValidator(rawSchema: unknown): ValidationResult {
     });
   }
 
+  // relation displayField (CreatorAI V3, sezione 7/8/12): resolveEntityRelations
+  // (site-schema.ts) già AUTO-CORREGGE deterministicamente un displayField
+  // richiesto che non esiste sull'entità target (sceglie un campo testo
+  // reale, o "id" come ultima risorsa) — per questo il controllo qui opera
+  // sullo schema RAW, PRIMA di quella correzione silenziosa (stesso motivo
+  // per cui il controllo dashboardCards sotto usa rawSchema, non
+  // `specification`): un displayField sbagliato nel blueprint richiesto dal
+  // modello resta un segnale di qualità della generazione, anche quando
+  // viene già corretto in automatico — mai bloccante (severity "warning",
+  // il campo resta comunque un id di relazione valido).
+  const rawEntities = (rawSchema as { adminPanel?: { entities?: unknown } } | null)?.adminPanel?.entities;
+  if (Array.isArray(rawEntities)) {
+    const rawEntityByName = new Map(
+      (rawEntities as Array<Record<string, unknown>>)
+        .filter((e) => typeof e?.name === 'string')
+        .map((e) => [e.name as string, e])
+    );
+    for (const rawEntity of rawEntities as Array<Record<string, unknown>>) {
+      const entityName = typeof rawEntity?.name === 'string' ? rawEntity.name : '?';
+      const rawFields = Array.isArray(rawEntity?.fields) ? (rawEntity.fields as Array<Record<string, unknown>>) : [];
+      for (const rawField of rawFields) {
+        if (rawField?.type !== 'relation') continue;
+        const targetName = (rawField.targetEntity ?? rawField.target) as string | undefined;
+        const target = targetName ? rawEntityByName.get(targetName) : undefined;
+        if (!target) continue; // già coperto da RELATION_TARGET_MISSING sopra
+        const requestedDisplay = (rawField.displayField ?? rawField.targetLabel) as string | undefined;
+        if (!requestedDisplay) continue; // nessuna richiesta esplicita, resolveEntityRelations sceglie da sé
+        const targetFields = Array.isArray(target.fields) ? (target.fields as Array<Record<string, unknown>>) : [];
+        const displayIsValid = targetFields.some((f) => f?.id === requestedDisplay && f?.type !== 'id');
+        if (!displayIsValid) {
+          issues.push({
+            severity: 'warning',
+            code: 'RELATION_DISPLAY_FIELD_MISSING',
+            path: `adminPanel.entities.${entityName}.fields.${String(rawField.id ?? '?')}`,
+            message: `Entità "${entityName}", campo "${String(rawField.id ?? '?')}": displayField "${requestedDisplay}" richiesto non esiste su "${targetName}" — corretto automaticamente con un campo di fallback, ma è un segnale di qualità del blueprint generato.`,
+          });
+        }
+      }
+    }
+  }
+
   if (errors.length > 0) {
     return { ok: false, errors, issues, sanitized, specification };
   }
   return { ok: true, errors: [], issues, sanitized, specification };
+}
+
+// ─── Classificazione degli issue (CreatorAI V3, sezione 13) ────────────────
+// Il repair loop (invariato: max MAX_REPAIR_RETRIES tentativi, invocato SOLO
+// quando result.ok è false, cioè quando esistono `errors`) è già per
+// costruzione riservato ai soli difetti "strutturali" (riferimenti rotti fra
+// entità/pagine/workflow — mai un'incoerenza opinabile o una scelta
+// estetica). Questa classificazione NON cambia quella logica (nessun nuovo
+// gate, nessun rischio di "riparare" un warning che prima non lo era) — è
+// puramente osservativa (persistita in generation_jobs.artifacts), per
+// distinguere a colpo d'occhio la NATURA di un issue quando si analizza una
+// generazione fallita o un warning, come richiesto dalla sezione 13
+// ("classifica: structural, semantic, data, relation, UI").
+export type IssueCategory = 'structural' | 'semantic' | 'data' | 'relation' | 'UI';
+
+const ISSUE_CATEGORY_BY_CODE: Record<string, IssueCategory> = {
+  SCHEMA_UNRECOVERABLE: 'structural',
+  SPEC_SCHEMA_INVALID: 'structural',
+  SECTION_ENTITY_MISSING: 'structural',
+  ACTION_TARGET_STATE_INVALID: 'semantic',
+  RELATION_TARGET_MISSING: 'relation',
+  RELATION_DISPLAY_FIELD_MISSING: 'relation',
+  WORKFLOW_TRIGGER_ENTITY_MISSING: 'relation',
+  WORKFLOW_ACTION_TARGET_MISSING: 'relation',
+  DASHBOARD_CARD_TABLE_MISSING: 'data',
+  DASHBOARD_FIELD_TYPE_MISMATCH: 'data',
+};
+
+/** Classifica un ValidationIssue nella sua natura (sezione 13) — codice non
+ * riconosciuto (es. un futuro nuovo check) ricade su 'structural', la
+ * categoria più cautelativa (mai sottostimare la gravità di un issue
+ * sconosciuto). */
+export function classifyIssueCategory(issue: ValidationIssue): IssueCategory {
+  return ISSUE_CATEGORY_BY_CODE[issue.code] ?? 'structural';
+}
+
+// ─── Self-Evaluation (CreatorAI V3, sezione 14) ────────────────────────────
+// Verifica FINALE, leggera (nessun NLP), rispetto alla richiesta originale
+// dell'utente — puramente osservativa (mai bloccante, mai un motivo di
+// repair: la sezione 14 stessa richiede "non bloccare generazioni valide per
+// interpretazioni speculative" — un parsing euristico del prompt non è mai
+// abbastanza affidabile da giustificare un repair automatico che potrebbe
+// INVENTARE un'entità/relazione/KPI mai realmente richiesta, lo stesso
+// principio "mai un'invenzione" già seguito da mockDataGenerator.ts per il
+// fallback dei campi non riconosciuti). Persistita in
+// generation_jobs.artifacts per osservabilità, non usata per decidere
+// ok/fail della generazione.
+export interface SelfEvaluationResult {
+  /** 0..1 — quota di segnali rilevati nel prompt che risultano soddisfatti
+   * nella specification generata. 1 quando il prompt non contiene alcun
+   * segnale verificabile (nessuna evidenza di omissione, non un giudizio
+   * di qualità assoluto). */
+  score: number;
+  satisfied: string[];
+  missing: string[];
+  warnings: string[];
+}
+
+const RELATION_HINTS = /relazion|collegat|associat|\blink\b|\brelation/i;
+const WORKFLOW_HINTS = /\bstato\b|\bstati\b|\bflusso\b|\bworkflow\b|\bstage\b|\bstatus\b/i;
+const KPI_HINTS = /dashboard|\bkpi\b|statistic|\breport\b|fatturat|ricav|entrat|\btotale\b/i;
+const FORMULA_HINTS = /calcola|formula|moltiplic|totale\s*=|×|\bsubtotal/i;
+
+/**
+ * Verifica minima "il richiesto è presente?" — sezione 14: entità
+ * principali, relazioni, workflow, KPI quando calcolabili, formule (solo
+ * come warning informativo, mai come "missing": non abbastanza affidabile
+ * per verificarle sullo schema persistito, che non porta le formule stesse —
+ * vedi mockDataGenerator.ts::FormulaContext, deliberatamente interno/non
+ * persistito, sezione 9 della spec V3).
+ */
+export function evaluateGenerationAgainstPrompt(userPrompt: string, specification: AppSpecification): SelfEvaluationResult {
+  const satisfied: string[] = [];
+  const missing: string[] = [];
+  const warnings: string[] = [];
+
+  if (specification.entities.length > 0) {
+    satisfied.push(`${specification.entities.length} entità generate`);
+  } else {
+    missing.push('nessuna entità generata');
+  }
+
+  const hasRelationField = specification.entities.some((e) => e.fields.some((f) => f.type === 'relation'));
+  if (RELATION_HINTS.test(userPrompt)) {
+    if (hasRelationField) satisfied.push('relazioni tra entità presenti, come suggerito dalla richiesta');
+    else missing.push('la richiesta suggerisce relazioni tra entità ma nessun campo relation è presente nello schema generato');
+  }
+
+  const hasStateField = specification.entities.some((e) => e.fields.some((f) => f.type === 'state'));
+  if (WORKFLOW_HINTS.test(userPrompt)) {
+    if (hasStateField) satisfied.push('workflow/stati presenti, come suggerito dalla richiesta');
+    else missing.push('la richiesta suggerisce un workflow/stato ma nessun campo state è presente nello schema generato');
+  }
+
+  const hasDashboard = Boolean(specification.dashboard?.cards?.length);
+  if (KPI_HINTS.test(userPrompt)) {
+    if (hasDashboard) satisfied.push('KPI/dashboard presenti, come suggerito dalla richiesta');
+    else missing.push('la richiesta suggerisce KPI/dashboard ma nessuna dashboardCard è presente nello schema generato');
+  }
+
+  if (FORMULA_HINTS.test(userPrompt)) {
+    const hasMultipleNumericOnSameEntity = specification.entities.some(
+      (e) => e.fields.filter((f) => f.type === 'number' || f.type === 'currency').length >= 2
+    );
+    if (hasMultipleNumericOnSameEntity) {
+      satisfied.push('più campi numerici sulla stessa entità, coerente con una formula/calcolo richiesto');
+    } else {
+      warnings.push('la richiesta suggerisce una formula/calcolo ma non è stato possibile verificarlo automaticamente sullo schema (non bloccante)');
+    }
+  }
+
+  const total = satisfied.length + missing.length;
+  const score = total === 0 ? 1 : satisfied.length / total;
+  return { score, satisfied, missing, warnings };
 }
 
 // ─── Repair Agent ────────────────────────────────────────────────────────────
@@ -483,11 +663,25 @@ export async function runGenerationOrchestrator(params: OrchestratorParams): Pro
       return { job, status: 'failed', error: errorMessage };
     }
 
+    // ─── Self-Evaluation (CreatorAI V3, sezione 14) ───────────────────────
+    // Best-effort, mai bloccante (stesso principio del Planner sopra): un
+    // fallimento qui (es. userPrompt vuoto/inatteso) non deve mai impedire
+    // di restituire una generazione altrimenti valida. Puramente osservativa
+    // — persistita in artifacts, non usata per decidere ok/fail.
+    let selfEvaluation: SelfEvaluationResult | undefined;
+    try {
+      if (result.specification) selfEvaluation = evaluateGenerationAgainstPrompt(userPrompt, result.specification);
+    } catch {
+      // Nessuna azione: self-evaluation resta assente, la generazione
+      // procede comunque (stesso spirito del Planner best-effort).
+    }
+
     job = await updateGenerationJob(supabase, job.id, {
       status: 'ready',
       current_step: 'ready',
       specification: result.specification,
       retry_count: retryCount,
+      artifacts: { ...job.artifacts, ...(selfEvaluation ? { selfEvaluation } : {}) },
     });
 
     return { job, status: 'ready', schema: result.sanitized, specification: result.specification };

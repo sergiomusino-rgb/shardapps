@@ -4,6 +4,14 @@
  * delle foto placeholder contestuali in recordPlaceholderImages.ts, ma per
  * il testo: euristiche sul nome/tipo di campo, nessuna chiamata AI (niente
  * costo, niente latenza, deterministico).
+ *
+ * CreatorAI V3: la classificazione del nome campo (person_name, unit_price,
+ * date_start, ...) vive ora in @/lib/semantic-fields.ts — un livello
+ * semantico CONDIVISO e language-independent (IT+EN), non più duplicato con
+ * regex solo italiane qui dentro. Questo file resta responsabile SOLO della
+ * "data strategy": quale generatore usare per un concetto dato, con quali
+ * dipendenze fra campi dello stesso record (vedi FormulaContext/DateContext
+ * sotto) — la classificazione stessa (field name -> concept) è delegata.
  */
 
 // Estensione esplicita (stesso motivo/pattern di site-schema.ts,
@@ -18,6 +26,7 @@
 import { fieldName } from './table-definitions.ts';
 import type { TableDef, FieldDef } from './table-definitions.ts';
 import { getPlaceholderCategoryForTable, type PlaceholderCategory } from '@/lib/recordPlaceholderImages';
+import { classifyFieldConcept, type SemanticConcept } from '@/lib/semantic-fields';
 
 const FIRST_NAMES = ['Marco', 'Giulia', 'Luca', 'Sara', 'Andrea', 'Chiara', 'Davide', 'Francesca', 'Matteo', 'Elena'];
 const LAST_NAMES = ['Rossi', 'Bianchi', 'Verdi', 'Russo', 'Ferrari', 'Esposito', 'Romano', 'Colombo', 'Ricci', 'Marino'];
@@ -81,9 +90,12 @@ function pick<T>(arr: T[], index: number): T {
 }
 
 /** Hash deterministico e stabile di una stringa (somma pesata dei code
- * point, come tante implementazioni minimali di string-hash) — usato SOLO
- * per far dipendere la scelta nel pool anche dal nome del campo, non solo
- * dall'indice del record. */
+ * point, come tante implementazioni minimali di string-hash) — usato per far
+ * dipendere la scelta/il valore anche dal nome del campo, non solo
+ * dall'indice del record: è il meccanismo alla base del fix CreatorAI V3
+ * (issue GitHub #39, punto 2) — OGNI campo semanticamente distinto (anche
+ * quando resta "generico"/non riconosciuto) deve avere una propria
+ * variazione, mai lo stesso seed fisso di un altro campo del record. */
 function stringHash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -104,122 +116,17 @@ function pickForField<T>(pool: T[], tableName: string, field: FieldDef, index: n
   return pick(pool, index + offset);
 }
 
-// ─── Inferenza semantica dei campi numerici (CreatorAI v2, Fix F.1) ────────
-// Problema osservato in produzione (Quality Pass v1.1, report finale F.1):
-// campi come costo_manodopera/costo_materiali/costo_totale/tariffa_oraria,
-// tutti type:"number", ricadevano sullo stesso identico fallback generico
-// (`randomInt(15, 1500, index + 600)`, stesso seed per qualunque nome campo)
-// — stesso identico valore ripetuto su più campi dello stesso record, la
-// stessa classe di bug già corretta per i campi TESTUALI in v1.1, qui
-// osservata nel ramo "number". Non è un secondo sistema: è la stessa idea
-// (un fallback che dipende dal nome campo, non condiviso) applicata anche
-// qui, più un minimo di coerenza matematica tra campi collegati
-// (manodopera ≈ ore × tariffa, totale ≈ somma delle parti) quando i nomi
-// dei campi la suggeriscono chiaramente — mai un'invenzione se il pattern
-// non è riconoscibile, in quel caso resta il fallback indipendente per
-// campo (mai la stessa formula "matematicamente perfetta" imposta a forza).
-type NumberFieldRole = 'duration' | 'rate' | 'costPart' | 'costTotal' | 'percentage' | 'quantity' | 'year' | 'km' | 'generic';
-
-function classifyNumberField(fn: string): NumberFieldRole {
-  if (/anno/.test(fn)) return 'year';
-  if (/km|chilometra/.test(fn)) return 'km';
-  if (/percentual|^perc$|sconto|\biva\b|margine/.test(fn)) return 'percentage';
-  if (/quantit|^qta$/.test(fn)) return 'quantity';
-  // "durata"/"ore" (ore_lavorate, durata_intervento, numero_ore): una
-  // quantità di tempo, non una valuta — deve restare un intero piccolo e
-  // plausibile (poche ore per intervento), non un importo in euro.
-  if (/^ore$|ore.?lavorate|numero.?ore|durata/.test(fn)) return 'duration';
-  // "tariffa"/"costo orario": una TARIFFA (valuta per unità), non un
-  // importo totale — va generata PRIMA delle cost part derivate, cosicché
-  // "costo_manodopera" possa usarla se il nome lo suggerisce.
-  if (/tariffa|costo.?orario|prezzo.?orario/.test(fn)) return 'rate';
-  // "totale"/"costo totale": va calcolato per ULTIMO (vedi generateMockRecord,
-  // due passate), come somma delle cost part già generate sullo stesso
-  // record, quando ce ne sono — altrimenti resta un fallback indipendente.
-  if (/costo.?totale|totale|importo.?totale|prezzo.?totale/.test(fn)) return 'costTotal';
-  // Qualunque altro campo "di valuta" (prezzo, costo, importo, valore,
-  // canone...): una "parte" di costo, generata indipendentemente a meno che
-  // il nome non suggerisca esplicitamente "manodopera"/"lavoro" — in quel
-  // caso, se duration+rate sono già stati generati sullo stesso record,
-  // costo_manodopera ≈ ore × tariffa (vedi generateSemanticNumber sotto).
-  if (/costo|prezzo|importo|valore|tariffa|canone/.test(fn)) return 'costPart';
-  return 'generic';
-}
-
-/**
- * Genera un valore numerico "semantico" per il nome campo dato, condiviso
- * da entrambi i case "number" e "currency" di generateFieldValue — un campo
- * di costo può arrivare dichiarato come l'uno o l'altro (dal modello, o da
- * coerceObviousNumericFieldTypes in site-schema.ts) e deve comunque
- * partecipare alla stessa coerenza ore×tariffa/somma-delle-parti.
- */
-function generateSemanticNumber(fn: string, index: number, numberCtx: NumberFieldContext): number {
-  const role = classifyNumberField(fn);
-  switch (role) {
-    case 'year': return randomInt(2010, 2024, index + 300);
-    case 'km': return randomInt(0, 200000, index + 400);
-    case 'quantity': return randomInt(1, 50, index + 500);
-    case 'percentage': return randomInt(5, 40, index + 550);
-    case 'duration': {
-      // Ore per un singolo intervento/attività: un intero piccolo e
-      // plausibile (non un importo), memorizzato nel contesto perché
-      // "costo_manodopera" possa usarlo se generato dopo (stesso record).
-      const v = randomInt(1, 10, index + 260);
-      numberCtx.duration = v;
-      return v;
-    }
-    case 'rate': {
-      const v = randomInt(20, 80, index + 270);
-      numberCtx.rate = v;
-      return v;
-    }
-    case 'costPart': {
-      // "manodopera"/"lavoro": se duration+rate sono già disponibili sullo
-      // stesso record (stesso ordine di dichiarazione dei campi del
-      // blueprint — tipicamente ore poi tariffa poi costo manodopera), il
-      // valore riflette quella relazione invece di essere puramente
-      // indipendente. Fallback indipendente ma VARIATO PER CAMPO (non lo
-      // stesso seed di ogni altra "cost part" dello stesso record — il bug
-      // F.1 osservato in produzione) quando la relazione non si applica o i
-      // dati non sono disponibili.
-      const isManodopera = /manodopera|lavoro|labor/.test(fn);
-      const v = (isManodopera && numberCtx.duration != null && numberCtx.rate != null)
-        ? numberCtx.duration * numberCtx.rate
-        : randomInt(15, 1500, index + 600 + (stringHash(fn) % 100));
-      numberCtx.costParts.push(v);
-      return v;
-    }
-    case 'costTotal': {
-      // Somma delle "cost part" già generate sullo stesso record, quando ce
-      // ne sono (vedi generateMockRecord: i campi costTotal sono generati in
-      // una seconda passata, DOPO tutte le altre) — altrimenti un fallback
-      // indipendente, mai il valore condiviso con altri campi.
-      if (numberCtx.costParts.length > 0) return numberCtx.costParts.reduce((a, b) => a + b, 0);
-      return randomInt(15, 1500, index + 600 + (stringHash(fn) % 100));
-    }
-    default:
-      return randomInt(1, 100, index + 700);
-  }
+function randomInt(min: number, max: number, seed: number): number {
+  // Variazione pseudo-casuale ma deterministica (stesso indice → stesso
+  // valore): evita mock diversi ad ogni refresh accidentale del form.
+  const x = Math.sin(seed * 999) * 10000;
+  const frac = x - Math.floor(x);
+  return min + Math.floor(frac * (max - min + 1));
 }
 
 /** Normalizza per il matching sul nome campo: minuscolo, senza accenti. */
 function norm(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-/**
- * Spezza un nome campo normalizzato nei suoi "token" (separati da
- * underscore/spazi/altri non-alfanumerici) — es. "nome_lead" -> ["nome",
- * "lead"], "valoreStimato" (già in minuscolo da norm) resta un unico token
- * ma "valore_stimato" -> ["valore", "stimato"]. Usato per i pattern che
- * prima richiedevano una corrispondenza ESATTA sull'intero nome campo
- * (es. /^nome$/, che non intercetta "nome_lead" o "nome_cliente_finale"):
- * un campo con id composto è comunissimo nei blueprint generati dall'AI e
- * prima ricadeva silenziosamente nel catch-all generico (bug osservato nel
- * benchmark: "Elemento Epsilon" ripetuto su più campi dello stesso record).
- */
-function tokens(fn: string): string[] {
-  return fn.split(/[^a-z0-9]+/).filter(Boolean);
 }
 
 function slugifyForEmail(s: string): string {
@@ -260,29 +167,250 @@ function buildIdentity(table: TableDef, index: number): MockIdentity {
   };
 }
 
-function randomInt(min: number, max: number, seed: number): number {
-  // Variazione pseudo-casuale ma deterministica (stesso indice → stesso
-  // valore): evita mock diversi ad ogni refresh accidentale del form.
-  const x = Math.sin(seed * 999) * 10000;
-  const frac = x - Math.floor(x);
-  return min + Math.floor(frac * (max - min + 1));
+// ─── Numeri semantici (CreatorAI v2 Fix F.1 -> V3 esteso) ──────────────────
+// v2 riconosceva solo ore/tariffa/costo_manodopera/costo_materiali/costo_totale
+// (regex italiane) e usava un fallback CONDIVISO (stesso seed fisso) per
+// qualunque altro campo non riconosciuto — bug osservato nel benchmark v2
+// reale (issue #39, punto 2: "unit_price"/"subtotal", entrambi non
+// riconosciuti da regex italiane, ricevevano lo STESSO valore identico su
+// ogni record). V3 risolve entrambi i problemi alla radice:
+// 1. la classificazione (classifyFieldConcept, semantic-fields.ts) è
+//    language-independent: "unit_price"/"subtotal" sono concetti di prima
+//    classe, non più fallback generici;
+// 2. il fallback VERAMENTE generico (concetto "unknown"/"currency_generic"
+//    quando le formule non si applicano) è SEMPRE variato per campo
+//    (stringHash(fn) % 100), mai un seed condiviso fisso — così anche due
+//    campi che restano genuinamente non classificati non collidono più.
+//
+// Dipendenze fra campi (sezione 6 della spec V3) — rappresentazione minima,
+// non un formula engine general-purpose: un contesto condiviso fra i campi
+// dello stesso record, letto/scritto in un ordine "sicuro" (vedi
+// numericConceptRank sotto), MAI un'invenzione quando i dati non bastano
+// (resta il fallback indipendente per quel campo).
+//   subtotal    = quantity × unit_price       (se entrambi presenti)
+//   labor_cost  = duration × rate             (se entrambi presenti)
+//   total_cost  = subtotal + tax - discount   (se subtotal presente)
+//               = Σ(labor_cost, material_cost) (altrimenti, se presenti)
+//   margin      = revenue - total_cost        (se entrambi presenti)
+interface FormulaContext {
+  duration?: number;
+  rate?: number;
+  quantity?: number;
+  unitPrice?: number;
+  tax?: number;
+  discount?: number;
+  revenue?: number;
+  subtotal?: number;
+  totalCost?: number;
+  /** "Cost part" raccolte per il fallback a somma di total_cost quando non
+   * c'è un subtotal (stesso meccanismo v2: labor_cost/material_cost). */
+  costParts: number[];
 }
 
-function randomRecentDate(index: number): string {
-  const daysAgo = randomInt(0, 540, index + 100);
+/**
+ * Genera un valore numerico "semantico" per il nome campo dato, condiviso
+ * da entrambi i case "number" e "currency" di generateFieldValue — un campo
+ * di costo può arrivare dichiarato come l'uno o l'altro (dal modello, o da
+ * coerceObviousNumericFieldTypes in site-schema.ts) e deve comunque
+ * partecipare alla stessa coerenza matematica.
+ */
+function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext): number {
+  const concept = classifyFieldConcept(fn);
+  // Variazione per-campo: applicata SEMPRE ai rami che prima usavano un seed
+  // fisso condiviso (v2 Fix F.1 lo faceva solo per "costPart"/"costTotal" —
+  // V3 lo estende a ogni ramo indipendente, il fix del residuo #2).
+  const v = stringHash(fn) % 100;
+  switch (concept) {
+    case 'year': return randomInt(2010, 2024, index + 300);
+    case 'distance': return randomInt(0, 200000, index + 400);
+    case 'quantity': {
+      const val = randomInt(1, 50, index + 500);
+      ctx.quantity = val;
+      return val;
+    }
+    case 'percentage': return randomInt(5, 40, index + 550 + v);
+    case 'score': return randomInt(1, 100, index + 560 + v);
+    case 'duration': {
+      // Ore per un singolo intervento/attività: un intero piccolo e
+      // plausibile (non un importo), memorizzato nel contesto perché
+      // "labor_cost" possa usarlo se generato dopo (stesso record).
+      const val = randomInt(1, 10, index + 260);
+      ctx.duration = val;
+      return val;
+    }
+    case 'rate': {
+      const val = randomInt(20, 80, index + 270);
+      ctx.rate = val;
+      return val;
+    }
+    case 'unit_price': {
+      const val = randomInt(5, 500, index + 280 + v);
+      ctx.unitPrice = val;
+      return val;
+    }
+    case 'tax': {
+      const val = randomInt(0, 100, index + 290 + v);
+      ctx.tax = val;
+      return val;
+    }
+    case 'discount': {
+      const val = randomInt(0, 80, index + 295 + v);
+      ctx.discount = val;
+      return val;
+    }
+    case 'revenue': {
+      const val = randomInt(500, 5000, index + 305 + v);
+      ctx.revenue = val;
+      return val;
+    }
+    case 'material_cost': {
+      const val = randomInt(15, 1500, index + 600 + v);
+      ctx.costParts.push(val);
+      return val;
+    }
+    case 'labor_cost': {
+      // Se duration+rate sono già disponibili sullo stesso record (stesso
+      // ordine "sicuro" di calcolo, vedi numericConceptRank), il valore
+      // riflette quella relazione invece di essere puramente indipendente.
+      const val = (ctx.duration != null && ctx.rate != null)
+        ? ctx.duration * ctx.rate
+        : randomInt(15, 1500, index + 600 + v);
+      ctx.costParts.push(val);
+      return val;
+    }
+    case 'subtotal': {
+      const val = (ctx.quantity != null && ctx.unitPrice != null)
+        ? ctx.quantity * ctx.unitPrice
+        : randomInt(15, 1500, index + 600 + v);
+      ctx.subtotal = val;
+      return val;
+    }
+    case 'total_cost': {
+      let val: number;
+      if (ctx.subtotal != null) val = ctx.subtotal + (ctx.tax ?? 0) - (ctx.discount ?? 0);
+      else if (ctx.costParts.length > 0) val = ctx.costParts.reduce((a, b) => a + b, 0);
+      else val = randomInt(15, 1500, index + 600 + v);
+      ctx.totalCost = val;
+      return val;
+    }
+    case 'margin': {
+      if (ctx.revenue != null && ctx.totalCost != null) return ctx.revenue - ctx.totalCost;
+      if (ctx.revenue != null && ctx.costParts.length > 0) return ctx.revenue - ctx.costParts.reduce((a, b) => a + b, 0);
+      return randomInt(-200, 2000, index + 610 + v);
+    }
+    // Qualunque altro campo "di valuta" riconosciuto ma senza un ruolo più
+    // specifico (canone, importo generico...): indipendente, variato per
+    // campo (mai lo stesso seed di un altro campo currency_generic dello
+    // stesso record).
+    case 'currency_generic':
+      return randomInt(15, 1500, index + 600 + v);
+    // Concetto non finanziario/non numerico riconosciuto su un campo
+    // number/currency (raro ma possibile, es. "priorita" dichiarato number):
+    // stesso fallback indipendente e variato del caso davvero sconosciuto.
+    default:
+      return randomInt(1, 100, index + 700 + v);
+  }
+}
+
+/** Livello di calcolo di un campo number/currency (V3, generalizza il Fix
+ * F.1 v2 a tutte le dipendenze della sezione 6): CORRETTO PER RUOLO
+ * SEMANTICO, non per posizione nel blueprint — un blueprint reale può
+ * elencare "total_cost" prima di "quantity"/"unit_price", e la coerenza non
+ * deve dipendere da quello (verificato — CreatorAI V2 Final Semantic
+ * Consistency Check).
+ * - rank 1: valori indipendenti (duration/rate/quantity/unit_price/tax/
+ *   discount/revenue/material_cost/year/distance/percentage/score/
+ *   currency_generic/sconosciuto) — vanno per primi, così sono sempre
+ *   disponibili quando serve calcolare un livello successivo.
+ * - rank 2: subtotal (quantity×unit_price) e labor_cost (duration×rate) —
+ *   possono dipendere dal rank 1.
+ * - rank 3: total_cost — può dipendere da subtotal/tax/discount (rank
+ *   1-2) o dalla somma delle cost part (rank 1-2).
+ * - rank 4: margin — può dipendere da revenue (rank 1) e total_cost
+ *   (rank 3).
+ * Tutti gli altri tipi di campo restano a rank 0 (ordine originale,
+ * comportamento invariato).
+ */
+function numericConceptRank(concept: SemanticConcept): number {
+  if (concept === 'labor_cost' || concept === 'subtotal') return 2;
+  if (concept === 'total_cost') return 3;
+  if (concept === 'margin') return 4;
+  return 1;
+}
+
+// ─── Date semantiche (CreatorAI V3, sezione 5) ─────────────────────────────
+// v2 generava OGNI campo "date"/"datetime" con randomRecentDate(index): due
+// campi data diversi sullo STESSO record (es. start_date/expiry_date)
+// ricevevano quindi lo stesso identico valore, perché la funzione variava
+// solo per indice record, mai per nome campo — bug osservato nel benchmark
+// reale (issue #39, punto 2, esteso dai numeri alle date). V3 introduce:
+// 1. una variazione per-campo (stessa idea di stringHash già usata sopra per
+//    i numeri) — corregge la collisione anche quando le due date non hanno
+//    un ruolo riconoscibile diverso;
+// 2. quando il nome del campo indica chiaramente un ruolo "inizio"/"fine"
+//    (start/end/deadline/scadenza), la data di fine viene generata DOPO
+//    quella di inizio sullo stesso record e resta sempre successiva
+//    (relazione plausibile start < end), mai un'invenzione quando manca un
+//    campo "inizio" riconoscibile (resta un fallback indipendente).
+interface DateFieldContext {
+  start?: string;
+}
+
+function addDaysToDateString(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function randomRecentDate(index: number, fieldOffset = 0, maxDaysAgo = 540): string {
+  const daysAgo = randomInt(0, maxDaysAgo, index + 100 + fieldOffset);
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
   return d.toISOString().slice(0, 10);
 }
 
-/** Contesto condiviso tra i campi dello stesso record, per la coerenza
- * matematica di CreatorAI v2 (Fix F.1) — vedi classifyNumberField sopra.
- * Puramente additivo: un record senza campi duration/rate/costPart si
- * comporta esattamente come prima (fallback indipendenti per campo). */
-interface NumberFieldContext {
-  duration?: number;
-  rate?: number;
-  costParts: number[];
+function generateSemanticDate(fn: string, index: number, dateCtx: DateFieldContext): string {
+  const concept = classifyFieldConcept(fn);
+  const offset = stringHash(fn) % 180;
+  switch (concept) {
+    case 'date_birth': {
+      // Età adulta plausibile (18-70 anni fa) — mai confusa con una data
+      // "recente" (creazione/scadenza), l'errore più visibile se questo
+      // ruolo non fosse distinto dagli altri.
+      const daysAgo = randomInt(18 * 365, 70 * 365, index + 120 + offset);
+      const d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      return d.toISOString().slice(0, 10);
+    }
+    case 'date_start': {
+      const val = randomRecentDate(index, offset);
+      dateCtx.start = val;
+      return val;
+    }
+    case 'date_end':
+    case 'date_deadline': {
+      // Se sullo stesso record esiste già una data di inizio (rank di
+      // calcolo, vedi dateConceptRank sotto, garantisce che sia già stata
+      // generata), la data di fine/scadenza resta SEMPRE successiva — mai
+      // un'invenzione quando manca un campo "inizio" riconoscibile: in quel
+      // caso resta un fallback indipendente, solo variato per campo.
+      if (dateCtx.start) return addDaysToDateString(dateCtx.start, 14 + randomInt(0, 120, index + 130 + offset));
+      return randomRecentDate(index, offset);
+    }
+    case 'date_updated':
+      return randomRecentDate(index, offset, 90);
+    case 'date_created':
+    default:
+      return randomRecentDate(index, offset);
+  }
+}
+
+/** Stesso principio di numericConceptRank, applicato alle date: "fine"/
+ * "scadenza" dopo "inizio", tutto il resto (incluso "sconosciuto") resta
+ * indipendente (rank 1, ordine invariato tra loro). */
+function dateConceptRank(concept: SemanticConcept): number {
+  if (concept === 'date_end' || concept === 'date_deadline') return 2;
+  return 1;
 }
 
 function generateFieldValue(
@@ -291,10 +419,10 @@ function generateFieldValue(
   index: number,
   tableName: string,
   relatedRecords: Record<string, { id: string }[]>,
-  numberCtx: NumberFieldContext
+  numberCtx: FormulaContext,
+  dateCtx: DateFieldContext
 ): unknown {
   const fn = norm(fieldName(field));
-  const fnTokens = tokens(fn);
 
   switch (field.type) {
     case 'checkbox':
@@ -305,13 +433,9 @@ function generateFieldValue(
     // case per un valore che questo switch non può mai ricevere sarebbe
     // codice morto oltre che un errore di tipo.
     case 'state': {
-      // Stesso trattamento di "select" sopra: un campo di stato (macchina a
+      // Stesso trattamento di "select" sotto: un campo di stato (macchina a
       // stati, site-schema.ts Fase 4) ha il proprio vocabolario in
-      // field.states, non in field.options. Prima non esisteva questo case:
-      // ricadeva nel "default" testuale, dove il nome del campo (es. "stato",
-      // "stato_pipeline") raramente incrocia le regex euristiche e collassa
-      // sul catch-all identity.categoryTitle — lo stesso identico bug del
-      // caso "id" sopra, osservato nel benchmark.
+      // field.states, non in field.options.
       if (!field.states?.length) return 'Standard';
       return pick(field.states, index);
     }
@@ -327,15 +451,11 @@ function generateFieldValue(
     }
     case 'date':
     case 'datetime':
-      return randomRecentDate(index);
+      return generateSemanticDate(fn, index, dateCtx);
     // "currency" e "number" condividono la STESSA inferenza semantica
-    // (generateSemanticNumber sotto): un campo di costo può arrivare
+    // (generateSemanticNumber sopra): un campo di costo può arrivare
     // dichiarato come l'uno o l'altro a seconda di come lo scrive il modello
-    // (o di come coerceObviousNumericFieldTypes lo corregge, site-schema.ts)
-    // — la coerenza ore×tariffa/costo_totale deve valere in entrambi i casi,
-    // non solo per "number" (altrimenti un campo "costo_totale" coerto a
-    // "currency" perderebbe la somma delle cost part e tornerebbe a un
-    // valore indipendente, lo stesso bug F.1 da un'altra porta).
+    // (o di come coerceObviousNumericFieldTypes lo corregge, site-schema.ts).
     case 'currency':
     case 'number':
       return generateSemanticNumber(fn, index, numberCtx);
@@ -352,95 +472,95 @@ function generateFieldValue(
       // — restano compilabili a mano.
       return undefined;
     case 'relation': {
-      // CreatorAI v2 — coerenza tra entità collegate (Sezione 9/criterio di
-      // successo: "Cliente = Acme SRL" deve comparire IDENTICO sia sul
-      // cliente sia sull'intervento collegato). Se sono già stati generati
-      // (o esistono già) record reali della tabella target — relationRecords,
-      // già raccolta e passata dal chiamante (page.tsx, stessa mappa già
-      // usata per risolvere le relation nelle celle della tabella, non un
-      // meccanismo nuovo) — si collega a uno di quelli (ciclico per indice,
-      // stesso pattern deterministico di pick()); altrimenti nessun valore,
-      // comportamento pre-esistente invariato (resta compilabile a mano: non
-      // esiste alcun record reale a cui collegarsi).
+      // CreatorAI v2 — coerenza tra entità collegate. Se sono già stati
+      // generati (o esistono già) record reali della tabella target —
+      // relationRecords, raccolta e passata dal chiamante (page.tsx) — si
+      // collega a uno di quelli (ciclico per indice, stesso pattern
+      // deterministico di pick()); altrimenti nessun valore (resta
+      // compilabile a mano: non esiste alcun record reale a cui collegarsi).
       const target = field.targetTable;
       const candidates = target ? relatedRecords[target] : undefined;
       if (!candidates || candidates.length === 0) return undefined;
       return pick(candidates, index).id;
     }
     default: {
-      // text e simili: euristica sul nome del campo. Gli anchor esatti
-      // (^nome$, ^via$, ^prodotto$, ^titolo$) di prima matchavano SOLO un
-      // campo chiamato letteralmente così — un id composto come "nome_lead"
-      // o "nome_cliente_finale" (comunissimo nei blueprint generati dall'AI)
-      // non incrociava nessuna regex e cadeva nel catch-all generico
-      // (identity.categoryTitle ripetuto su più campi dello stesso record,
-      // il bug osservato nel benchmark). Ora l'anchor esatto è sostituito da
-      // un controllo sui token del nome campo (fnTokens), che riconosce
-      // "nome" anche dentro "nome_lead" senza però confondersi con parole
-      // che lo contengono come sottostringa (es. "nomenclatura").
-      if (/ragione.?sociale|azienda|societ|impresa|fornitore/.test(fn)) return identity.companyName;
-      if (/cognome/.test(fn)) return identity.lastName;
-      if ((fnTokens.includes('nome') || /cliente|titolare|referente|contatto|nominativo/.test(fn)) && !/prodotto|nome.?prodotto/.test(fn)) return identity.firstName;
-      if (/indirizzo/.test(fn) || fnTokens.includes('via')) return identity.street;
-      if (/citt|comune/.test(fn)) return identity.city;
-      if (/targa/.test(fn)) return `${pick(['AB', 'CD', 'EF', 'GH', 'LM'], index)}${String(randomInt(100, 999, index + 900))}${pick(['ZX', 'YW', 'VU', 'TS', 'RQ'], index + 1)}`;
-      // CreatorAI v2 (Fix F.2): un campo TESTUALE il cui nome è chiaramente
-      // riconducibile a una data (data_*, *_data, scadenza, deadline,
-      // created_at/updated_at) — osservato in produzione: "data_chiusura_prevista"
-      // dichiarato "text" mostrava una frase generica invece di una data
-      // plausibile. Fallback controllato: si applica SOLO qui, nel ramo
-      // testuale di default — un campo dichiarato esplicitamente "date"/
-      // "datetime" passa già dal case dedicato sopra (randomRecentDate),
-      // che continua a prevalere sempre; questo non lo tocca in alcun modo.
-      if (fnTokens.includes('data') || fnTokens.includes('scadenza') || fnTokens.includes('deadline') || /created.?at|updated.?at/.test(fn)) {
-        return randomRecentDate(index);
+      // text e simili: classificazione semantica language-independent
+      // (classifyFieldConcept, semantic-fields.ts) — sostituisce la lunga
+      // catena di regex SOLO italiane della v2 (issue #39, punto 1).
+      const concept = classifyFieldConcept(fn);
+      switch (concept) {
+        case 'company_name': return identity.companyName;
+        case 'person_name':
+          // "cognome"/"surname"/"last_name": lo stesso concetto person_name
+          // copre sia nome che cognome (v3) — qui si distingue quale dei due
+          // in base al nome specifico del campo, stesso comportamento v2.
+          if (/cognome|surname|last.?name/.test(fn)) return identity.lastName;
+          return identity.firstName;
+        case 'address': return identity.street;
+        case 'city': return identity.city;
+        case 'plate':
+          return `${pick(['AB', 'CD', 'EF', 'GH', 'LM'], index)}${String(randomInt(100, 999, index + 900))}${pick(['ZX', 'YW', 'VU', 'TS', 'RQ'], index + 1)}`;
+        // Un campo TESTUALE il cui nome è chiaramente riconducibile a una
+        // data (Fix F.2 v2, esteso a tutti i sotto-ruoli temporali v3): un
+        // campo dichiarato esplicitamente "date"/"datetime" passa già dal
+        // case dedicato sopra — questo si applica SOLO al ramo di default
+        // testuale.
+        case 'date_birth':
+        case 'date_start':
+        case 'date_end':
+        case 'date_deadline':
+        case 'date_created':
+        case 'date_updated':
+        case 'date_generic':
+          return generateSemanticDate(fn, index, dateCtx);
+        // "prodotto"/"articolo"/"modello": SEMPRE identity.categoryTitle —
+        // quando la tabella ha una categoria nota (veicoli/immobili/...) è
+        // esattamente il caso per cui quel pool esiste (es. "Fiat 500" per
+        // un campo nome_prodotto su una tabella "veicoli").
+        case 'product_name': return identity.categoryTitle;
+        // Fallback monetario: un campo TESTUALE (non "number"/"currency",
+        // già gestiti sopra) il cui nome indica comunque un valore economico
+        // — merita un numero plausibile, variato per campo (mai lo stesso
+        // seed di un altro campo finanziario testuale non riconosciuto dello
+        // stesso record — stessa correzione della collisione già applicata
+        // sopra ai campi number/currency).
+        case 'unit_price':
+        case 'subtotal':
+        case 'tax':
+        case 'discount':
+        case 'revenue':
+        case 'margin':
+        case 'labor_cost':
+        case 'material_cost':
+        case 'currency_generic':
+          return randomInt(15, 1500, index + 250 + (stringHash(fn) % 100));
+        // Campo "ore" (es. "ore_lavorate") dichiarato testo: un intero
+        // plausibile, non testo (Fix #1 v1.1).
+        case 'duration':
+          return randomInt(1, 40, index + 260);
+        // "note": pool dedicato SEMPRE, indipendentemente da hasCategory —
+        // una nota non è mai legittimamente rappresentata da un nome di
+        // categoria (es. "Villa con Giardino" su un campo note non ha senso).
+        case 'notes': return pickForField(GENERIC_NOTES, tableName, field, index);
+        // "descrizione": stesso principio, pool dedicato sempre.
+        case 'description': return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
+        // "titolo"/"oggetto" generico (non prodotto, già gestito sopra): se
+        // la tabella ha una categoria reale, categoryTitle resta corretto e
+        // specifico del dominio — altrimenti, invece del pool generico
+        // CONDIVISO da ogni altro campo non riconosciuto dello stesso
+        // record, un pool dedicato variato per campo/indice.
+        case 'title':
+          return identity.hasCategory ? identity.categoryTitle : pickForField(GENERIC_TITLES_FALLBACK, tableName, field, index);
+        // Nessuna euristica ha riconosciuto il campo (concept "unknown", o
+        // un concetto testuale/workflow senza generatore ad hoc dedicato —
+        // es. "priority"/"stage" dichiarati testo): stessa logica di
+        // "titolo" — la categoria reale resta prioritaria, altrimenti un
+        // pool generico variato per campo/indice invece del valore
+        // condiviso da tutto il record.
+        default:
+          if (identity.hasCategory) return identity.categoryTitle;
+          return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
       }
-      // "prodotto"/"articolo"/"modello": SEMPRE identity.categoryTitle —
-      // quando la tabella ha una categoria nota (veicoli/immobili/...) è
-      // esattamente il caso per cui quel pool esiste (es. "Fiat 500" per un
-      // campo nome_prodotto su una tabella "veicoli"), comportamento
-      // verificato e da NON toccare. Separato da "titolo" sotto (Quality
-      // Pass v1.1, Fix #1): un titolo generico senza contesto di prodotto
-      // non deve più condividere lo stesso valore quando manca una
-      // categoria reale.
-      if (/nome.?prodotto|articolo|modello/.test(fn) || fnTokens.includes('prodotto')) return identity.categoryTitle;
-      // Fallback monetario: un campo TESTUALE (non "number"/"currency", già
-      // gestiti sopra) il cui nome indica comunque un valore economico —
-      // es. "valore_stimato" su un'entità tipo CRM/opportunità, scritto come
-      // testo libero anziché come number nel blueprint — merita comunque un
-      // numero plausibile, non lo stesso titolo generico degli altri campi
-      // non riconosciuti del record.
-      if (/valore|importo|prezzo|costo|totale|tariffa|stimato/.test(fn)) return randomInt(15, 1500, index + 250);
-      // Campo "ore" (es. "ore_lavorate"): un intero plausibile, non testo —
-      // stesso principio del fallback monetario sopra, per un campo che il
-      // blueprint può dichiarare "text" anche quando concettualmente è un
-      // numero (Quality Pass v1.1, Fix #1 — osservato in produzione su
-      // un'entità "interventi").
-      if (fnTokens.includes('ore') || /ore.?lavorate|numero.?ore/.test(fn)) return randomInt(1, 40, index + 260);
-      // "note": pool dedicato SEMPRE, indipendentemente da hasCategory — una
-      // nota non è mai legittimamente rappresentata da un nome di categoria
-      // (es. "Villa con Giardino" su un campo note non ha senso). Substring,
-      // non anchor esatto: copre anche id composti come "note_libere_xyz".
-      if (/note|annotazion/.test(fn)) return pickForField(GENERIC_NOTES, tableName, field, index);
-      // "descrizione": stesso principio, pool dedicato sempre.
-      if (/descrizion/.test(fn)) return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
-      // "titolo"/"oggetto" generico (non prodotto, già gestito sopra): se la
-      // tabella ha una categoria reale, categoryTitle resta corretto e
-      // specifico del dominio (comportamento già funzionante, non
-      // regredito) — altrimenti, invece del pool generico CONDIVISO da ogni
-      // altro campo non riconosciuto dello stesso record, un pool dedicato
-      // variato per campo/indice.
-      if (fnTokens.includes('titolo') || fnTokens.includes('oggetto')) {
-        return identity.hasCategory ? identity.categoryTitle : pickForField(GENERIC_TITLES_FALLBACK, tableName, field, index);
-      }
-      // Ultimo fallback (nessuna euristica sopra ha riconosciuto il campo):
-      // stessa logica di "titolo" — la categoria reale resta prioritaria
-      // (comportamento pre-esistente, invariato), altrimenti un pool
-      // generico variato per campo/indice invece del valore condiviso da
-      // tutto il record (il bug residuo osservato nella validazione
-      // production del Quality Pass v1).
-      if (identity.hasCategory) return identity.categoryTitle;
-      return pickForField(GENERIC_DESCRIPTIONS, tableName, field, index);
     }
   }
 }
@@ -456,33 +576,22 @@ function generateFieldValue(
  * già usata da page.tsx::relationRecords, nessun tipo nuovo da mantenere in
  * sincronia altrove.
  *
- * Due passate (CreatorAI v2, Fix F.1): i campi numerici classificati come
- * "costTotal" (es. costo_totale) sono generati DOPO tutti gli altri campi
- * dello stesso record, così possono sommare le "cost part" (es.
- * costo_manodopera + costo_materiali) già calcolate nella prima passata —
- * un record senza questo pattern si comporta esattamente come una singola
- * passata (nessun campo deferred, nessun cambio di comportamento).
+ * Ordine di calcolo "sicuro" (CreatorAI v2 Fix F.1, generalizzato in V3 a
+ * date + più livelli di formula, vedi numericConceptRank/dateConceptRank):
+ * i campi number/currency/date/datetime vengono calcolati in un ordine
+ * derivato dal loro RUOLO SEMANTICO (mai dalla posizione nel blueprint), poi
+ * il record restituito viene ricostruito nell'ordine di dichiarazione
+ * ORIGINALE — il riordino è solo un dettaglio interno di calcolo, mai un
+ * cambiamento visibile nell'ordine dei campi.
  */
-/**
- * Livello di calcolo di un campo number/currency, per la coerenza
- * ore×tariffa/somma-delle-parti (CreatorAI v2, Fix F.1) — CORRETTO PER
- * RUOLO SEMANTICO, non per posizione nel blueprint: un blueprint reale può
- * elencare "costo_totale" prima di "ore_lavorate" (l'ordine dei campi non è
- * mai garantito dal modello), e la coerenza non deve dipendere da quello.
- * - livello 1: duration/rate (nessuna dipendenza — vanno per prime, così
- *   sono sempre disponibili quando serve calcolare una cost part) e
- *   qualunque altro ruolo indipendente (year/km/quantity/percentage/generic).
- * - livello 2: costPart (può dipendere da duration+rate, livello 1).
- * - livello 3: costTotal (dipende dalle costPart già generate, livello 2).
- * Tutti gli altri tipi di campo restano a livello 0 (ordine originale,
- * comportamento invariato).
- */
-function numericComputationRank(field: FieldDef): number {
-  if (field.type !== 'number' && field.type !== 'currency') return 0;
-  const role = classifyNumberField(norm(fieldName(field)));
-  if (role === 'costPart') return 2;
-  if (role === 'costTotal') return 3;
-  return 1;
+function computationRank(field: FieldDef): number {
+  if (field.type === 'number' || field.type === 'currency') {
+    return numericConceptRank(classifyFieldConcept(fieldName(field)));
+  }
+  if (field.type === 'date' || field.type === 'datetime') {
+    return dateConceptRank(classifyFieldConcept(fieldName(field)));
+  }
+  return 0;
 }
 
 export function generateMockRecord(
@@ -491,24 +600,22 @@ export function generateMockRecord(
   relatedRecords: Record<string, { id: string }[]> = {}
 ): Record<string, unknown> {
   const identity = buildIdentity(table, index);
-  const numberCtx: NumberFieldContext = { costParts: [] };
+  const numberCtx: FormulaContext = { costParts: [] };
+  const dateCtx: DateFieldContext = {};
 
-  // Calcola nell'ordine "sicuro" (rank crescente, stabile a parità di rank —
-  // vedi numericComputationRank sopra)...
+  // Calcola nell'ordine "sicuro" (rank crescente, stabile a parità di rank)...
   const computationOrder = table.fields
-    .map((field, position) => ({ field, position, rank: numericComputationRank(field) }))
+    .map((field, position) => ({ field, position, rank: computationRank(field) }))
     .sort((a, b) => a.rank - b.rank || a.position - b.position)
     .map((x) => x.field);
 
   const computed = new Map<FieldDef, unknown>();
   for (const field of computationOrder) {
-    computed.set(field, generateFieldValue(field, identity, index, table.name, relatedRecords, numberCtx));
+    computed.set(field, generateFieldValue(field, identity, index, table.name, relatedRecords, numberCtx, dateCtx));
   }
 
   // ...ma il record restituito mantiene l'ordine di dichiarazione ORIGINALE
-  // del blueprint (stesso ordine di sempre per le colonne della tabella):
-  // il riordino sopra è solo un dettaglio interno di calcolo, mai un
-  // cambiamento visibile nell'ordine dei campi.
+  // del blueprint (stesso ordine di sempre per le colonne della tabella).
   const record: Record<string, unknown> = {};
   for (const field of table.fields) {
     const value = computed.get(field);

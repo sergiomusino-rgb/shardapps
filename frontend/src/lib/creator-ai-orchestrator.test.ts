@@ -21,7 +21,10 @@ import {
   runGenerationOrchestrator,
   PlannerError,
   MAX_REPAIR_RETRIES,
+  classifyIssueCategory,
+  evaluateGenerationAgainstPrompt,
   type AiCallFn,
+  type ValidationIssue,
 } from './creator-ai-orchestrator.ts';
 
 const GENERATION_JOBS_DEFAULTS = {
@@ -112,6 +115,12 @@ const VALID_PLAN = {
   pages: ['home'],
   workflows: [],
   keyFeatures: ['gestione clienti'],
+  // CreatorAI V3 (sezioni 10-11): campi opzionali aggiuntivi del piano,
+  // esplicitati qui (invece di lasciarli al default Zod) così il confronto
+  // deepEqual sotto resta la fonte di verità sull'intera forma del piano.
+  relations: [],
+  metrics: [],
+  formulas: [],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -484,4 +493,148 @@ test('Orchestrator: un campo "costo_totale" generato come "text" ma referenziato
   const field = entity?.fields.find((f) => f.id === 'costo_totale');
   assert.ok(field?.type === 'currency' || field?.type === 'number');
   assert.equal(result.schema?.dashboardCards.length, 1);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — sezione 12: validazione estesa, displayField di una
+// relation (fix TEST E, issue GitHub #39 punto 3 — riprodotto anche a
+// livello di ORCHESTRATOR, non solo di rendering client, vedi
+// table-definitions.test.ts).
+// ═══════════════════════════════════════════════════════════════════════════
+
+function schemaWithRelation(displayField: string) {
+  return validRawSchema({
+    adminPanel: {
+      entities: [
+        {
+          name: 'member',
+          label: 'Member',
+          labelPlural: 'Members',
+          icon: '🧑',
+          fields: [
+            { id: 'id', type: 'id', label: 'ID' },
+            { id: 'full_name', type: 'text', label: 'Full Name' },
+          ],
+        },
+        {
+          name: 'subscription',
+          label: 'Subscription',
+          labelPlural: 'Subscriptions',
+          icon: '📄',
+          fields: [
+            { id: 'id', type: 'id', label: 'ID' },
+            { id: 'member_id', type: 'relation', label: 'Member', targetEntity: 'member', displayField },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+test('runValidator: relation con displayField che esiste davvero sull\'entità target -> nessuna issue RELATION_DISPLAY_FIELD_MISSING', () => {
+  const result = runValidator(schemaWithRelation('full_name'));
+  assert.equal(result.ok, true);
+  assert.ok(!result.issues?.some((i) => i.code === 'RELATION_DISPLAY_FIELD_MISSING'));
+});
+
+test('runValidator: relation con displayField che NON esiste sull\'entità target -> issue "warning" RELATION_DISPLAY_FIELD_MISSING, non blocca ok:true', () => {
+  const result = runValidator(schemaWithRelation('nome_che_non_esiste'));
+  // Warning, mai un errore: il campo resta un id valido, solo l'etichetta
+  // mostrata sarebbe sbagliata — mai un motivo per bloccare la generazione.
+  assert.equal(result.ok, true);
+  assert.ok(result.issues?.some((i) => i.code === 'RELATION_DISPLAY_FIELD_MISSING' && i.severity === 'warning'));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — sezione 13: classifyIssueCategory.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('classifyIssueCategory: assegna la categoria attesa ai codici noti', () => {
+  const cases: Array<[string, string]> = [
+    ['SCHEMA_UNRECOVERABLE', 'structural'],
+    ['SPEC_SCHEMA_INVALID', 'structural'],
+    ['SECTION_ENTITY_MISSING', 'structural'],
+    ['ACTION_TARGET_STATE_INVALID', 'semantic'],
+    ['RELATION_TARGET_MISSING', 'relation'],
+    ['RELATION_DISPLAY_FIELD_MISSING', 'relation'],
+    ['WORKFLOW_TRIGGER_ENTITY_MISSING', 'relation'],
+    ['WORKFLOW_ACTION_TARGET_MISSING', 'relation'],
+    ['DASHBOARD_CARD_TABLE_MISSING', 'data'],
+    ['DASHBOARD_FIELD_TYPE_MISMATCH', 'data'],
+  ];
+  for (const [code, expected] of cases) {
+    const issue: ValidationIssue = { severity: 'error', code, path: '', message: '' };
+    assert.equal(classifyIssueCategory(issue), expected, `code ${code} atteso "${expected}"`);
+  }
+});
+
+test('classifyIssueCategory: un codice sconosciuto ricade sulla categoria più cautelativa ("structural")', () => {
+  const issue: ValidationIssue = { severity: 'warning', code: 'CODICE_MAI_VISTO', path: '', message: '' };
+  assert.equal(classifyIssueCategory(issue), 'structural');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V3 — sezione 14: Self-Evaluation.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('evaluateGenerationAgainstPrompt: relazioni richieste e presenti -> satisfied, score 1', () => {
+  const spec = runValidator(schemaWithRelation('full_name')).specification!;
+  const result = evaluateGenerationAgainstPrompt('Gestionale con abbonamenti collegati ai soci', spec);
+  assert.ok(result.satisfied.some((s) => s.includes('relazioni')));
+  assert.equal(result.missing.length, 0);
+  assert.equal(result.score, 1);
+});
+
+test('evaluateGenerationAgainstPrompt: workflow/stati richiesti ma assenti dallo schema -> missing, score < 1', () => {
+  const spec = runValidator(validRawSchema()).specification!; // nessun campo "state"
+  const result = evaluateGenerationAgainstPrompt('Gestionale con flusso di lavoro e stati per ogni pratica', spec);
+  assert.ok(result.missing.some((m) => m.includes('workflow')));
+  assert.ok(result.score < 1);
+});
+
+test('evaluateGenerationAgainstPrompt: KPI/dashboard richiesti e presenti -> satisfied', () => {
+  const schema = validRawSchema({ dashboardCards: [{ type: 'count', table: 'clienti', label: 'Totale Clienti' }] });
+  const spec = runValidator(schema).specification!;
+  const result = evaluateGenerationAgainstPrompt('Gestionale con dashboard e KPI principali', spec);
+  assert.ok(result.satisfied.some((s) => s.includes('KPI')));
+});
+
+test('evaluateGenerationAgainstPrompt: un prompt senza alcun segnale verificabile -> score 1, nessun missing (mai un giudizio speculativo)', () => {
+  const spec = runValidator(validRawSchema()).specification!;
+  const result = evaluateGenerationAgainstPrompt('Un semplice sito vetrina per il mio negozio', spec);
+  assert.equal(result.missing.length, 0);
+  assert.equal(result.score, 1);
+});
+
+test('evaluateGenerationAgainstPrompt: formula richiesta ma non verificabile -> SOLO warning, mai "missing" (nessuna invenzione/blocco per interpretazioni speculative)', () => {
+  const spec = runValidator(validRawSchema()).specification!; // un solo campo "text", nessun campo numerico
+  // "subtotale" (non "totale" da solo): evita di far scattare anche
+  // KPI_HINTS (che riconosce "totale" come possibile richiesta di KPI) —
+  // qui si vuole isolare SOLO il segnale "formula".
+  const result = evaluateGenerationAgainstPrompt('Calcola il subtotale moltiplicando quantità per prezzo unitario', spec);
+  assert.equal(result.missing.length, 0);
+  assert.ok(result.warnings.length > 0);
+});
+
+test('evaluateGenerationAgainstPrompt: nessuna entità generata -> sempre "missing", indipendentemente dal prompt', () => {
+  const result = evaluateGenerationAgainstPrompt('qualunque richiesta', { entities: [] } as unknown as Parameters<typeof evaluateGenerationAgainstPrompt>[1]);
+  assert.ok(result.missing.some((m) => m.includes('nessuna entità')));
+});
+
+test('Orchestrator: la self-evaluation viene persistita in artifacts dopo una generazione riuscita, mai bloccante', async () => {
+  const supabase = freshSupabase();
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Gestionale con soci collegati agli abbonamenti',
+    projectType: 'gestionale',
+    lang: 'it',
+    generate: async () => schemaWithRelation('full_name'),
+    skipPlanner: true,
+  });
+  assert.equal(result.status, 'ready');
+  assert.ok(result.job.artifacts?.selfEvaluation);
+  const evalResult = result.job.artifacts!.selfEvaluation as { score: number; satisfied: string[] };
+  assert.equal(evalResult.score, 1);
 });

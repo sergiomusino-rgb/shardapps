@@ -1,10 +1,17 @@
 /**
  * Definizioni delle tabelle per l'app gestionale figlia.
- * 
+ *
  * Ogni tabella ha:
  * - Campi FISSI: colonne strutturali predefinite (es. Ragione Sociale, Nome Prodotto, Prezzo)
  * - dati_personalizzati (JSONB): colonne dinamiche aggiunte dall'utente finale
  */
+
+// Import relativo (non l'alias "@/lib/...") apposta: table-definitions.ts è
+// storicamente un modulo "nessuna dipendenza esterna" testabile con
+// `node --test` diretto, senza il loader di risoluzione alias (vedi
+// table-definitions.test.ts) — stessa estensione .ts esplicita richiesta
+// dal resolver ESM nativo di Node per un import relativo di file .ts.
+import { classifyFieldConcept, isFinancialConcept } from '../../../../lib/semantic-fields.ts';
 
 export interface FieldDef {
   name: string;
@@ -123,11 +130,31 @@ export function selectQuickActionTables<T extends { name: string; fields: FieldD
  * come "prodotti" hanno spesso ENTRAMBI prezzo_acquisto e prezzo_vendita —
  * un semplice match su /prezzo/i sceglierebbe sempre il primo dei due
  * (di solito il costo d'acquisto, non il prezzo di vendita).
+ *
+ * CreatorAI V3: classificazione language-independent (classifyFieldConcept,
+ * semantic-fields.ts) — prima riconosceva SOLO nomi campo italiani
+ * (/vendita|totale|importo/, /prezzo|costo/), quindi un blueprint generato
+ * in inglese ("price"/"total") non veniva mai riconosciuto come "il" campo
+ * prezzo (issue GitHub #39, punto 1 — root cause del difetto osservato in
+ * TEST E: il campo "price" non veniva escluso dal titolo/sottotitolo
+ * identità perché findDisplayPriceField non lo riconosceva).
  */
 export function findDisplayPriceField<T extends { name?: string; id?: string; type: string }>(fields: T[]): T | undefined {
-  return fields.find((f) => f.type === 'currency')
-    || fields.find((f) => f.type === 'number' && /vendita|totale|importo/i.test(fieldName(f as any)))
-    || fields.find((f) => f.type === 'number' && /prezzo|costo/i.test(fieldName(f as any)) && !/acquist/i.test(fieldName(f as any)));
+  const currencyField = fields.find((f) => f.type === 'currency');
+  if (currencyField) return currencyField;
+  const numberFields = fields.filter((f) => f.type === 'number');
+  // Nome del campo per il matching: T non estende nominalmente FieldDef (è
+  // un generic strutturale più permissivo, per restare riusabile anche da
+  // chiamanti con tipi propri) — un piccolo helper locale invece del cast
+  // `as any` che il generic imported fieldName(FieldDef) richiederebbe qui.
+  const nameOf = (f: T) => f.name || f.id || '';
+  // "prezzo_acquisto"/"purchase_price": costo interno, mai il prezzo
+  // mostrato al cliente — anche se il nome contiene comunque un concetto
+  // finanziario riconosciuto.
+  const isPurchaseCost = (f: T) => /acquist|purchase/i.test(nameOf(f));
+  const conceptOf = (f: T) => classifyFieldConcept(nameOf(f));
+  return numberFields.find((f) => !isPurchaseCost(f) && (conceptOf(f) === 'total_cost' || conceptOf(f) === 'unit_price'))
+    || numberFields.find((f) => !isPurchaseCost(f) && isFinancialConcept(conceptOf(f)));
 }
 
 /**
@@ -248,7 +275,23 @@ export function pickIdentityFields<T extends FieldDef>(fields: T[]): {
   const imageField = fields.find((f) => f.type === 'image');
   const badgeField = fields.find((f) => f.type === 'select');
   const priceField = findDisplayPriceField(fields);
-  const titleField = fields.find((f) => f.type === 'text' && f !== badgeField && f !== imageField) || fields[0];
+  const eligible = (f: T) => f !== badgeField && f !== imageField;
+  // CreatorAI V3 (fix TEST E — issue GitHub #39, punto 3): il fallback
+  // "fields[0]" da solo poteva scegliere un campo relation/number/date/state
+  // come titolo — mostrato poi come valore GREZZO invece che tramite
+  // resolveRelationLabel (es. la colonna "Member" di un abbonamento
+  // mostrava, di fatto, il campo "price" adiacente perché il titolo
+  // relation non risolto risultava vuoto). Qui si sceglie in ordine di
+  // preferenza un campo "nominabile": testo, poi email, poi relation (ora
+  // risolta correttamente a valle da DynamicDataTable.tsx/
+  // RecordCardGrid.tsx), infine qualunque tipo che NON sia palesemente
+  // inadatto come titolo (numero/valuta/data/stato) — fields[0] resta
+  // l'ultima risorsa, invariato quando non c'è alcuna alternativa migliore.
+  const titleField = fields.find((f) => f.type === 'text' && eligible(f))
+    || fields.find((f) => f.type === 'email' && eligible(f))
+    || fields.find((f) => f.type === 'relation' && eligible(f))
+    || fields.find((f) => !['number', 'currency', 'date', 'datetime', 'state'].includes(f.type) && eligible(f))
+    || fields[0];
   const subtitleFields = fields
     .filter((f) => f !== titleField && f !== badgeField && f !== priceField && f !== imageField)
     .slice(0, 2);
