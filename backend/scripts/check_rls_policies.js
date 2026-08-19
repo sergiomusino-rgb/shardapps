@@ -414,6 +414,11 @@ const FUNCTION_BASELINE = {
   // già su service_role (api/creator/create, api/apps) — non ha bisogno di
   // essere raggiungibile dal client.
   'increment_tenant_app_count(p_tenant_id uuid)': ['service_role'],
+  // Private Beta (20260830000000): legge auth.users (non esposta via
+  // PostgREST) per risolvere il tenant di un'email quando l'admin
+  // approva/revoca una candidatura beta — solo
+  // PATCH /api/admin/beta-applications/:id (service_role) la chiama.
+  'find_owned_tenant_id_by_email(p_email text)': ['service_role'],
 
   // ─── Verificate: grant ampio intenzionale, con controllo interno solido ──
   // Lette per intero il 2026-08-09 — ognuna filtra esplicitamente su

@@ -100,6 +100,26 @@ test('publish (nuova app): 403 SlotsExhausted quando il tenant ha esaurito gli s
   assert.equal(body.code, 'SLOTS_EXHAUSTED');
 });
 
+test('publish (nuova app): tenant beta con app_limit 0 pubblica comunque (Private Beta, nessun checkout Stripe)', async (t) => {
+  setupRouteTest(t, baseSetup({
+    seedTables: {
+      tenants: [{ id: 'tenant-1', owner_id: 'user-1', plan: 'free', app_limit: 0, total_apps_created: 0, beta_access: true }],
+      tenant_members: [{ id: 'tm-1', tenant_id: 'tenant-1', user_id: 'user-1', role: 'owner' }],
+    },
+    authUsers: { 'tok-1': { id: 'user-1', email: 'agenzia-beta@example.com' } },
+  }));
+  const { POST } = await importRoute(ROUTE_PATH);
+  const { NextRequest } = await import('next/server.js');
+  const req = new NextRequest('http://localhost/api/creator/publish', {
+    method: 'POST', headers: authHeaders('tok-1'), body: JSON.stringify({ schema: validSchema() }),
+  });
+  const res = await (POST as (r: Request) => Promise<Response>)(req);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.success, true);
+  assert.ok(body.data.appId);
+});
+
 test('publish (nuova app, human approval = chiamata POST esplicita): crea l\'app, consuma uno slot, ritorna credenziali', async (t) => {
   const setup = setupRouteTest(t, baseSetup({
     seedTables: {

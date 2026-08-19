@@ -15,6 +15,34 @@ export async function getUserFromToken(supabase: SupabaseClient, token: string) 
   return user;
 }
 
+// Private Beta (Blocco 2): un tenant appena creato eredita subito
+// beta_access se l'email dell'utente ha una candidatura beta_applications
+// con status='approved' — stessa tabella già usata dal gate di signup
+// (vedi migration 20260830000000_private_beta_entitlement.sql e il trigger
+// enforce_beta_allowlist su auth.users), nessuna nuova fonte di verità.
+// Query best-effort: un fallimento qui non deve mai impedire la creazione
+// del tenant, solo lasciarlo senza beta_access (si ricade sul comportamento
+// commerciale normale, mai un errore per l'utente).
+async function isBetaApprovedEmail(supabase: SupabaseClient, email?: string): Promise<boolean> {
+  if (!email) return false;
+  try {
+    const { data, error } = await supabase
+      .from('beta_applications')
+      .select('id')
+      .eq('email', email.toLowerCase())
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (error) {
+      console.error('[isBetaApprovedEmail] lookup fallito:', error);
+      return false;
+    }
+    return Boolean(data);
+  } catch (err) {
+    console.error('[isBetaApprovedEmail] errore inatteso:', err);
+    return false;
+  }
+}
+
 export async function getOrCreateTenant(
   supabase: SupabaseClient,
   user: { id: string; email?: string },
@@ -28,6 +56,8 @@ export async function getOrCreateTenant(
 
   if (memberships?.[0]?.tenant_id) return memberships[0].tenant_id;
 
+  const betaAccess = await isBetaApprovedEmail(supabase, user.email);
+
   const { data: tenant, error: tenantError } = await supabase
     .from('tenants')
     .insert({
@@ -37,6 +67,7 @@ export async function getOrCreateTenant(
       plan: 'free',
       app_limit: 0,
       total_apps_created: 0,
+      beta_access: betaAccess,
     })
     .select('id')
     .single();
@@ -79,7 +110,7 @@ export async function canCreateApp(
 ): Promise<{ allowed: boolean; reason?: string; tenant?: any }> {
   const { data: tenant, error: tenantError } = await supabase
     .from('tenants')
-    .select('plan, app_limit, total_apps_created')
+    .select('plan, app_limit, total_apps_created, beta_access')
     .eq('id', tenantId)
     .single();
 
@@ -89,6 +120,17 @@ export async function canCreateApp(
 
   // Admin: app illimitate
   if (userId === CREATOR_ADMIN_USER_ID) {
+    return { allowed: true, tenant };
+  }
+
+  // Private Beta (Blocco 2): un tenant con beta_access=true bypassa il
+  // paywall commerciale (nessuna modifica a plan/app_limit, il modello
+  // commerciale resta intatto per tutti gli altri tenant) — stesso principio
+  // del bypass admin sopra, stessa colonna verificata anche dentro la RPC
+  // atomica increment_tenant_app_count (vedi reserveAppSlot sotto), mai solo
+  // qui: un tenant beta deve poter generare E pubblicare, non solo superare
+  // questo pre-check.
+  if (tenant.beta_access === true) {
     return { allowed: true, tenant };
   }
 
@@ -128,13 +170,18 @@ export type SlotReservationResult =
 export async function reserveAppSlot(
   supabase: SupabaseClient,
   tenantId: string,
-  tenant: { total_apps_created?: number; app_limit?: number } | undefined,
+  tenant: { total_apps_created?: number; app_limit?: number; beta_access?: boolean } | undefined,
   userId: string
 ): Promise<SlotReservationResult> {
   if (userId === CREATOR_ADMIN_USER_ID) {
     return { ok: true, reserved: false };
   }
 
+  // increment_tenant_app_count (vedi migration 20260830000000) verifica
+  // beta_access DENTRO la UPDATE atomica (stessa WHERE della guardia
+  // app_limit), non solo qui in JS: un tenant beta consuma comunque uno
+  // slot "virtuale" via total_apps_created (utile per le statistiche), ma
+  // non ne resta mai bloccato.
   const { data: slotResult, error: slotError } = await supabase.rpc('increment_tenant_app_count' as any, {
     p_tenant_id: tenantId,
   }) as { data: unknown[] | null; error: any };
@@ -148,7 +195,7 @@ export async function reserveAppSlot(
     // DB remoto: fallback non atomico (stessa race condition storica) invece
     // di rompere la creazione app per tutti finché non viene deployata.
     console.warn('[reserveAppSlot] increment_tenant_app_count non disponibile, fallback non atomico:', slotError.message);
-    if (!tenant || (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1)) {
+    if (!tenant || (!tenant.beta_access && (tenant.total_apps_created ?? 0) >= (tenant.app_limit ?? 1))) {
       return { ok: false, reason: 'SlotsExhausted' };
     }
     await supabase
