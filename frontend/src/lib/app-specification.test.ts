@@ -81,6 +81,11 @@ const V2_BLUEPRINT: SiteBlueprintJSON = {
   // a sanitizeSiteBlueprint — un'app reale generata prima della Fase 4
   // continua a leggere [] di default, invariata.
   workflows: [],
+  // Quality Pass v1 (Fix #3): stesso motivo di "workflows" sopra — campo
+  // aggiunto a SiteBlueprintJSON dopo questa fixture, richiesto solo perché
+  // il tipo è quello OUTPUT; un blueprint reale pre-esistente legge [] di
+  // default, invariato.
+  dashboardCards: [],
   businessConfig: {
     name: 'Da Mario',
     logoUrl: 'https://example.com/mario-logo.png',

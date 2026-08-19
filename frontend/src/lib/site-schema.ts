@@ -16,7 +16,7 @@ import { z } from 'zod';
 // site-schema.test.ts) — Next.js/webpack risolve un import relativo con o
 // senza estensione .ts in modo identico, nessun cambio di comportamento a
 // runtime nell'app.
-import { FieldSchema, type Field } from './blueprint-schema.ts';
+import { FieldSchema, DashboardCardSchema, type Field, type DashboardCard } from './blueprint-schema.ts';
 
 // ─── Tipo progetto ──────────────────────────────────────────────────────────
 
@@ -391,6 +391,102 @@ function resolveEntities(entities: AdminEntity[]): AdminEntity[] {
   return resolveEntityStatesAndActions(resolveEntityRelations(entities));
 }
 
+// ─── dashboardCards (Quality Pass v1, Fix #3) ───────────────────────────────
+// Stesso principio di resolveEntityRelations/resolveEntityStatesAndActions
+// sopra: DashboardCardSchema valida solo la FORMA di una card isolata, non se
+// "table"/"field" riferiscono davvero un'entità/campo reali — serve
+// l'adminPanel.entities già risolto per verificarlo. Una card con un
+// riferimento rotto viene scartata (mai mostrata, mai un crash a runtime nel
+// Dashboard che dovrebbe calcolarla), non "riparata a caso": è l'unico modo
+// sicuro di gestire un riferimento che l'AI può comunque generare male.
+const DASHBOARD_CARD_TYPES = new Set(['count', 'sum', 'avg', 'latest']);
+function resolveDashboardCards(entities: AdminEntity[], cards: DashboardCard[]): DashboardCard[] {
+  const byName = new Map(entities.map((e) => [e.name, e]));
+  const out: DashboardCard[] = [];
+  for (const card of cards) {
+    const entity = byName.get(card.table);
+    if (!entity) continue; // "table" non corrisponde a nessuna entità reale: scartata, mai una card che il Dashboard non può calcolare
+    const type = DASHBOARD_CARD_TYPES.has(card.type) ? card.type : 'count';
+    if ((type === 'sum' || type === 'avg') && !entity.fields.some((f) => f.id === card.field && (f.type === 'number' || f.type === 'currency'))) {
+      continue; // sum/avg richiede un campo numerico REALE dell'entità: senza, non è calcolabile
+    }
+    out.push({ ...card, type });
+  }
+  return out.slice(0, 6); // stesso tetto del prompt (WORKFLOW_DOC-style): una dashboard con troppe card è rumore, non chiarezza
+}
+
+// ─── Landing di fallback, generica ma coerente col dominio (Quality Pass v1,
+// Fix #1) ─────────────────────────────────────────────────────────────────
+// Nessuna chiamata AI: costruita SOLO da dati già presenti nel blueprint
+// (businessConfig, nomi/etichette delle entità) — mai un testo hardcoded
+// identico per ogni app, mai inventato da zero. Usata sia da
+// creator-site-generator.ts (quando il modello non produce sezioni
+// nonostante l'istruzione nel prompt) sia, come ultima rete di sicurezza,
+// dal renderer pubblico (SitePreview.tsx) per i blueprint già pubblicati
+// prima di questa fase con `sections: []` salvato in DB.
+export function buildFallbackLandingSections(
+  businessConfig: BusinessConfig,
+  entities: AdminEntity[]
+): PageSection[] {
+  const name = businessConfig.name?.trim() || 'La Mia Attività';
+  const tagline = businessConfig.tagline?.trim() || '';
+  const description = businessConfig.description?.trim()
+    || (entities.length > 0
+      ? `${name} gestisce ${entities.slice(0, 4).map((e) => e.labelPlural || e.label).join(', ')} in un unico pannello, sempre aggiornato.`
+      : `${name} è gestito con ShardApps.`);
+
+  // Stringa vuota, non `undefined`: i campi facoltativi delle sezioni
+  // (subtitle/imageUrl/ctaHref/buttonHref) sono tipati "string" dopo il
+  // parse Zod (str(), site-schema.ts sotto — fallback sempre a '', mai a
+  // undefined), stesso identico contratto dei campi generati dal modello.
+  const sections: PageSection[] = [
+    {
+      type: 'hero',
+      title: tagline || name,
+      subtitle: tagline ? name : '',
+      imageUrl: businessConfig.heroImageUrl || '',
+      ctaLabel: 'Accedi',
+      ctaHref: '',
+    },
+  ];
+
+  if (entities.length > 0) {
+    sections.push({
+      type: 'about',
+      title: 'Cosa gestiamo',
+      body: description,
+      imageUrl: '',
+    });
+  }
+
+  sections.push({
+    type: 'cta',
+    title: 'Vuoi saperne di più?',
+    subtitle: '',
+    buttonLabel: 'Contattaci',
+    buttonHref: '',
+  });
+
+  return sections;
+}
+
+/**
+ * Garantisce che ogni pagina abbia almeno una sezione, sostituendo un array
+ * `sections` vuoto con la landing di fallback sopra — mai lasciando
+ * "Questa pagina non ha ancora sezioni" su un'app appena generata. Applicata
+ * SOLO alle pagine effettivamente vuote: una pagina con contenuto reale
+ * (anche parziale) non viene mai toccata.
+ */
+export function ensurePagesHaveSections(
+  pages: SitePage[],
+  businessConfig: BusinessConfig,
+  entities: AdminEntity[]
+): SitePage[] {
+  if (pages.every((p) => p.sections.length > 0)) return pages; // percorso comune: nessuna modifica, stessa identità di riferimento
+  const fallback = buildFallbackLandingSections(businessConfig, entities);
+  return pages.map((p) => (p.sections.length > 0 ? p : { ...p, sections: fallback }));
+}
+
 // ─── pages / sections ───────────────────────────────────────────────────────
 // Vocabolario chiuso di tipi di sezione: l'AI deve scegliere tra questi, non
 // generare componenti arbitrari — necessario per poter renderizzare in modo
@@ -630,6 +726,21 @@ export const WorkflowActionSchema = z.discriminatedUnion('type', [
     // backend/lib/workflow-action-executor.js::executeCreateRelatedRecord.
     fieldMapping: z.record(z.string(), z.string()).optional().default({}),
   }),
+  // http_request (Integrations — Pre-Beta Hardening Round 2): azione HTTP
+  // generica, a differenza di trigger_webhook (sempre POST, payload fisso
+  // standard). Stessa barriera di sicurezza di trigger_webhook (SSRF guard
+  // ad ogni tentativo, mai solo al salvataggio — vedi WebhookUrlFieldSchema
+  // sopra): la validazione qui è solo la prima linea di difesa. headers è
+  // una whitelist libera (es. Authorization verso un servizio esterno) ma
+  // MAI Host/Content-Length/Content-Type, forzati dal dispatcher — vedi
+  // backend/lib/action-dispatcher.js::sanitizeHttpActionHeaders.
+  z.object({
+    type: z.literal('http_request'),
+    url: WebhookUrlFieldSchema,
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).catch('POST'),
+    headers: z.record(z.string(), z.string()).optional().default({}),
+    body: z.union([z.string(), z.null(), z.undefined()]).optional().transform((v) => v || undefined),
+  }),
 ]);
 export type WorkflowAction = z.infer<typeof WorkflowActionSchema>;
 
@@ -664,6 +775,15 @@ export const SiteBlueprintSchema = z.object({
   // Facoltativo: assente = [] (Fase 4, Logic/Workflow Engine) — un'app senza
   // workflows si comporta esattamente come prima di questa fase.
   workflows: z.array(WorkflowSchema).optional().default([]),
+  // Quality Pass v1 (Fix #3 — dashboard di dominio): riusa DashboardCardSchema
+  // di blueprint-schema.ts COSÌ COM'È, stesso principio del riuso di
+  // FieldSchema in questo stesso file — nessun secondo sistema di dashboard,
+  // solo lo stesso contratto {type, table, label, field?, filter?} del motore
+  // v1 (finora mai popolato per il v2, vedi app-specification.ts) ora
+  // valorizzabile anche qui. Facoltativo, default []: un blueprint esistente
+  // senza questo campo si comporta esattamente come prima (dashboard
+  // generica invariata in app/a/[slug]/app/page.tsx).
+  dashboardCards: z.array(DashboardCardSchema).optional().default([]),
 });
 export type SiteBlueprintJSON = z.infer<typeof SiteBlueprintSchema>;
 
@@ -754,14 +874,26 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
   try {
     const result = SiteBlueprintSchema.parse(raw);
     if (result.pages.length > 0) {
-      return { ...result, adminPanel: { entities: resolveEntities(result.adminPanel.entities) } };
+      const entities = resolveEntities(result.adminPanel.entities);
+      return {
+        ...result,
+        adminPanel: { entities },
+        pages: ensurePagesHaveSections(result.pages, result.businessConfig, entities),
+        dashboardCards: resolveDashboardCards(entities, result.dashboardCards),
+      };
     }
   } catch {
     // fall through al recupero manuale
   }
 
   const r = raw as Record<string, any>;
-  const pages = Array.isArray(r.pages) ? r.pages.map(normalizePage).filter((p: SitePage) => p.sections.length > 0) : [];
+  // Prima non teneva una pagina con "sections" vuoto (filtro qui sotto):
+  // per 'gestionale' questo era il caso NORMALE (una sola pagina "home",
+  // sections:[]), non un errore da scartare — ora si tiene la pagina e la si
+  // riempie più sotto via ensurePagesHaveSections, coerente col percorso di
+  // parse stretto sopra. Resta un rifiuto (null) solo se non c'è proprio
+  // nessuna pagina recuperabile (nessun array "pages" utilizzabile).
+  const pages = Array.isArray(r.pages) ? r.pages.map(normalizePage) : [];
   if (pages.length === 0) return null;
 
   const entities = Array.isArray(r.adminPanel?.entities)
@@ -811,6 +943,20 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
     .filter((res: ReturnType<typeof WorkflowSchema.safeParse>): res is { success: true; data: Workflow } => res.success)
     .map((res) => res.data);
 
+  // Stesso trattamento di workflows: prova il parse stretto per ogni
+  // elemento, scarta solo quelli malformati. resolveDashboardCards (già
+  // usata nel percorso di parse stretto sopra) applica poi lo stesso
+  // filtro semantico (tabella/campo esistenti, cap a 6 card) qui.
+  const resolvedEntities = resolveEntities(entities);
+  const dashboardCardsRaw = Array.isArray(r.dashboardCards) ? r.dashboardCards : [];
+  const dashboardCards: DashboardCard[] = resolveDashboardCards(
+    resolvedEntities,
+    dashboardCardsRaw
+      .map((c: unknown) => DashboardCardSchema.safeParse(c))
+      .filter((res: ReturnType<typeof DashboardCardSchema.safeParse>): res is { success: true; data: DashboardCard } => res.success)
+      .map((res) => res.data)
+  );
+
   return {
     // Stesso vocabolario di ProjectTypeSchema sopra (Fase 1, CreatorAI Engine
     // 2.0): questo array era rimasto hardcoded a parte, un gestionale che
@@ -821,11 +967,17 @@ export function sanitizeSiteBlueprint(raw: unknown): SiteBlueprintJSON | null {
     sector: safeStr(r.sector, 'custom'),
     description: safeStr(r.description),
     businessConfig,
-    adminPanel: { entities: resolveEntities(entities) },
+    adminPanel: { entities: resolvedEntities },
     authConfig,
-    pages,
+    // Stesso fix del percorso di parse stretto sopra: una pagina con
+    // "sections" vuoto (il caso normale per 'gestionale') non deve arrivare
+    // vuota al renderer — ensurePagesHaveSections ci mette una landing di
+    // fallback deterministica, senza toccare le pagine che hanno già
+    // contenuto reale.
+    pages: ensurePagesHaveSections(pages, businessConfig, resolvedEntities),
     actionButtons,
     workflows,
+    dashboardCards,
     ui: {
       primaryColor: primaryColor.startsWith('#') ? primaryColor : `#${primaryColor}`,
       secondaryColor: uiRaw.secondaryColor ? safeStr(uiRaw.secondaryColor) : undefined,

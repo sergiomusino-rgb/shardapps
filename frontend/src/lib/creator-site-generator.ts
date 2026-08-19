@@ -90,6 +90,27 @@ Esempio concreto — entità "ordini" con stato e due azioni di cambio stato:
 }
 Autenticazione multi-utente (authConfig, facoltativo, top-level nello schema — NON dentro businessConfig): imposta "enabled":true SOLO se il prompt richiede esplicitamente più operatori/ruoli diversi (es. "i miei tecnici devono vedere solo i propri interventi", "voglio un ruolo amministratore e uno operatore"). Il default ("enabled":false, o authConfig del tutto assente) è corretto per la stragrande maggioranza dei casi (un solo titolare, nessun bisogno di ruoli) — non abilitarlo "per sicurezza" o "per completezza" se il prompt non lo chiede. Quando abilitato: "supportedRoles" è un sottoinsieme di ["admin","operator","viewer"] (sempre includere "admin"), "defaultRole" è "operator" o "viewer" (il ruolo assegnato a un nuovo utente che non sia il titolare).`;
 
+// Dashboard cards (Quality Pass v1, Fix #3): stesso schema già esistente per
+// il motore v1 (blueprint-schema.ts::DashboardCardSchema, riusato qui invece
+// di inventare un secondo sistema — vedi site-schema.ts::dashboardCards).
+// Facoltativo: se il prompt non menziona nessuna metrica specifica, ometti
+// "dashboardCards" del tutto — la Dashboard mostra comunque le card generiche
+// (tabelle/record totali/ultima attività), MAI vuota.
+const DASHBOARD_CARDS_DOC = `"dashboardCards" (facoltativo, top-level nello schema — array di massimo 6 elementi): metriche specifiche del dominio da mostrare in cima alla Dashboard admin, SOLO quando il prompt le richiede esplicitamente o le implica chiaramente (es. "voglio vedere subito le opportunità aperte", "mostrami il fatturato del mese"). Ogni card:
+- "type": una di "count" (conta i record), "sum" (somma un campo numerico), "avg" (media di un campo numerico), "latest" (mostra il valore più recente di un campo, in base alla data di creazione del record).
+- "table": il "name" di un'entità REALE di adminPanel.entities — mai un'entità inventata.
+- "label": etichetta della card (nella lingua richiesta), es. "Opportunità Aperte".
+- "field" (SOLO per "sum"/"avg"/"latest"): l'"id" di un campo REALE dell'entità indicata, di type "number" o "currency" per sum/avg.
+- "filter" (facoltativo): restringe la card a un sottoinsieme di record, nella forma {"id_campo": {"in": ["valore1", "valore2"]}} — SOLO su campi "select"/"state" dell'entità, coi valori esattamente uguali a "options"/"states" di quel campo.
+Esempio concreto — entità "opportunita" con un campo di stato, due card (conteggio filtrato e somma):
+{
+  "dashboardCards": [
+    {"type": "count", "table": "opportunita", "label": "Opportunità Aperte", "filter": {"stato": {"in": ["nuovo", "contattato", "qualificato", "proposta"]}}},
+    {"type": "sum", "table": "opportunita", "label": "Valore Pipeline", "field": "valore_stimato"}
+  ]
+}
+Non generare card che duplicano semplicemente "numero totale di record" per ogni entità (quello lo mostra già la Dashboard di base): usa dashboardCards solo per metriche che aggiungono informazione reale (un sottoinsieme filtrato, una somma, una media, un valore recente).`;
+
 // Nomi estesi delle lingue supportate (vedi SUPPORTED_LOCALES in
 // LanguageContext.tsx): i modelli seguono un vincolo di lingua molto più
 // affidabilmente quando espresso per nome che per solo codice ISO.
@@ -131,7 +152,17 @@ export async function callSiteSchemaGenerator(
     // NESSUN settore è hardcoded qui: il prompt dell'utente decide da solo
     // CRM/helpdesk/project management/gestione immobili/inventario/
     // prenotazioni/qualunque altro dominio, esattamente come nel vecchio v1.
-    'gestionale': 'Gestionale generico per QUALUNQUE dominio descritto dall\'utente (es. CRM, helpdesk, project management, gestione immobili, gestione clienti, inventario, prenotazioni, o altro non elencato qui) — NESSUN vincolo di settore: progetta adminPanel.entities libero in base ESCLUSIVAMENTE a quanto richiesto nel prompt, senza forzare un dominio food/ecommerce/servizi locali se non è quello richiesto. adminPanel.entities è OBBLIGATORIO e deve rappresentare TUTTE le entità necessarie al dominio richiesto (es. per un CRM: clienti, aziende, opportunità, attività; per un helpdesk: ticket, clienti, operatori; per un gestionale immobiliare: immobili, proprietari, contratti), usando liberamente relazioni ("type":"relation") e macchine a stati ("type":"state") dove il dominio le richiede naturalmente. Il valore di questo tipo di progetto è SOLO nel pannello admin, MAI nel sito pubblico: genera SEMPRE E SOLO UNA pagina in "pages" (slug "home") con "sections": [] (array vuoto) — nessuna sezione pubblica, nessun actionButton "call"/"whatsapp"/"map" (lascia "actionButtons": []).',
+    // Quality Pass v1, Fix #1: prima la guida imponeva "sections": [] (array
+    // vuoto) su "home" per QUALSIASI gestionale — coerente a schema (una
+    // pagina con 0 sezioni è valida), ma risultava in una landing pubblica
+    // sempre vuota ("Questa pagina non ha ancora sezioni.") anche per un
+    // gestionale con un dominio benissimo descrivibile in 2-3 righe (CRM,
+    // gestione interventi, immobiliare...). Il pannello admin resta il
+    // valore primario del progetto — non trasformarlo in un sito vetrina
+    // elaborato — ma una home minima e coerente col dominio (chi è
+    // l'attività, cosa gestisce, un invito a contattarla/accedere) è sempre
+    // preferibile a una pagina visibilmente vuota.
+    'gestionale': 'Gestionale generico per QUALUNQUE dominio descritto dall\'utente (es. CRM, helpdesk, project management, gestione immobili, gestione clienti, inventario, prenotazioni, o altro non elencato qui) — NESSUN vincolo di settore: progetta adminPanel.entities libero in base ESCLUSIVAMENTE a quanto richiesto nel prompt, senza forzare un dominio food/ecommerce/servizi locali se non è quello richiesto. adminPanel.entities è OBBLIGATORIO e deve rappresentare TUTTE le entità necessarie al dominio richiesto (es. per un CRM: clienti, aziende, opportunità, attività; per un helpdesk: ticket, clienti, operatori; per un gestionale immobiliare: immobili, proprietari, contratti), usando liberamente relazioni ("type":"relation") e macchine a stati ("type":"state") dove il dominio le richiede naturalmente. Il valore primario di questo tipo di progetto resta il pannello admin, non il sito pubblico: genera comunque UNA sola pagina in "pages" (slug "home") ma con 2-4 sezioni reali e coerenti col dominio — tipicamente "hero" (presentazione dell\'attività/prodotto) + "about" (cosa gestisce/offre, in base alle entità di adminPanel.entities) + "cta" (invito a contattare o accedere); NON aggiungere "list"/"form"/"gallery"/"reviews" collegate a dati che restano solo nel pannello admin (quei dati non vanno esposti pubblicamente in un gestionale). "actionButtons" può restare vuoto oppure contenere "call"/"map" se il prompt menziona un contatto diretto; evita "whatsapp" a meno che il prompt non lo richieda esplicitamente (non è tipico di un gestionale interno). Valuta anche "dashboardCards" (vedi paragrafo dedicato sotto) se il prompt menziona metriche specifiche da monitorare.',
   };
 
   const systemPrompt = `Sei ShardApps AI, un architetto di siti web e PWA per piccole attività. Genera uno schema JSON per un progetto di tipo "${projectType}" in lingua ${langName} (${lang}).
@@ -185,6 +216,7 @@ Rispondi SOLO con un JSON valido con ESATTAMENTE questa struttura (nessun testo 
   ],
   "ui": { "primaryColor": "${designSystem.designTokens?.colors?.primary || '#6366f1'}" }
   /* "authConfig" (facoltativo, solo se il prompt richiede più ruoli/operatori — vedi paragrafo dedicato sotto): { "enabled": true, "supportedRoles": ["admin","operator"], "defaultRole": "operator" } */
+  /* "dashboardCards" (facoltativo, vedi paragrafo dedicato sotto): [{ "type": "count", "table": "nome_entita_snake_case", "label": "Etichetta" }] */
 }
 
 ${SITE_SECTION_TYPES_DOC}
@@ -192,6 +224,8 @@ ${SITE_SECTION_TYPES_DOC}
 ${RELATION_FIELD_DOC}
 
 ${WORKFLOW_DOC}
+
+${DASHBOARD_CARDS_DOC}
 
 Regole tassative:
 - Ogni pagina deve avere almeno una sezione.
@@ -324,15 +358,20 @@ export function fillBusinessConfigDefaults(blueprint: SiteBlueprintJSON, lang: s
 
 /**
  * Fix "gestionale senza pages" (Fase 1, ora riutilizzato dall'orchestrator
- * Fase 5): il prompt istruisce già il modello a restituire una singola
- * pagina vuota per 'gestionale', ma un modello può comunque ometterla —
- * senza pages[] sanitizeSiteBlueprint scarta l'INTERO schema (pages
- * richiede almeno 1 elemento anche per questo motore, invariato per gli
- * altri 3 projectType), buttando via anche adminPanel.entities generate
- * correttamente. Applicato sul JSON grezzo, prima della validazione: non
- * introduce mai una pagina con contenuto inventato, solo una pagina
- * strutturalmente vuota, già un caso gestito da SitePreview.tsx (sezioni
- * vuote -> stato "nessuna sezione", nessun nuovo componente necessario).
+ * Fase 5): il prompt istruisce il modello a restituire una pagina "home" con
+ * 2-4 sezioni reali per 'gestionale' (Quality Pass v1, Fix #1), ma un
+ * modello può comunque omettere "pages" del tutto — senza pages[]
+ * sanitizeSiteBlueprint scarta l'INTERO schema (pages richiede almeno 1
+ * elemento anche per questo motore, invariato per gli altri 3 projectType),
+ * buttando via anche adminPanel.entities generate correttamente. Applicato
+ * sul JSON grezzo, prima della validazione: inietta solo una pagina
+ * strutturalmente presente ma con "sections": [] — il contenuto reale
+ * (hero/about/cta, derivato da businessConfig/adminPanel.entities già
+ * normalizzati) viene aggiunto subito dopo da
+ * site-schema.ts::ensurePagesHaveSections dentro sanitizeSiteBlueprint,
+ * l'unico punto che ha già i dati tipizzati per costruirlo — evita di
+ * duplicare qui la stessa logica di fallback su dati ancora grezzi/non
+ * normalizzati.
  */
 export function ensureGestionaleHasPages(rawSchema: unknown, projectType: ProjectType): unknown {
   if (

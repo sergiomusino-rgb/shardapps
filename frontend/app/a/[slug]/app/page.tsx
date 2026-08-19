@@ -24,7 +24,7 @@ import {
   import { useRouter, usePathname } from 'next/navigation';
   import { usePwaSetup } from '@/hooks/usePwaSetup';
   import InstallAppBanner from '@/components/InstallAppBanner';
-  import { getDatiAziendaliTable, ensureImageField, stripReservedIdField } from './table-definitions';
+  import { getDatiAziendaliTable, ensureImageField, stripReservedIdField, selectQuickActionTables, computeDashboardCardValue, type DashboardCardRecord } from './table-definitions';
   import { generateMockRecord } from './mockDataGenerator';
   import AppTopBar from './AppTopBar';
   import ViewerSidebar from './ViewerSidebar';
@@ -48,6 +48,11 @@ type TableDef = TableDefType;
 // blueprint-schema.ts (site-schema.ts lo riusa direttamente), businessConfig
 // è il suo equivalente di branding/dati azienda.
 import type { AdminEntity, BusinessConfig } from '@/src/lib/site-schema';
+// dashboardCards (Quality Pass v1, Fix #3): site-schema.ts riusa direttamente
+// DashboardCardSchema/DashboardCard di blueprint-schema.ts (stesso principio
+// di AdminEntity/BusinessConfig sopra) ma non lo ri-esporta — importato qui
+// dalla fonte canonica invece di aggiungere un re-export non necessario.
+import type { DashboardCard } from '@/src/lib/blueprint-schema';
 import BusinessConfigForm from './BusinessConfigSettings';
 import GestionaleChatAssistant from './GestionaleChatAssistant';
 import PaymentSettings from './PaymentSettings';
@@ -150,6 +155,7 @@ interface AppConfig {
       // il livello superiore.
       adminPanel?: { entities: AdminEntity[] };
       businessConfig?: BusinessConfig;
+      dashboardCards?: DashboardCard[];
     };
     tables?: TableDef[];
     // Motore Sito/PWA (Creator v2, site-schema.ts): niente config.schema.tables,
@@ -157,6 +163,7 @@ interface AppConfig {
     // invece che in branding.
     adminPanel?: { entities: AdminEntity[] };
     businessConfig?: BusinessConfig;
+    dashboardCards?: DashboardCard[];
     branding?: {
       company_name?: string;
       logo_url?: string;
@@ -187,10 +194,12 @@ interface AppConfig {
     sector?: string;
     adminPanel?: { entities: AdminEntity[] };
     businessConfig?: BusinessConfig;
+    dashboardCards?: DashboardCard[];
   };
   tables?: TableDef[];
   adminPanel?: { entities: AdminEntity[] };
   businessConfig?: BusinessConfig;
+  dashboardCards?: DashboardCard[];
   [key: string]: unknown;
 }
 
@@ -432,14 +441,25 @@ interface DashboardProps {
   /** Fase 4: 'viewer' nasconde le "Azioni Rapide" (quick-add) — l'utente non
    * deve scoprire il blocco solo al submit del form che aprirebbero. */
   role?: string;
+  /** Quality Pass v1 (Fix #3): metriche di dominio dal blueprint (facoltative
+   * — array vuoto per la stragrande maggioranza delle app esistenti/senza
+   * richieste esplicite nel prompt, che continuano a vedere solo le 3 card
+   * generiche sotto, invariate). */
+  dashboardCards?: DashboardCard[];
 }
 
-function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: DashboardProps) {
+function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role, dashboardCards = [] }: DashboardProps) {
   const { t } = useLanguage();
   const [totalRecords, setTotalRecords] = useState(0);
   const [tableCounts, setTableCounts] = useState<Record<string, number>>({});
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
+  // Quality Pass v1 (Fix #3): record "grezzi" (data + createdAt) per tabella,
+  // SOLO per le tabelle referenziate da dashboardCards — servono a calcolare
+  // sum/avg/count/latest su dati reali. Tenuti separati da `tableCounts`
+  // (che basta a sé per le 3 card generiche) per non appesantire lo stato
+  // quando dashboardCards è vuoto, il caso comune.
+  const [cardRecordsByTable, setCardRecordsByTable] = useState<Record<string, DashboardCardRecord[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -454,6 +474,8 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: 
         const counts: Record<string, number> = {};
         const activity: RecentActivityItem[] = [];
         const agenda: AgendaItem[] = [];
+        const cardTables = new Set(dashboardCards.map((c) => c.table));
+        const cardRecords: Record<string, DashboardCardRecord[]> = {};
 
         for (const table of tables) {
           try {
@@ -465,6 +487,9 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: 
               const recs: RawActivityRecord[] = Array.isArray(data) ? data : data.records || data.data || [];
               counts[table.name] = recs.length;
               total += recs.length;
+              if (cardTables.has(table.name)) {
+                cardRecords[table.name] = recs.map((r) => ({ data: r.data || {}, createdAt: r.updated_at || r.created_at || null }));
+              }
 
               const textField = table.fields.find((f) => ['text', 'email', 'tel'].includes(f.type) && fieldName(f) !== 'id');
               const statusField = table.fields.find((f) => f.type === 'select');
@@ -513,11 +538,28 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: 
 
         setTableCounts(counts);
         setTotalRecords(total);
+        setCardRecordsByTable(cardRecords);
       } catch { /* ignore */ }
       setLoading(false);
     }
     loadDashboardData();
+    // dashboardCards non è nella dependency list: cambia solo quando cambia
+    // la config dell'app (già coperto da `tables`, derivato dalla stessa
+    // config in page.tsx) — evitare di rincludere l'array qui previene un
+    // re-fetch quando `dashboardCards` viene passato come literal `[]` di
+    // default (nuova reference identica ad ogni render del genitore).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tables, appId, authToken]);
+
+  // Quality Pass v1 (Fix #3): un valore per ogni dashboardCard, calcolato sui
+  // record reali già scaricati sopra — mai un numero finto. Ricalcolato solo
+  // quando cambiano le card o i dati grezzi, non ad ogni render.
+  const dashboardCardValues = useMemo(() => {
+    return dashboardCards.map((card) => ({
+      card,
+      value: computeDashboardCardValue(card, cardRecordsByTable[card.table] || []),
+    }));
+  }, [dashboardCards, cardRecordsByTable]);
 
   if (loading) {
     return (
@@ -559,6 +601,17 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: 
             />
           </div>
 
+          {/* KPI di dominio dal blueprint (Quality Pass v1, Fix #3): solo
+              quando il prompt ne ha richieste (dashboardCards non vuoto) —
+              supplementari alle 3 generiche sopra, mai al loro posto. */}
+          {dashboardCardValues.length > 0 && (
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-5">
+              {dashboardCardValues.map(({ card, value }, i) => (
+                <KpiCard key={`${card.table}-${card.label}-${i}`} title={card.label} value={value} icon={<LayoutDashboard size={20} />} />
+              ))}
+            </div>
+          )}
+
           {/* Azioni rapide */}
           {role !== 'viewer' && (
             <Card>
@@ -566,7 +619,7 @@ function Dashboard({ companyName, tables, appId, authToken, onQuickAdd, role }: 
                 <CardTitle>Azioni Rapide</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2.5 pt-0">
-                {tables.slice(0, 4).map((table) => (
+                {selectQuickActionTables(tables).map((table) => (
                   <Button key={table.name} variant="soft" onClick={() => onQuickAdd(table.name)}>
                     <Plus size={14} /> Nuovo {table.label}
                   </Button>
@@ -1393,6 +1446,22 @@ export function ViewerProFinal() {
     // un eventuale campo "id" di schema (collide con l'id reale del record,
     // mostrerebbe solo una stringa numerica interna senza senso).
     return raw.map(stripReservedIdField).map(ensureImageField);
+  }, [innerConfig, config]);
+
+  // Quality Pass v1 (Fix #3): stessi 4 percorsi di fallback di adminPanel.entities
+  // sopra (dashboardCards vive allo stesso livello di adminPanel nel blueprint
+  // v2, site-schema.ts) — un blueprint pre-esistente senza questo campo
+  // (default Zod "[]") produce qui semplicemente un array vuoto, che la
+  // Dashboard sotto tratta come "nessuna card custom", zero cambio di
+  // comportamento per le app già in produzione.
+  const dashboardCards: DashboardCard[] = useMemo(() => {
+    return (
+      innerConfig?.dashboardCards
+      || config?.dashboardCards
+      || innerConfig?.blueprint?.dashboardCards
+      || config?.blueprint?.dashboardCards
+      || []
+    );
   }, [innerConfig, config]);
 
   const activeTable = useMemo(
@@ -2447,6 +2516,7 @@ export function ViewerProFinal() {
                 authToken={session ? getAuthToken(session) : undefined}
                 onQuickAdd={(tableName) => { setActiveView(tableName); setModalRecord('new'); }}
                 role={session?.role}
+                dashboardCards={dashboardCards}
               />
             ) : activeTable ? (
               <DynamicDataTable

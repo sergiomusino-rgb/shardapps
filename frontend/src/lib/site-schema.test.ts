@@ -63,10 +63,13 @@ test('TEST 2: sanitizeSiteBlueprint preserva le entities di un gestionale', () =
   assert.ok(result);
   assert.equal(result?.adminPanel.entities.length, 1);
   assert.equal(result?.adminPanel.entities[0].name, 'clienti');
-  // requisito esplicito Fase 1: pages sempre presenti (min 1, vincolo di
-  // site-schema.ts invariato) ma vuote di contenuto pubblico per gestionale.
   assert.equal(result?.pages.length, 1);
-  assert.deepEqual(result?.pages[0].sections, []);
+  // Quality Pass v1 (Fix #1): prima un gestionale con "sections": [] restava
+  // vuoto (era il comportamento previsto della Fase 1) — la landing pubblica
+  // vuota era esattamente il gap sistemico osservato nel benchmark
+  // CreatorAI vs Totalum. Ora ensurePagesHaveSections riempie sempre una
+  // pagina vuota con una landing di fallback deterministica.
+  assert.ok((result?.pages[0].sections.length ?? 0) > 0, 'la home non deve più restare vuota');
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -244,4 +247,114 @@ test('TEST 10: landing/webapp-pwa/ecommerce restano tutti e tre validi in Projec
     const parsed = SiteBlueprintSchema.parse(fixture);
     assert.equal(parsed.projectType, pt);
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUALITY PASS v1 — Fix #1 (landing pubblica vuota) e Fix #3 (dashboardCards)
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('TEST 11: buildFallbackLandingSections produce una landing coerente col dominio, mai testo hardcoded identico tra domini diversi', () => {
+  const resultCrm = sanitizeSiteBlueprint(gestionaleFixture({
+    businessConfig: { name: 'Acme CRM', tagline: 'Gestisci i tuoi clienti', language: 'it' },
+  } as unknown as Partial<SiteBlueprintJSON>));
+  const resultImmobiliare = sanitizeSiteBlueprint(gestionaleFixture({
+    businessConfig: { name: 'Rossi Immobiliare', language: 'it' },
+    adminPanel: { entities: [
+      { name: 'immobili', label: 'Immobile', labelPlural: 'Immobili', icon: '🏠', fields: [{ id: 'id', type: 'id', label: 'ID' }] },
+    ] },
+  } as unknown as Partial<SiteBlueprintJSON>));
+
+  assert.ok(resultCrm);
+  assert.ok(resultImmobiliare);
+  const heroCrm = resultCrm?.pages[0].sections.find((s) => s.type === 'hero');
+  const heroImmobiliare = resultImmobiliare?.pages[0].sections.find((s) => s.type === 'hero');
+  assert.ok(heroCrm);
+  assert.ok(heroImmobiliare);
+  // Nomi/tagline diversi -> contenuto hero diverso: non è un template fisso.
+  assert.notEqual((heroCrm as { title?: string }).title, (heroImmobiliare as { title?: string }).title);
+  // L'entità "immobili" (labelPlural) deve comparire da qualche parte nella
+  // landing di Rossi Immobiliare: il fallback deriva davvero dalle entità,
+  // non da un testo generico scollegato dal dominio.
+  const aboutImmobiliare = resultImmobiliare?.pages[0].sections.find((s) => s.type === 'about') as { body?: string } | undefined;
+  assert.ok(aboutImmobiliare?.body?.includes('Immobili'));
+});
+
+test('TEST 12: una pagina con sezioni reali non viene mai toccata da ensurePagesHaveSections (backward compat)', () => {
+  const landing = {
+    projectType: 'landing',
+    appName: 'Studio Rossi',
+    sector: 'consulenza',
+    businessConfig: { name: 'Studio Rossi', language: 'it' },
+    adminPanel: { entities: [] },
+    pages: [{ slug: 'home', label: 'Home', sections: [{ type: 'hero', title: 'Titolo Reale Esistente' }] }],
+    actionButtons: [],
+    ui: { primaryColor: '#334155' },
+  };
+  const result = sanitizeSiteBlueprint(landing);
+  assert.equal(result?.pages[0].sections.length, 1);
+  assert.equal((result?.pages[0].sections[0] as { title?: string }).title, 'Titolo Reale Esistente');
+});
+
+test('TEST 13: dashboardCards assente in un blueprint pre-esistente risolve a [] (backward compat, nessun campo nuovo obbligatorio)', () => {
+  const result = sanitizeSiteBlueprint(gestionaleFixture());
+  assert.deepEqual(result?.dashboardCards, []);
+});
+
+test('TEST 14: dashboardCards valide vengono mantenute, quelle con riferimenti rotti vengono scartate (mai un crash a runtime)', () => {
+  const withCards = gestionaleFixture({
+    adminPanel: { entities: [
+      { name: 'opportunita', label: 'Opportunità', labelPlural: 'Opportunità', icon: '💼', fields: [
+        { id: 'id', type: 'id', label: 'ID' },
+        // "currency", non "number": blueprint-schema.ts::normalizeFieldType
+        // normalizza solo un sottoinsieme di alias verso 'number' (integer/
+        // int/bigint/decimal/float/double/numeric — comportamento esistente,
+        // non toccato da questo fix) — 'currency' è il tipo che questa stessa
+        // codebase usa per i valori monetari (vedi mockDataGenerator.ts) ed è
+        // sempre preservato correttamente.
+        { id: 'valore_stimato', type: 'currency', label: 'Valore Stimato' },
+        { id: 'stato', type: 'state', label: 'Stato', states: ['nuovo', 'vinto'] },
+      ] },
+    ] },
+    dashboardCards: [
+      { type: 'count', table: 'opportunita', label: 'Opportunità Totali' },
+      { type: 'sum', table: 'opportunita', label: 'Valore Pipeline', field: 'valore_stimato' },
+      { type: 'sum', table: 'opportunita', label: 'Campo Inesistente', field: 'campo_mai_esistito' },
+      { type: 'count', table: 'tabella_mai_esistita', label: 'Card Orfana' },
+    ],
+  } as unknown as Partial<SiteBlueprintJSON>);
+
+  const result = sanitizeSiteBlueprint(withCards);
+  assert.ok(result);
+  assert.equal(result?.dashboardCards.length, 2);
+  assert.ok(result?.dashboardCards.some((c) => c.label === 'Opportunità Totali'));
+  assert.ok(result?.dashboardCards.some((c) => c.label === 'Valore Pipeline'));
+  assert.ok(!result?.dashboardCards.some((c) => c.label === 'Campo Inesistente'));
+  assert.ok(!result?.dashboardCards.some((c) => c.label === 'Card Orfana'));
+});
+
+test('TEST 15: il percorso di recupero manuale (parse stretto fallito) riempie comunque le pagine vuote e non scarta un blueprint altrimenti valido', () => {
+  // "adminPanel" con una entità priva di "labelPlural" (stringa vuota non
+  // ammessa da AdminEntitySchema con parse stretto reale in altri casi, ma
+  // qui simuliamo un input che fa fallire il parse Zod stretto per un motivo
+  // arbitrario diverso dalle pages) forzando il fallback manuale tramite un
+  // campo "pages" che il primo passaggio rifiuterebbe come forma ma che
+  // normalizePage sa comunque recuperare.
+  const malformed = {
+    projectType: 'gestionale',
+    appName: 'Gestionale Recuperato',
+    sector: 'custom',
+    businessConfig: { name: 'Gestionale Recuperato', language: 'it' },
+    adminPanel: { entities: [
+      { name: 'clienti', label: 'Cliente', labelPlural: 'Clienti', icon: '👤', fields: [{ id: 'id', type: 'id', label: 'ID' }] },
+    ] },
+    // "sections" come stringa anziché array: non valido per il parse Zod
+    // stretto di SitePageSchema, forza il fallthrough al recupero manuale.
+    pages: [{ slug: 'home', label: 'Home', sections: 'non-un-array' }],
+    actionButtons: [],
+    ui: { primaryColor: '#6366f1' },
+  };
+  const result = sanitizeSiteBlueprint(malformed);
+  assert.ok(result, 'un blueprint recuperabile non deve mai essere scartato del tutto');
+  assert.equal(result?.pages.length, 1);
+  assert.ok((result?.pages[0].sections.length ?? 0) > 0, 'anche nel percorso di recupero manuale la pagina non deve restare vuota');
 });
