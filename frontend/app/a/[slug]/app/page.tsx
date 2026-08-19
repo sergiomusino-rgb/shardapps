@@ -2092,7 +2092,13 @@ export function ViewerProFinal() {
     setGeneratingMock(true);
     try {
       for (let i = 0; i < 5; i++) {
-        const mockData = generateMockRecord(activeTable, i);
+        // CreatorAI v2: relationRecords (già raccolta/mantenuta per risolvere
+        // le celle "relation" nella tabella, vedi sopra) permette ai record
+        // demo di collegarsi a entità correlate REALI quando già esistono
+        // (es. un Intervento demo che referenzia un Cliente demo reale
+        // invece di lasciare il campo vuoto) — comportamento pre-esistente
+        // invariato quando non ci sono record correlati disponibili.
+        const mockData = generateMockRecord(activeTable, i, relationRecords);
         const res = await fetch(`/api/client/apps/${session.appInfo.id}/records`, {
           method: 'POST',
           headers: {
@@ -2111,7 +2117,7 @@ export function ViewerProFinal() {
     } finally {
       setGeneratingMock(false);
     }
-  }, [session, activeTable, loadRecords]);
+  }, [session, activeTable, loadRecords, relationRecords]);
 
   const handleUpdateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable || !modalRecord || modalRecord === 'new') return;
