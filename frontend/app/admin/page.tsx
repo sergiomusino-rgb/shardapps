@@ -208,10 +208,31 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-950 text-white">
       {/* Header */}
        <div className="border-b border-slate-800 px-6 py-4">
-         <div className="max-w-7xl mx-auto">
+         <div className="max-w-7xl mx-auto flex items-center justify-between">
            <div>
              <h1 className="text-2xl font-bold">{t('admin_title')}</h1>
              <p className="text-slate-400 text-sm">{t('admin_subtitle')}</p>
+           </div>
+           {/* Pre-Beta Hardening, Blocco 4: dashboard candidature beta, fuori
+               dal sistema di tab esistente (route dedicata /admin/beta) per
+               non dover aggiungere una chiave di traduzione in tutte e 5 le
+               lingue per una pagina puramente interna. */}
+           <div className="flex items-center gap-2">
+             {/* Operations (Round 2): stesso principio di /admin/beta sopra —
+                 route dedicata fuori dal sistema di tab esistente, pagina
+                 puramente interna (nessuna chiave i18n necessaria). */}
+             <a
+               href="/admin/operations"
+               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition"
+             >
+               Operations
+             </a>
+             <a
+               href="/admin/beta"
+               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-lg transition"
+             >
+               Candidature Beta
+             </a>
            </div>
          </div>
        </div>
