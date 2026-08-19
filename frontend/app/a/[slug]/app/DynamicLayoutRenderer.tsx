@@ -7,7 +7,7 @@ import {
   Download, Upload, MessageSquare, Mail, MessageCircle,
   Settings2, Heart, Receipt, ExternalLink
 } from 'lucide-react';
-import { TableDef, TableAction, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField } from './table-definitions';
+import { TableDef, TableAction, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField, isRestaurantMenuGridTable } from './table-definitions';
 import { DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
@@ -1613,7 +1613,7 @@ interface RestaurantLayoutContentProps {
 function RestaurantLayoutContent({
   tables, colors, primaryColor,
   activeView, activeTable,
-  records
+  records, loading, onAddNew
 }: RestaurantLayoutContentProps) {
   // Restaurant-specific layout with menu cards
   return (
@@ -1639,7 +1639,7 @@ function RestaurantLayoutContent({
             colors={colors}
           />
         </div>
-      ) : activeTable ? (
+      ) : activeTable && isRestaurantMenuGridTable(activeTable.name) ? (
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
@@ -1683,6 +1683,60 @@ function RestaurantLayoutContent({
               </div>
             </div>
           ))}
+        </div>
+      ) : activeTable ? (
+        // Fix blocker TEST D: la griglia menu sopra è pensata SOLO per
+        // "piatti" (isRestaurantMenuGridTable) — qualunque altra tabella del
+        // blueprint (clienti, ordini, righe_ordine...) prima ricadeva
+        // silenziosamente in questo stesso ramo "piatto-grid", mostrando una
+        // griglia vuota senza alcuna azione disponibile quando records era
+        // vuoto (il caso comune per una tabella appena creata). Fallback
+        // generico minimo: nome tabella, pulsante "Nuovo" (onAddNew già
+        // disponibile come prop, non prima utilizzato in questo layout), e
+        // un elenco semplice dei record esistenti — nessuna nuova
+        // architettura, stesso principio già usato da SaaSLayoutContent per
+        // qualunque tabella non specificamente prevista dal layout.
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={onAddNew}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '10px 18px', borderRadius: '10px', border: 'none',
+                background: primaryColor, color: '#fff', fontSize: '14px',
+                fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <Plus size={16} /> Nuovo
+            </button>
+          </div>
+          <div style={{
+            background: colors.cardBg, border: `1px solid ${colors.border}`,
+            borderRadius: '12px', overflow: 'hidden',
+          }}>
+            {loading ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}>
+                Caricamento records...
+              </div>
+            ) : records.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}>
+                Nessun record presente
+              </div>
+            ) : (
+              records.map((record, idx) => (
+                <div
+                  key={record.id || idx}
+                  style={{
+                    padding: '14px 16px',
+                    borderBottom: idx < records.length - 1 ? `1px solid ${colors.border}` : 'none',
+                    color: colors.text, fontSize: '14px',
+                  }}
+                >
+                  {activeTable.fields.slice(0, 4).map((f) => String(record[fieldName(f)] ?? '')).filter(Boolean).join(' · ') || `#${String(record.id).slice(0, 8)}`}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       ) : (
         <div style={{ color: colors.textSecondary, textAlign: 'center', padding: '60px' }}>
