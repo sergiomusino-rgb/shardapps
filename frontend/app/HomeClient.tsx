@@ -177,6 +177,10 @@ export default function HomeClient() {
             <a href="#features" className="hover:text-white transition-colors">{t('landing_nav_features')}</a>
             <a href="#pricing" className="hover:text-white transition-colors">{t('landing_nav_pricing')}</a>
             <a href="#faq" className="hover:text-white transition-colors">{t('landing_nav_faq')}</a>
+            {/* Fase 1 Private Beta reseller: unico punto di ingresso alla
+                nuova pagina pubblica /beta dalla landing esistente — non
+                tocca le altre voci/anchor già presenti. */}
+            <Link href="/beta" className="hover:text-white transition-colors">{t('landing_nav_beta')}</Link>
           </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">

@@ -64,9 +64,10 @@ export default function ApiDocsPage() {
             un&apos;altra app o di un altro account, anche a parità di titolare.
           </p>
           <p>
-            Ogni chiave ha uno scope: <strong>read</strong> (sola lettura) oppure <strong>read + write</strong>.
-            Una chiave read-only riceve <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">403</code> su
-            POST/PATCH/DELETE.
+            Ogni chiave ha uno o più scope: <strong>read</strong> (lettura dati/export), <strong>write</strong>{' '}
+            (scrittura record) e <strong>webhook</strong> (ricezione eventi in ingresso, vedi sotto) — indipendenti
+            tra loro: una chiave read-only riceve <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">403</code>{' '}
+            su POST/PATCH/DELETE, e nessuna chiave read/write può usare l&apos;endpoint webhook senza lo scope dedicato.
           </p>
         </Section>
 
@@ -104,6 +105,11 @@ export default function ApiDocsPage() {
   -H "Content-Type: application/json" \\
   -d '{"nome": "Mario Rossi", "email": "mario@esempio.it"}' \\
   ${BACKEND_URL}/api/v1/apps/APP_ID/entities/clienti`}</CodeBlock>
+          <p>
+            Header opzionale <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">Idempotency-Key</code>: se
+            un tuo retry (es. dopo un timeout di rete) include la stessa chiave della richiesta originale, ricevi la
+            risposta già data invece di creare un secondo record.
+          </p>
         </Section>
 
         <Section title="PATCH /entities/:entity/:id — aggiorna un record (richiede scope write)">
@@ -133,12 +139,38 @@ export default function ApiDocsPage() {
   ${BACKEND_URL}/api/v1/apps/APP_ID/health`}</CodeBlock>
         </Section>
 
+        <Section title="POST /webhooks/incoming — ricevi eventi da servizi esterni (richiede scope webhook)">
+          <p>
+            Permette a un servizio esterno (Make, Zapier, un CRM, un gestionale…) di notificare questa app,
+            innescando i workflow con trigger <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">Webhook ricevuto</code>{' '}
+            configurati in Dashboard → Automazione. Richiede una chiave con lo scope dedicato{' '}
+            <strong>webhook</strong> — una chiave read/write non è sufficiente e viceversa.
+          </p>
+          <CodeBlock>{`curl -X POST \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"ordine": "12345", "totale": 89.90}' \\
+  "${BACKEND_URL}/api/v1/apps/APP_ID/webhooks/incoming?entity=ordini"`}</CodeBlock>
+          <p>
+            Il parametro <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">entity</code> è opzionale:
+            se presente, scatenano solo i workflow il cui trigger filtra su quella entità; se assente, il webhook
+            è considerato generico. Il body (max 100KB) diventa il payload disponibile al workflow. Risposta:{' '}
+            <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">{'{ received: true, matched, executed }'}</code>{' '}
+            — 200 anche se nessun workflow corrisponde (il webhook è comunque stato ricevuto correttamente).
+          </p>
+        </Section>
+
         <Section title="Rate limit">
           <p>
             Ogni API key è limitata a <strong>100 richieste al minuto</strong>. Oltre la soglia, ogni richiesta
             aggiuntiva riceve <code className="bg-slate-900 px-1.5 py-0.5 rounded text-xs">429 Too Many Requests</code>{' '}
             finché la finestra non si resetta.
           </p>
+        </Section>
+
+        <Section title="Spec OpenAPI">
+          <p>Una spec OpenAPI 3.0 machine-readable degli endpoint sopra, per generare un client o importarla in Postman/Insomnia:</p>
+          <CodeBlock>{`${BACKEND_URL}/api/v1/apps/openapi.json`}</CodeBlock>
         </Section>
 
         <Section title="Risposte di errore">

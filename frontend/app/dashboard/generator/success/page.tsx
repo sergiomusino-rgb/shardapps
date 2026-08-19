@@ -1,6 +1,6 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Sparkles, Copy, Check, Key, ExternalLink } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -9,11 +9,27 @@ import { useLanguage } from '@/src/lib/LanguageContext';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
 
 export default function SuccessPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const appSlug = searchParams.get('appSlug');
   const projectId = searchParams.get('projectId');
   const title = searchParams.get('title');
   const { t } = useLanguage();
+
+  // Nessun appSlug in query = questa pagina è stata raggiunta senza un'app
+  // appena generata (navigazione diretta/errata, mai il percorso reale del
+  // generator flow, che passa sempre ?appSlug=...). Prima mostrava una card
+  // "Demo App" hardcoded con dati finti (URL demo.zeusx.app, QR placeholder,
+  // nessuna app reale del tenant) come vetrina generale — rimossa: si
+  // reindirizza invece all'elenco reale delle app del tenant
+  // (dashboard/projects), che ha già il proprio empty state genuino quando
+  // il tenant non ha ancora nessuna app. Stesso pattern già usato da
+  // dashboard/app-create/page.tsx per il suo parametro obbligatorio mancante.
+  useEffect(() => {
+    if (!appSlug) {
+      router.push('/dashboard/projects');
+    }
+  }, [appSlug, router]);
 
   const [copied, setCopied] = useState(false);
   const [credentials, setCredentials] = useState<{email?: string, password?: string} | null>(null);
@@ -24,21 +40,18 @@ export default function SuccessPage() {
   
   // URL dell'app generata - verrà sovrascritto dal database se disponibile
   const [appUrl, setAppUrl] = useState<string>('');
-  const [, setLoadingUrl] = useState(true);
 
   // Recupera l'URL di produzione dal database
   useEffect(() => {
     if (!appSlug) {
-      setLoadingUrl(false);
       return;
     }
-    
+
     const fetchProductionUrl = async () => {
       try {
         const { data: { session } } = await supabaseBrowser.auth.getSession();
         if (!session?.access_token) {
           setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
-          setLoadingUrl(false);
           return;
         }
         
@@ -59,8 +72,6 @@ export default function SuccessPage() {
       } catch (error) {
         console.error('Error fetching production URL:', error);
         setAppUrl(`${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${appSlug}`);
-      } finally {
-        setLoadingUrl(false);
       }
     };
     
@@ -101,74 +112,11 @@ export default function SuccessPage() {
     fetchCredentials();
   }, [appSlug]);
 
-  // Demo placeholder quando non ci sono app generate
+  // Nessuna app appena generata: il redirect verso /dashboard/projects è già
+  // partito nell'effect sopra, nessun contenuto proprio da renderizzare qui
+  // (evita anche un flash della vecchia card demo prima della navigazione).
   if (!appSlug) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white p-8 flex items-center justify-center">
-        <div className="max-w-2xl mx-auto text-center">
-          {/* Header */}
-          <div className="flex items-center justify-center gap-3 mb-12">
-            <Sparkles className="w-10 h-10 text-violet-400" />
-            <h1 className="text-4xl font-bold">{t('success_congrats')}</h1>
-            <Sparkles className="w-10 h-10 text-violet-400" />
-          </div>
-          <p className="text-xl text-gray-300 mb-12">
-            {t('success_start_using')}
-          </p>
-
-          {/* Demo Placeholder Card */}
-          <div className="bg-slate-900/40 border border-slate-800/80 backdrop-blur-md rounded-2xl p-8 mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold">{t('success_demo_app')}</h2>
-                <p className="text-gray-400">{t('success_demo_type')} demo</p>
-              </div>
-              <div className="px-4 py-2 bg-green-500/20 border border-green-500/30 rounded-lg">
-                <span className="text-green-400 font-medium">{t('success_demo_active')}</span>
-              </div>
-            </div>
-
-            {/* App URL Placeholder */}
-            <div className="mb-6 p-4 bg-slate-800/50 rounded-xl">
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                {t('success_url_app')}
-              </label>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 text-lg text-gray-500 truncate">
-                  https://demo.zeusx.app
-                </div>
-                <button
-                  disabled
-                  className="p-3 bg-slate-700 rounded-lg opacity-50 cursor-not-allowed"
-                >
-                  <Copy className="w-5 h-5 text-gray-300" />
-                </button>
-              </div>
-            </div>
-
-            {/* QR Code Placeholder */}
-            <div className="mb-6 p-6 bg-slate-800/50 rounded-xl text-center">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-violet-500/20 mb-4">
-                <svg className="w-8 h-8 text-violet-400" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 3h4v4H3V3zm1 1h2v2H4V4zM3 19h4v4H3v-4zm1 1h2v2H4v-2zM19 3h4v4h-4V3zm1 1h2v2h-2V4zM19 19h4v4h-4v-4zm1 1h2v2h-2v-2zM7 7h2v2H7V7zm1 1h1v1H8V8zM7 15h2v2H7v-2zm1 1h1v1H8v-1z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-bold mb-3">{t('success_qr_access')}</h3>
-              <p className="text-gray-400 text-sm mb-4">
-                {t('success_qr_placeholder')}
-              </p>
-              <div className="inline-block p-4 bg-white rounded-xl">
-                <div className="w-48 h-48 flex items-center justify-center text-gray-500">
-                  <svg className="w-16 h-16" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M3 3h4v4H3V3zm1 1h2v2H4V4zM3 19h4v4H3v-4zm1 1h2v2H4v-2zM19 3h4v4h-4V3zm1 1h2v2h-2V4zM19 19h4v4h-4v-4zm1 1h2v2h-2v-2zM7 7h2v2H7V7zm1 1h1v1H8V8zM7 15h2v2H7v-2zm1 1h1v1H8v-1z" />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

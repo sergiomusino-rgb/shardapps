@@ -9,7 +9,7 @@ import type { Database } from '@/types/database';
 import { getDesignSystemForSector } from '@/lib/designSystemLoader';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
 import { sanitizeSiteBlueprint, ProjectTypeSchema, type ProjectType, type SiteBlueprintJSON } from '@/src/lib/site-schema';
-import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
+import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError, AiBudgetExceededError } from '@/src/lib/ai-router';
 import {
   getUserFromToken,
   getOrCreateTenant,
@@ -231,6 +231,9 @@ export async function POST(request: NextRequest) {
           if (fallbackErr instanceof AiRouterConfigError) {
             return NextResponse.json({ success: false, error: 'Servizio AI non configurato correttamente. Contatta il supporto.', code: 'AI_CONFIG_ERROR' }, { status: 500 });
           }
+          if (fallbackErr instanceof AiBudgetExceededError) {
+            return NextResponse.json({ success: false, error: fallbackErr.message, code: 'AI_BUDGET_EXCEEDED' }, { status: 429 });
+          }
           if (fallbackErr instanceof AiRouterError) {
             return NextResponse.json({ success: false, error: fallbackErr.message, code: 'AI_PROVIDER_ERROR' }, { status: 502 });
           }
@@ -393,6 +396,13 @@ export async function POST(request: NextRequest) {
         error: 'Servizio AI non configurato correttamente. Contatta il supporto.',
         code: 'AI_CONFIG_ERROR'
       }, { status: 500 });
+    }
+    if (err instanceof AiBudgetExceededError) {
+      return NextResponse.json({
+        success: false,
+        error: err.message,
+        code: 'AI_BUDGET_EXCEEDED'
+      }, { status: 429 });
     }
     if (err instanceof AiRouterError) {
       return NextResponse.json({

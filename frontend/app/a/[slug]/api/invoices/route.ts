@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { verifyPassword, hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -60,11 +61,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (app.client_password !== password) {
+    const verifiedGet = await verifyPassword(password, app.client_password);
+    if (!verifiedGet.match) {
       return NextResponse.json(
         { error: 'Password errata' },
         { status: 401 }
       );
+    }
+    if (verifiedGet.needsRehash) {
+      // Pre-Beta Hardening, Blocco 6: rehash-on-verify, stesso campo che
+      // questa route già legge (apps.client_password) — best-effort, mai
+      // blocca l'accesso già autorizzato se la scrittura fallisce.
+      try {
+        const hash = await hashPassword(password);
+        await supabase.from('apps').update({ client_password: hash }).eq('id', app.id);
+      } catch (err) {
+        console.error('[invoices GET] rehash fallito:', err);
+      }
     }
 
     // Load invoices from database
@@ -142,11 +155,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (app.client_password !== password) {
+    const verifiedPost = await verifyPassword(password, app.client_password);
+    if (!verifiedPost.match) {
       return NextResponse.json(
         { error: 'Password errata' },
         { status: 401 }
       );
+    }
+    if (verifiedPost.needsRehash) {
+      try {
+        const hash = await hashPassword(password);
+        await supabase.from('apps').update({ client_password: hash }).eq('id', app.id);
+      } catch (err) {
+        console.error('[invoices POST] rehash fallito:', err);
+      }
     }
 
     const body = await request.json();

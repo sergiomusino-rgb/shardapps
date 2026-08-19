@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextResponse } from 'next/server';
+import { verifyPassword, hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -31,13 +32,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
       return NextResponse.json({ error: 'App non trovata' }, { status: 404 });
     }
 
-    if (app.client_password !== password) {
+    const verified = await verifyPassword(password, app.client_password);
+    if (!verified.match) {
       return NextResponse.json({ error: 'Password errata' }, { status: 401 });
+    }
+
+    const updatePayload: Record<string, string> = { client_email: email };
+    // Pre-Beta Hardening, Blocco 6: rehash-on-verify — stesso principio di
+    // verify-password/route.ts, applicato qui allo stesso campo che questa
+    // route già legge/scrive (apps.client_password), senza allargare lo
+    // scope ad app_credentials (che questa route non ha mai toccato).
+    if (verified.needsRehash) {
+      updatePayload.client_password = await hashPassword(password);
     }
 
     const { error: updateError } = await supabase
       .from('apps')
-      .update({ client_email: email })
+      .update(updatePayload as never)
       .eq('id', app.id);
 
     if (updateError) {

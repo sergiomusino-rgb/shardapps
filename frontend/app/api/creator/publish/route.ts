@@ -18,6 +18,7 @@ import { createClient } from '@supabase/supabase-js';
 import { randomInt } from 'node:crypto';
 import type { Database } from '@/types/database';
 import { sanitizeSiteBlueprint } from '@/src/lib/site-schema';
+import { hashPassword } from '@/src/lib/password-hash';
 import { ZEUSX_MINIMUM_FEE_EUR } from '@/lib/pricing';
 // Fase 6 (CreatorAI Engine 2.0) — vedi commento sul punto di chiamata sotto.
 import { createAppVersion } from '@/src/lib/app-versions';
@@ -195,6 +196,11 @@ export async function POST(request: NextRequest) {
 
     const slug = generateCreatorSlug(appName, blueprint.sector);
     const clientPassword = generateClientPassword();
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito (apps/
+    // app_rbac_users/app_credentials sotto) — `clientPassword` in chiaro
+    // resta usato SOLO per la risposta HTTP di questo endpoint (l'unico
+    // momento in cui è legittimo mostrarlo, appena generato).
+    const hashedClientPassword = await hashPassword(clientPassword);
     const tenantEmail = user.email || `tenant-${user.id.slice(0, 8)}@zeusx.app`;
     const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -224,7 +230,7 @@ export async function POST(request: NextRequest) {
         trial_ends_at: trialEndsAt,
         client_active: true,
         client_email: blueprint.businessConfig.email || tenantEmail,
-        client_password: clientPassword, // fallback legacy, vedi nota in testa al file
+        client_password: hashedClientPassword, // fallback legacy, vedi nota in testa al file
         auth_mode: authMode,
         client_price: ZEUSX_MINIMUM_FEE_EUR,
         client_subscription_price: ZEUSX_MINIMUM_FEE_EUR,
@@ -266,7 +272,7 @@ export async function POST(request: NextRequest) {
           app_id: app.id,
           tenant_id: tenantId,
           client_email: clientEmail,
-          client_password: clientPassword,
+          client_password: hashedClientPassword,
           role: 'admin',
         } as any);
       if (rbacError) {
@@ -282,7 +288,7 @@ export async function POST(request: NextRequest) {
       // pubblica (vedi 20260808000004_app_credentials_table.sql).
       const { error: credError } = await supabase
         .from('app_credentials')
-        .upsert({ app_id: app.id, client_password: clientPassword }, { onConflict: 'app_id' });
+        .upsert({ app_id: app.id, client_password: hashedClientPassword }, { onConflict: 'app_id' });
       if (credError) {
         console.error('[creator/publish] app_credentials upsert error:', credError);
         // Non blocca la pubblicazione: apps.client_password resta come fallback

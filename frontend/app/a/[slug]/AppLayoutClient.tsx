@@ -9,6 +9,7 @@ import { supabaseBrowser as supabase } from '@/src/lib/supabase-browser';
 import TrialPaywallModal from './app/TrialPaywallModal';
 import TrialBanner from './app/TrialBanner';
 import ZeusXBrandingFooter from '@/components/ZeusXBrandingFooter';
+import OfflineBanner from '@/components/OfflineBanner';
 import Link from 'next/link';
 import { AppInfoProvider, type AuthMode } from './AppInfoContext';
 import { getClientSubscriptionPrice } from '@/lib/pricing';
@@ -383,7 +384,10 @@ export default function AppLayoutClient({ children }: PropsWithChildren) {
             tenantId: appInfo.tenant_id,
           }}
         >
-          <div className="min-h-screen">{children}</div>
+          <div className="min-h-screen">
+            <OfflineBanner />
+            {children}
+          </div>
         </AppInfoProvider>
       </LanguageProvider>
     );
@@ -416,6 +420,7 @@ export default function AppLayoutClient({ children }: PropsWithChildren) {
               className={isAppShellRoute ? 'flex h-screen flex-col overflow-hidden' : 'flex flex-col min-h-screen'}
               style={{ background: designTokens.colors.bg, fontFamily: designTokens.fonts.body }}
             >
+              <OfflineBanner />
               {showTrialBanner && appInfo?.trial_ends_at && (
                 <TrialBanner slug={slug} trialEndsAt={appInfo.trial_ends_at} price={clientPrice} />
               )}

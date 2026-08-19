@@ -9,7 +9,12 @@
 
 const { generateApiKey } = require('./api-key-crypto');
 
-const ALLOWED_SCOPES = ['read', 'write'];
+// webhook (Integrations — Pre-Beta Hardening Round 2): autorizza SOLO
+// POST /:appId/webhooks/incoming (routes/public-api.js) — deliberatamente
+// separato da read/write: una chiave per leggere/scrivere dati non deve
+// automaticamente poter iniettare eventi che innescano workflow, e
+// viceversa una chiave webhook non deve poter leggere/esportare dati.
+const ALLOWED_SCOPES = ['read', 'write', 'webhook'];
 
 function sanitizeScopes(rawScopes) {
   if (!Array.isArray(rawScopes) || rawScopes.length === 0) return ['read'];

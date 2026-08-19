@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { sendTemplatedEmail } from '@/src/lib/email';
 
 // ============================================================================
 // Supabase Admin Client
@@ -46,46 +47,23 @@ async function verifyAdmin(request: NextRequest): Promise<boolean> {
 // Helper: Send takeover notification email
 // ============================================================================
 
+// Invio centralizzato (Notifications, Pre-Beta Hardening Round 2): stesso
+// bug di mittente corretto qui di reset-password/route.ts
+// ("noreply@zeusx.it" hardcoded -> ora RESEND_FROM_EMAIL condiviso), più
+// timeout/retry via src/lib/email.ts. Template admin_alert: comunicazione
+// amministrativa su un'azione presa sull'account, non una notifica
+// applicativa disattivabile — sempre inviata, indipendente da
+// notification_preferences (stesso principio di password_reset).
 async function sendTakeoverNotification(userEmail: string, appName: string): Promise<void> {
-  // Using Resend API (recommended) or fallback to console log
-  const resendApiKey = process.env.RESEND_API_KEY;
-  
-  if (resendApiKey) {
-    try {
-      const response = await fetch('https://api.resend.com/v1/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: 'ShardApps <noreply@zeusx.it>',
-          to: [userEmail],
-          subject: 'Servizio ShardApps - Aggiornamento Gestione',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #1e293b;">Gentile utente,</h2>
-              <p>Il tuo servizio <strong>${appName}</strong> è ora gestito direttamente da ShardApps.</p>
-              <p>Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.</p>
-              <p style="color: #64748b; font-size: 14px; margin-top: 20px;">
-                ShardApps Team<br>
-                Questo messaggio è stato inviato automaticamente.
-              </p>
-            </div>
-          `,
-        }),
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to send email:', await response.text());
-      }
-    } catch (error) {
-      console.error('Email send error:', error);
-    }
-  } else {
-    // Fallback: log the notification (for development)
-    console.log(`[TAKEOVER NOTIFICATION] To: ${userEmail}, App: ${appName}`);
-    console.log('Gentile utente, il tuo servizio è ora gestito direttamente da ShardApps. Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.');
+  const result = await sendTemplatedEmail(userEmail, 'admin_alert', {
+    title: 'Servizio ShardApps - Aggiornamento Gestione',
+    message: `Il tuo servizio ${appName} è ora gestito direttamente da ShardApps. Non è richiesta alcuna azione, il servizio continuerà senza interruzioni.`,
+  }, { route: 'admin/takeover' });
+
+  if (result.skipped) {
+    console.log(`[TAKEOVER NOTIFICATION] To: ${userEmail}, App: ${appName} (${result.reason})`);
+  } else if (!result.sent) {
+    console.error('[admin/takeover] invio email fallito:', result.error);
   }
 }
 

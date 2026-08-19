@@ -25,6 +25,11 @@ function makeFakeSupabase(seedTables = {}) {
     return rows.filter((row) => filters.every(({ op, field, value }) => {
       if (op === 'eq') return row[field] === value;
       if (op === 'not') return row[field] !== value; // usato solo per il pre-filtro JSONB di workflow-schedule.js, qui semplificato a "non vuoto"
+      // gte/lt: aggiunti per ai-usage.js (somma costo AI in una finestra
+      // temporale, es. `.gte('created_at', since)`) — puramente additivo.
+      if (op === 'gte') return row[field] != null && row[field] >= value;
+      if (op === 'lt') return row[field] != null && row[field] < value;
+      if (op === 'lte') return row[field] != null && row[field] <= value;
       return true;
     }));
   }
@@ -35,14 +40,24 @@ function makeFakeSupabase(seedTables = {}) {
     let op = 'select';
     let payload = null;
     let limitN = null;
+    let upsertConflictKey = null;
 
     const builder = {
       select() { return builder; },
       insert(obj) { op = 'insert'; payload = Array.isArray(obj) ? obj : [obj]; return builder; },
       update(obj) { op = 'update'; payload = obj; return builder; },
+      // upsert: aggiunto per password-hash (rehash-on-verify riscrive
+      // app_credentials/app_rbac_users con lo stesso .upsert(...,{onConflict})
+      // già usato dal codice reale, es. publish/route.ts) — stesso principio
+      // "se esiste aggiorna, altrimenti inserisci" della controparte
+      // frontend (fake-supabase.ts).
+      upsert(obj, opts) { op = 'upsert'; payload = obj; upsertConflictKey = opts?.onConflict || null; return builder; },
       delete() { op = 'delete'; return builder; },
       eq(field, value) { filters.push({ op: 'eq', field, value }); return builder; },
       not(field, _cmp, value) { filters.push({ op: 'not', field, value }); return builder; },
+      gte(field, value) { filters.push({ op: 'gte', field, value }); return builder; },
+      lt(field, value) { filters.push({ op: 'lt', field, value }); return builder; },
+      lte(field, value) { filters.push({ op: 'lte', field, value }); return builder; },
       order() { return builder; },
       limit(n) { limitN = n; return builder; },
       single() { return resolveOne(true); },
@@ -61,6 +76,17 @@ function makeFakeSupabase(seedTables = {}) {
         const matched = applyFilters(rows, filters);
         matched.forEach((r) => Object.assign(r, payload));
         return { data: matched, error: null };
+      }
+      if (op === 'upsert') {
+        const key = upsertConflictKey;
+        const existing = key ? rows.find((r) => r[key] === payload[key]) : undefined;
+        if (existing) {
+          Object.assign(existing, payload);
+          return { data: [existing], error: null };
+        }
+        const row = { id: payload.id || `${tableName}_${rows.length + 1}`, ...payload };
+        rows.push(row);
+        return { data: [row], error: null };
       }
       if (op === 'delete') {
         const matched = applyFilters(rows, filters);

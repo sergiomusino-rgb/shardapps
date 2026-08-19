@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { looksHashed } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -28,6 +29,11 @@ const CLIENT_PROFILE_FIELDS = [
 // altre chiavi di config.branding (es. company_name/logo_url, di pertinenza
 // del motore Creator).
 const BRANDING_FIELDS = ['footer_logo_url', 'footer_label'] as const;
+
+// Preferenze di notifica per-app (Notifications, Round 2 — migration
+// 20260828000000_notification_preferences.sql). Solo {"email": boolean} oggi
+// (vedi commento della migration sul perché push non ha un secondo switch a
+// livello app): whitelist esplicita per lo stesso motivo di BRANDING_FIELDS.
 // Limite dimensione data URL del logo (base64): stesso ordine di grandezza
 // del body limit delle Server Actions in next.config.ts (2mb), qui applicato
 // lato server perché le route handler non hanno quel limite di default.
@@ -86,7 +92,15 @@ export async function GET(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
-    return NextResponse.json({ app });
+    // Pre-Beta Hardening, Blocco 6: client_password è ora hashato dal
+    // momento del primo login/reset successivo a questo cambio — un hash
+    // bcrypt non è comunque una password mostrabile, quindi non viene mai
+    // restituito qui (il pannello mostra "—" invece di un hash illeggibile,
+    // vedi dashboard/app-create/page.tsx). Un account non ancora migrato
+    // (valore ancora in chiaro) continua a essere mostrato come oggi.
+    const safeApp = { ...app, client_password: looksHashed(app.client_password) ? null : app.client_password };
+
+    return NextResponse.json({ app: safeApp });
   } catch (error) {
     console.error('[GET /api/apps/:id] error:', error);
     return NextResponse.json(
@@ -139,7 +153,7 @@ export async function DELETE(
 
     const { data: app, error: appError } = await adminClient
       .from('apps')
-      .select('id, tenant_id, client_active, expires_at')
+      .select('id, tenant_id, client_active, expires_at, trial_ends_at')
       .eq('id', id)
       .single();
 
@@ -151,9 +165,21 @@ export async function DELETE(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
-    // Permetti eliminazione solo se app non attiva (client_active === false) o scaduta
-    const isActive = app.client_active !== false && (!app.expires_at || new Date(app.expires_at) > new Date());
-    if (isActive) {
+    // Permetti eliminazione solo se scaduta o dismessa. "Scaduta" considera
+    // ENTRAMBE le colonne di scadenza (non solo expires_at): un'app appena
+    // creata ha solo trial_ends_at valorizzato (expires_at resta NULL finché
+    // non viene assegnato un piano/scadenza commerciale, vedi api/apps/
+    // route.ts) — controllare solo expires_at la rendeva "sempre attiva" agli
+    // occhi del backend anche a trial scaduto, disallineato dalla UI
+    // (dashboard/projects/page.tsx::getStatusBadge, stessa regola qui sotto)
+    // che mostrava già "Scaduta" in quel caso: il pulsante cestino compariva
+    // ma il DELETE falliva sempre con 400.
+    const now = new Date();
+    const isExpired =
+      (!!app.expires_at && new Date(app.expires_at) < now) ||
+      (!!app.trial_ends_at && new Date(app.trial_ends_at) < now);
+    const canDelete = isExpired || app.client_active === false;
+    if (!canDelete) {
       return NextResponse.json({ error: 'Puoi eliminare solo app dismesse o scadute' }, { status: 400 });
     }
 
@@ -265,11 +291,26 @@ export async function PATCH(
       }
     }
 
-    if (Object.keys(updates).length === 0 && !brandingUpdate) {
+    // notificationPreferences.email: unico interruttore scrivibile qui.
+    // Nessun piano richiesto (a differenza del branding): disattivare le
+    // email automatiche non è una feature commerciale, è un controllo
+    // operativo disponibile a qualunque owner.
+    let notificationPreferencesUpdate: { email: boolean } | null = null;
+    if (body.notificationPreferences && typeof body.notificationPreferences === 'object') {
+      if (typeof body.notificationPreferences.email !== 'boolean') {
+        return NextResponse.json({ error: 'notificationPreferences.email deve essere un booleano' }, { status: 400 });
+      }
+      notificationPreferencesUpdate = { email: body.notificationPreferences.email };
+    }
+
+    if (Object.keys(updates).length === 0 && !brandingUpdate && !notificationPreferencesUpdate) {
       return NextResponse.json({ error: 'Nessun campo da aggiornare' }, { status: 400 });
     }
 
     const finalUpdates: Record<string, unknown> = { ...updates };
+    if (notificationPreferencesUpdate) {
+      finalUpdates.notification_preferences = notificationPreferencesUpdate;
+    }
 
     if (brandingUpdate) {
       // config è un JSONB: niente merge parziale lato DB, va letto e
@@ -299,7 +340,7 @@ export async function PATCH(
       .update(finalUpdates as any)
       .eq('id', id)
       .eq('tenant_id', tenantId)
-      .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes, config')
+      .select('id, client_full_name, client_phone, client_tax_id, client_billing_address, client_notes, config, notification_preferences')
       .single();
 
     if (updateError || !app) {

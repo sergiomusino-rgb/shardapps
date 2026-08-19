@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { cookies } from 'next/headers';
 import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
+import { hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -39,12 +40,17 @@ export interface GenerateAppResult {
 
 // Generazione completa di una nuova app da zero: task "app-generation" ->
 // tier "advanced" dell'AI Router centralizzato (src/lib/ai-router.ts).
-async function callLLM(systemPrompt: string): Promise<string> {
+async function callLLM(systemPrompt: string, tenantId?: string): Promise<string> {
   const { content } = await callAiRouter({
     task: 'app-generation',
     jsonMode: true,
     temperature: 0.7,
     messages: [{ role: 'user', content: systemPrompt }],
+    // Pre-Beta Hardening, Blocco 1: senza tenantId nel context, il budget AI
+    // non è applicabile a questa chiamata (vedi src/lib/ai-usage.ts) — questo
+    // generatore legacy risolve già un tenantId poco più sotto (vedi
+    // generateAppAction), qui si limita a inoltrarlo.
+    context: tenantId ? { tenantId } : undefined,
   });
   return content;
 }
@@ -263,7 +269,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
 
     let generatedSchema: Record<string, unknown>;
     try {
-      const rawResponse = await callLLM(systemPrompt);
+      const rawResponse = await callLLM(systemPrompt, tenantId);
       generatedSchema = extractJsonFromAiContent(rawResponse) as Record<string, unknown>;
     } catch (err) {
       if (err instanceof AiRouterConfigError) {
@@ -301,6 +307,10 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
 
     // Generate random password
     const clientPassword = Math.random().toString(36).slice(-8);
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito —
+    // clientPassword in chiaro resta usato solo per il valore ritornato da
+    // questa action (GenerateAppResult.password), l'unico momento legittimo.
+    const hashedClientPassword = await hashPassword(clientPassword);
 
     const { data: newApp, error: appError } = await supabaseAdmin
       .from('apps')
@@ -308,7 +318,7 @@ export async function generateAppAction(input: GenerateAppInput): Promise<Genera
         name: appName,
         slug,
         tenant_id: tenantId,
-        client_password: clientPassword,
+        client_password: hashedClientPassword,
         client_active: true,
         production_url: `${process.env.NEXT_PUBLIC_APP_URL || 'https://shardapps.com'}/a/${slug}`,
         config: {

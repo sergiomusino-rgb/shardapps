@@ -1,7 +1,18 @@
-const CACHE_NAME = 'zeusx-app-v1';
+const CACHE_NAME = 'zeusx-app-v2';
+// App shell minimo precache (PWA hardening, Round 2): solo l'offline
+// fallback stesso — un asset statico, mai una pagina Next.js dinamica (che
+// invecchierebbe subito, vedi commento su "static assets" più sotto). Serve
+// SOLO come ultima rete di sicurezza per una navigazione fallita senza alcuna
+// pagina già in cache (vedi 'fetch' sotto), non sostituisce il comportamento
+// "fallback delle pagine già visitate" (quello resta la cache runtime
+// popolata da cachePut ad ogni richiesta GET riuscita).
+const OFFLINE_FALLBACK_URL = '/offline.html';
 
 // Cache on install
-self.addEventListener('install', () => {
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_FALLBACK_URL)).catch(() => {})
+  );
   self.skipWaiting();
 });
 
@@ -85,12 +96,15 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => cached || new Response(null, { status: 504, statusText: 'Gateway Timeout' }));
 
   // Navigazioni HTML - network first: in sviluppo/uso online mostra sempre
-  // la versione corrente della route, cade sulla cache solo se offline.
+  // la versione corrente della route, cade sulla cache solo se offline. Se
+  // la pagina richiesta non è mai stata visitata (quindi non in cache),
+  // niente schermo bianco/504 nudo: si serve l'offline fallback precached
+  // (vedi 'install' sopra) — un vero contenuto, mai una pagina rotta.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then(cachePut)
-        .catch(respondFromCacheOrFallback)
+        .catch(() => caches.match(request).then((cached) => cached || caches.match(OFFLINE_FALLBACK_URL)))
     );
     return;
   }

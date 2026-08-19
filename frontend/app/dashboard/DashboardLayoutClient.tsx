@@ -8,6 +8,7 @@ import AuthGuard from '@/components/layout/AuthGuard';
 import LanguageSelector from '@/components/LanguageSelector';
 import HeaderClock from '@/components/HeaderClock';
 import FullscreenToggle from '@/components/FullscreenToggle';
+import OfflineBanner from '@/components/OfflineBanner';
 import { useLanguage } from '@/src/lib/LanguageContext';
 import { Menu } from 'lucide-react';
 
@@ -117,6 +118,7 @@ export default function DashboardLayoutClient({
 
         {/* ─── Main Content Area ───────────────────────────────────────── */}
         <div className="flex flex-1 flex-col overflow-hidden">
+           <OfflineBanner />
            {/* Mobile Header (visible only on small screens) */}
            <header className="relative z-30 flex h-16 items-center justify-between border-b border-slate-800 bg-slate-900 px-4 md:hidden">
             {shouldShowSidebar ? (

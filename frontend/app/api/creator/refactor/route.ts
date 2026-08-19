@@ -21,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
-import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } from '@/src/lib/ai-router';
+import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError, AiBudgetExceededError } from '@/src/lib/ai-router';
 import { getUserFromToken, getOrCreateTenant } from '@/src/lib/creator-server';
 import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 import {
@@ -256,6 +256,9 @@ export async function POST(request: NextRequest) {
       }).catch(() => {});
       if (err instanceof AiRouterConfigError) {
         return NextResponse.json({ success: false, error: 'Servizio AI non configurato correttamente. Contatta il supporto.', code: 'AI_CONFIG_ERROR' }, { status: 500 });
+      }
+      if (err instanceof AiBudgetExceededError) {
+        return NextResponse.json({ success: false, error: err.message, code: 'AI_BUDGET_EXCEEDED' }, { status: 429 });
       }
       if (err instanceof AiRouterError) {
         return NextResponse.json({ success: false, error: err.message, code: 'AI_PROVIDER_ERROR' }, { status: 502 });

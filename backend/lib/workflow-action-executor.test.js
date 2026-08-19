@@ -165,6 +165,92 @@ test('send_notification (recipient: record_field, campo assente sul record) -> f
   assert.equal(log.status, 'failed');
 });
 
+// ─── send_notification: notification_preferences (Notifications Round 2) ──
+
+test('send_notification: notification_preferences.email=false -> nessun invio, loggato come "dispatched" con nota, mai "failed"', async (t) => {
+  const tables = baseTables();
+  tables.apps[0].notification_preferences = { email: false };
+  const supabase = makeFakeSupabase(tables);
+  const record = getRecord(supabase, 'rec-1');
+
+  const result = await executeWorkflowAction(supabase, {
+    appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record,
+    action: { id: 'notif3', label: 'Notifica', type: 'send_notification', recipient: 'app_owner' },
+    workflowId: 'wf11', eventType: 'record.created',
+  });
+
+  assert.equal(result.dispatched, true);
+  assert.equal(result.delivered, false);
+  const log = supabase._tables.app_action_logs.find((l) => l.workflow_id === 'wf11');
+  assert.equal(log.status, 'dispatched'); // MAI 'failed': è una scelta del proprietario, non un errore
+  assert.match(log.payload.note, /disattivate/);
+});
+
+test('send_notification: notification_preferences assente (migration non applicata) -> fail-open, email tentata come prima (default email:true)', async (t) => {
+  const supabase = makeFakeSupabase(baseTables()); // nessun campo notification_preferences sulla riga apps
+  const record = getRecord(supabase, 'rec-1');
+
+  const result = await executeWorkflowAction(supabase, {
+    appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record,
+    action: { id: 'notif4', label: 'Notifica', type: 'send_notification', recipient: 'app_owner' },
+    workflowId: 'wf12', eventType: 'record.created',
+  });
+
+  assert.equal(result.dispatched, true);
+  const log = supabase._tables.app_action_logs.find((l) => l.workflow_id === 'wf12');
+  assert.equal(log.status, 'dispatched');
+  assert.match(log.payload.note, /RESEND_API_KEY/); // arriva fino al tentativo di invio, non bloccato dalla preferenza
+});
+
+test('send_notification: notification_preferences.email=true esplicito -> comportamento invariato', async (t) => {
+  const tables = baseTables();
+  tables.apps[0].notification_preferences = { email: true };
+  const supabase = makeFakeSupabase(tables);
+  const record = getRecord(supabase, 'rec-1');
+
+  const result = await executeWorkflowAction(supabase, {
+    appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record,
+    action: { id: 'notif5', label: 'Notifica', type: 'send_notification', recipient: 'app_owner' },
+    workflowId: 'wf13', eventType: 'record.created',
+  });
+  assert.equal(result.dispatched, true);
+});
+
+// ─── http_request: delegata ad action-dispatcher.js (Integrations Round 2) ─
+
+test('http_request: URL privato/riservato bloccato dall\'SSRF guard (stessa barriera di trigger_webhook) -> failed', async () => {
+  const supabase = makeFakeSupabase(baseTables());
+  const record = getRecord(supabase, 'rec-1');
+
+  const result = await executeWorkflowAction(supabase, {
+    appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record,
+    action: { id: 'http1', label: 'Chiamata HTTP', type: 'http_request', url: 'http://127.0.0.1:9999/hook', method: 'POST', headers: {} },
+    workflowId: 'wf9', eventType: 'record.created',
+  });
+
+  assert.equal(result.dispatched, false);
+  assert.equal(result.blocked, true);
+  const log = supabase._tables.app_action_logs.find((l) => l.workflow_id === 'wf9');
+  assert.equal(log.status, 'failed');
+  assert.match(log.error, /SSRF guard/);
+});
+
+test('http_request: nessun URL configurato -> failed, mai un tentativo silenzioso', async () => {
+  const supabase = makeFakeSupabase(baseTables());
+  const record = getRecord(supabase, 'rec-1');
+
+  const result = await executeWorkflowAction(supabase, {
+    appId: APP_ID, tenantId: TENANT_ID, entity: 'ordini', record,
+    action: { id: 'http2', label: 'Chiamata HTTP', type: 'http_request', url: '', method: 'POST', headers: {} },
+    workflowId: 'wf10', eventType: 'record.created',
+  });
+
+  assert.equal(result.dispatched, false);
+  const log = supabase._tables.app_action_logs.find((l) => l.workflow_id === 'wf10');
+  assert.equal(log.status, 'failed');
+  assert.match(log.error, /URL/);
+});
+
 // ─── isolamento app/tenant (Security) ───────────────────────────────────────
 
 test('change_state: il filtro app_id/tenant_id impedisce di aggiornare un record di un\'altra app anche a parità di record.id', async () => {

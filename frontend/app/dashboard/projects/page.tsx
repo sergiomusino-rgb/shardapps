@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
-import { Trash2, Loader2, AlertCircle, ExternalLink, Clock, Sparkles } from 'lucide-react';
+import { Trash2, Loader2, AlertCircle, ExternalLink, Clock, Sparkles, Settings, Zap, User } from 'lucide-react';
 import { useLanguage } from '@/src/lib/LanguageContext';
 
 interface App {
@@ -17,6 +17,10 @@ interface App {
   expires_at: string | null;
   production_url: string | null;
   app_type: string | null;
+  // Reseller experience (Round 2): "quali clienti ho?" era impossibile da
+  // rispondere dalla lista — client_email non veniva nemmeno caricato qui,
+  // solo nel dettaglio app (projects/[id]/page.tsx).
+  client_email: string | null;
 }
 
 export default function ProjectsPage() {
@@ -85,7 +89,7 @@ export default function ProjectsPage() {
       // Get apps for this tenant
       const { data: appsData, error: appsError } = await supabaseBrowser
         .from('apps')
-        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at, production_url, app_type')
+        .select('id, name, slug, trial_ends_at, is_active, created_at, client_active, expires_at, production_url, app_type, client_email')
         .eq('tenant_id', tenantId)
         .order('created_at', { ascending: false });
 
@@ -141,9 +145,17 @@ export default function ProjectsPage() {
   };
 
   const getStatusBadge = (app: App) => {
-    // Controlla sia expires_at che trial_ends_at per la scadenza
-    const expiryDate = app.expires_at || app.trial_ends_at;
-    if (expiryDate && new Date(expiryDate) < new Date()) {
+    // Stessa regola di scadenza usata server-side da DELETE /api/apps/:id
+    // (app/api/apps/[id]/route.ts): scaduta se expires_at O trial_ends_at è
+    // nel passato (non solo il primo dei due che esiste) — un fallback "||"
+    // che sceglie un solo campo mostrerebbe "Attiva" per un'app con
+    // trial_ends_at scaduto ma expires_at ancora NULL, disallineato dal
+    // backend che invece la considera già eliminabile.
+    const now = new Date();
+    const isExpired =
+      (!!app.expires_at && new Date(app.expires_at) < now) ||
+      (!!app.trial_ends_at && new Date(app.trial_ends_at) < now);
+    if (isExpired) {
       return <span style={{ background: '#ef444420', color: '#ef4444', padding: '4px 10px', borderRadius: '9999px', fontSize: '12px', fontWeight: 600 }}>{t('projects_status_expired')}</span>;
     }
     if (app.client_active === false) {
@@ -219,6 +231,13 @@ export default function ProjectsPage() {
 
                 {/* Info */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+                  {/* Cliente: prima assente dalla lista — un reseller con più
+                      app non poteva capire "quali clienti ho?" senza aprire
+                      ogni singola app (Reseller experience, Round 2). */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: app.client_email ? '#cbd5e1' : '#64748b', fontSize: '13px' }}>
+                    <User size={14} />
+                    <span>{app.client_email || t('projects_no_client_assigned')}</span>
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '13px' }}>
                     <Clock size={14} />
                     <span>{t('projects_created')} {formatDate(app.created_at)}</span>
@@ -228,6 +247,38 @@ export default function ProjectsPage() {
                       <Clock size={14} />
                       <span>{t('projects_trial_ends')} {formatDate(app.trial_ends_at)}</span>
                     </div>
+                  )}
+                </div>
+
+                {/* Quick links: Automazioni + Impostazioni/API/Log/Export —
+                    prima raggiungibili solo passando dal dettaglio app,
+                    ogni click in più è attrito per un reseller con molte app
+                    (Reseller experience, Round 2). */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  <Link
+                    href={`/dashboard/projects/${app.id}/automation`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
+                      padding: '7px 10px', borderRadius: '8px', border: '1px solid #334155',
+                      background: 'transparent', color: '#cbd5e1', fontSize: '12px', fontWeight: 600,
+                      textDecoration: 'none', justifyContent: 'center',
+                    }}
+                  >
+                    <Zap size={13} /> Automazioni
+                  </Link>
+                  {app.slug && (
+                    <Link
+                      href={`/a/${app.slug}/settings`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
+                        padding: '7px 10px', borderRadius: '8px', border: '1px solid #334155',
+                        background: 'transparent', color: '#cbd5e1', fontSize: '12px', fontWeight: 600,
+                        textDecoration: 'none', justifyContent: 'center',
+                      }}
+                      title="API, log e export dati di questa app"
+                    >
+                      <Settings size={13} /> API &amp; Log
+                    </Link>
                   )}
                 </div>
 

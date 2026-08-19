@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { NextResponse } from 'next/server';
+import { hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -87,10 +88,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     } else if (action === 'regenerate-password') {
       // Genera nuova password casuale
       const newPassword = generatePassword();
+      // Pre-Beta Hardening, Blocco 6: client_password (usato per il
+      // confronto ad ogni login) viene hashato; initial_password resta
+      // VOLUTAMENTE in chiaro — è la copia mostrata al reseller per la
+      // consegna al cliente, mai usata per autenticare. new_password nella
+      // risposta resta in chiaro: è l'unico momento legittimo per mostrarla.
+      const hashedPassword = await hashPassword(newPassword);
       const { error } = await supabase
         .from('apps')
-        .update({ 
-          client_password: newPassword,
+        .update({
+          client_password: hashedPassword,
           initial_password: newPassword,
         })
         .eq('id', id);
@@ -98,6 +105,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (error) {
         return NextResponse.json({ error: 'Errore rigenerazione password' }, { status: 500 });
       }
+
+      // Stessa scrittura anche in app_credentials (fonte primaria per
+      // getClientCredentials/verifyLegacyPassword — vedi lib/client-auth.js):
+      // senza questo upsert, un'app con già una riga app_credentials
+      // continuerebbe a fare login con la vecchia password anche dopo la
+      // rigenerazione, perché app_credentials ha priorità su apps.client_password.
+      await supabase
+        .from('app_credentials')
+        .upsert({ app_id: id, client_password: hashedPassword }, { onConflict: 'app_id' });
+
       result = { success: true, new_password: newPassword };
 
     } else if (action === 'extend-expiry') {

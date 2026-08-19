@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
+import { hashPassword } from '@/src/lib/password-hash';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -86,13 +87,18 @@ export async function POST(
       return NextResponse.json({ error: 'Non autorizzato' }, { status: 403 });
     }
 
+    // Pre-Beta Hardening, Blocco 6: solo l'hash viene persistito — il
+    // reseller ha appena digitato questa password nel form, non deve essere
+    // richiesta indietro da nessuna query dopo questo salvataggio.
+    const hashedPassword = client_password ? await hashPassword(client_password) : undefined;
+
     // Prepara i dati per l'aggiornamento
     const updateData: any = {
       client_email: client_email,
     };
 
-    if (client_password) {
-      updateData.client_password = client_password;
+    if (hashedPassword) {
+      updateData.client_password = hashedPassword;
     }
 
     // Aggiorna l'app
@@ -112,10 +118,10 @@ export async function POST(
     // Credenziali anche in app_credentials (mai esposta alla Data API
     // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
     // su apps.client_password sopra mantenuto per compatibilità.
-    if (client_password) {
+    if (hashedPassword) {
       await adminClient
         .from('app_credentials')
-        .upsert({ app_id: app.id, client_password }, { onConflict: 'app_id' });
+        .upsert({ app_id: app.id, client_password: hashedPassword }, { onConflict: 'app_id' });
     }
 
     console.log('[update-credentials] Credentials updated for app:', app.id);

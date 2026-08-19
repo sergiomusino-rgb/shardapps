@@ -7,10 +7,13 @@ import { SITE_URL } from '@/lib/seo';
 // /vision, /a/[slug]/* (pagine transazionali o per-tenant, nessun valore
 // SEO proprio), non /comandi (prodotto separato, non ancora collegato dalla
 // landing principale — fuori scope di questo hardening).
+// Fase 1 Private Beta reseller: /beta è una pagina pubblica di contenuto
+// reale allo stesso titolo di /pricing e /info, quindi va elencata qui.
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   return [
     { url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'weekly', priority: 1 },
+    { url: `${SITE_URL}/beta`, lastModified: now, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${SITE_URL}/pricing`, lastModified: now, changeFrequency: 'weekly', priority: 0.9 },
     { url: `${SITE_URL}/info`, lastModified: now, changeFrequency: 'monthly', priority: 0.4 },
     { url: `${SITE_URL}/privacy`, lastModified: now, changeFrequency: 'monthly', priority: 0.3 },

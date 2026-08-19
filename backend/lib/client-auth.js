@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { verifyPassword, hashPassword } = require('./password-hash');
 
 // ─── FASE 4B, Finding #6 — consolidamento autenticazione cliente ───────────
 // Prima di questo modulo, la stessa logica (confronto password legacy,
@@ -77,14 +78,55 @@ async function getClientCredentials(supabase, appId, fallback) {
   };
 }
 
+// ─── Pre-Beta Hardening, Blocco 6 — hashing password client ────────────────
+// Prima: ogni password (app_credentials.client_password/apps.client_password,
+// app_rbac_users.client_password) era salvata e confrontata in chiaro,
+// dichiarato esplicitamente (vedi commento storico in app_rbac_users). Ora:
+// verifyPassword riconosce sia un hash bcrypt reale sia un valore ancora in
+// chiaro (account legacy) — un match su un valore in chiaro innesca un
+// rehash immediato (rehashLegacyCredential/rehashLegacyRbacCredential sotto),
+// mai una migrazione bulk forzata: un account passa all'hash al suo
+// PROSSIMO login riuscito, non prima. Il rehash è sempre best-effort: un suo
+// fallimento non deve mai bloccare un login altrimenti valido.
+async function rehashLegacyCredential(supabase, appId, plainPassword) {
+  try {
+    const hash = await hashPassword(plainPassword);
+    // Stesso upsert già usato da ogni punto di scrittura di app_credentials
+    // (publish/route.ts, generate/save/route.ts, ecc.): scrive SOLO
+    // client_password (l'unico campo usato per il confronto), mai
+    // initial_password (che resta la copia in chiaro mostrata al reseller
+    // per la consegna al cliente, invariata da questo cambio).
+    await supabase.from('app_credentials').upsert({ app_id: appId, client_password: hash }, { onConflict: 'app_id' });
+  } catch (err) {
+    console.error('[client-auth] rehash legacy credential fallito (login comunque riuscito):', err);
+  }
+}
+
+async function rehashLegacyRbacCredential(supabase, appId, email, plainPassword) {
+  try {
+    const hash = await hashPassword(plainPassword);
+    await supabase
+      .from('app_rbac_users')
+      .update({ client_password: hash })
+      .eq('app_id', appId)
+      .eq('client_email', String(email).trim().toLowerCase());
+  } catch (err) {
+    console.error('[client-auth] rehash legacy rbac credential fallito (login comunque riuscito):', err);
+  }
+}
+
 // Confronto della password legacy (client_password condiviso dell'app)
 // contro un valore fornito — usato sia da un Bearer token (clientAuthMiddleware
 // legacy, verifyClientAuth legacy) sia da un campo del body (change-password,
 // che non usa affatto un Bearer/JWT: la prova di possesso è la vecchia
-// password stessa).
+// password stessa). Rehash-on-verify: vedi nota sopra.
 async function verifyLegacyPassword(supabase, app, providedValue) {
   const creds = await getClientCredentials(supabase, app.id, app);
-  return creds.client_password === providedValue;
+  const result = await verifyPassword(providedValue, creds.client_password);
+  if (result.needsRehash) {
+    await rehashLegacyCredential(supabase, app.id, providedValue);
+  }
+  return result.match;
 }
 
 // ─── FASE 3 — CreatorAI multi-utente (auth_mode='rbac') ────────────────────
@@ -189,8 +231,15 @@ async function resolveClientIdentity(supabase, app, appId, token) {
     const password = token.slice(sep + 1);
 
     const credential = await getRbacCredential(supabase, appId, email);
-    if (!credential || credential.client_password !== password) {
+    if (!credential) {
       return { ok: false, status: 401, error: 'Credenziali non valide' };
+    }
+    const verified = await verifyPassword(password, credential.client_password);
+    if (!verified.match) {
+      return { ok: false, status: 401, error: 'Credenziali non valide' };
+    }
+    if (verified.needsRehash) {
+      await rehashLegacyRbacCredential(supabase, appId, email, password);
     }
 
     // appUserEmail (Security Audit Fase 4, Focus 5 — attribution): usa
@@ -284,4 +333,10 @@ module.exports = {
   clientAuthMiddleware,
   isAppBillingBlocked,
   BLOCKED_APP_STATUSES,
+  // Pre-Beta Hardening, Blocco 6: esportate così anche routes/client-app.js
+  // (il login stesso, che non passa da resolveClientIdentity/
+  // verifyLegacyPassword) può riusare lo STESSO rehash invece di duplicarne
+  // la logica una terza volta.
+  rehashLegacyCredential,
+  rehashLegacyRbacCredential,
 };

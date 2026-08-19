@@ -7,10 +7,7 @@ const helmet = require('helmet');
 const { aiLimiter } = require('./middleware/rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
-const Groq = require('groq-sdk');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const OpenAI = require('openai');
-const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError } = require('./lib/ai-router');
+const { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError, AiBudgetExceededError } = require('./lib/ai-router');
 const { verifyWebhookSignature } = require('./lib/stripe-webhook-logic');
 // Orchestrazione eventi webhook (switch + helper con I/O reale) estratta in
 // lib/stripe-webhook-handler.js per essere chiamabile con supabase/stripe
@@ -19,6 +16,7 @@ const { verifyWebhookSignature } = require('./lib/stripe-webhook-logic');
 // l'unico responsabile della route Express: verifica la firma, crea i
 // client reali, chiama l'handler.
 const { handleStripeWebhookEvent } = require('./lib/stripe-webhook-handler');
+const { captureError } = require('./lib/error-tracking');
 
 const app = express();
 const PORT = process.env.PORT || 5005;
@@ -108,26 +106,14 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Client AI inizializzati solo se le chiavi sono presenti — usati solo da
-// /api/vision/analyze (input multimodale, non ancora supportato dall'AI
-// Router centralizzato in ./lib/ai-router.js). /api/chat e /api/generate-app
-// usano invece callAiRouter (OpenRouter), vedi sotto.
-const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null;
-const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-
-function clientMissing(res, provider) {
-  return res.status(503).json({ error: `${provider} non configurato. Aggiungi la chiave API.` });
-}
-
-// Le route AI sotto (chat, vision, generate-app) chiamano provider a pagamento
-// (OpenRouter via ./lib/ai-router.js per chat/generate-app; Groq/OpenAI/Gemini
-// diretti per vision) con le chiavi del proprietario del sito: senza
-// autenticazione chiunque conoscesse l'URL del backend potrebbe consumare
-// budget illimitato. Accetta sia un JWT Supabase reale (chiamata diretta dal
-// browser) sia il BACKEND_SERVICE_TOKEN condiviso + X-User-ID (stesso schema
-// di routes/stripe.js::getUser, per le chiamate server-to-server dal
-// frontend Next.js che già autentica l'utente a monte).
+// Le route AI sotto (chat, generate-app) chiamano OpenRouter via
+// ./lib/ai-router.js (budget/retry/timeout/circuit breaker centralizzati) con
+// le chiavi del proprietario del sito: senza autenticazione chiunque
+// conoscesse l'URL del backend potrebbe consumare budget illimitato. Accetta
+// sia un JWT Supabase reale (chiamata diretta dal browser) sia il
+// BACKEND_SERVICE_TOKEN condiviso + X-User-ID (stesso schema di
+// routes/stripe.js::getUser, per le chiamate server-to-server dal frontend
+// Next.js che già autentica l'utente a monte).
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   const serviceToken = process.env.BACKEND_SERVICE_TOKEN;
@@ -181,71 +167,13 @@ app.post('/api/chat', requireAuth, aiLimiter, async (req, res) => {
     if (err instanceof AiRouterConfigError) {
       return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
     }
+    if (err instanceof AiBudgetExceededError) {
+      return res.status(429).json({ error: err.message });
+    }
     if (err instanceof AiRouterError) {
       return res.status(502).json({ error: 'Errore interno' });
     }
     res.status(500).json({ error: 'Errore interno' });
-  }
-});
-
-// --- VISION API ---
-app.post('/api/vision/analyze', requireAuth, aiLimiter, async (req, res) => {
-  try {
-    const { prompt, image, provider = 'groq', model } = req.body;
-    if (!image) return res.status(400).json({ error: 'Immagine richiesta' });
-
-    const base64Image = image.includes(',') ? image.split(',')[1] : image;
-    const mimeType = image.includes('data:image/png') ? 'image/png' : 'image/jpeg';
-
-    if (provider === 'groq') {
-      if (!groq) return clientMissing(res, 'Groq');
-      const visionModel = model || 'meta-llama/llama-4-scout-17b-16e-instruct';
-      const completion = await groq.chat.completions.create({
-        model: visionModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt || 'Descrivi questa immagine dettagliatamente.' },
-              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } }
-            ]
-          }
-        ]
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    if (provider === 'gemini') {
-      if (!genAI) return clientMissing(res, 'Gemini');
-      const geminiModel = genAI.getGenerativeModel({ model: model || 'gemini-1.5-flash' });
-      const result = await geminiModel.generateContent([
-        prompt || 'Descrivi questa immagine.',
-        { inlineData: { data: base64Image, mimeType } }
-      ]);
-      return res.json({ reply: result.response.text() });
-    }
-
-    if (provider === 'openai') {
-      if (!openai) return clientMissing(res, 'OpenAI');
-      const completion = await openai.chat.completions.create({
-        model: model || 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt || 'Descrivi questa immagine.' },
-              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } }
-            ]
-          }
-        ]
-      });
-      return res.json({ reply: completion.choices[0].message.content });
-    }
-
-    return res.status(400).json({ error: `Provider ${provider} non supportato per vision` });
-  } catch (err) {
-    console.error('/api/vision/analyze error:', err);
-    res.status(500).json({ error: 'Errore vision' });
   }
 });
 
@@ -320,6 +248,9 @@ Rispondi SOLO con il JSON valido, senza testo aggiuntivo.`;
     if (err instanceof AiRouterConfigError) {
       return res.status(500).json({ error: 'Servizio AI non configurato correttamente. Contatta il supporto.' });
     }
+    if (err instanceof AiBudgetExceededError) {
+      return res.status(429).json({ error: err.message });
+    }
     if (err instanceof AiRouterError) {
       return res.status(502).json({ error: 'Errore interno' });
     }
@@ -350,8 +281,12 @@ app.use('/api', require('./routes/api-keys'));
 app.use('/api/v1/apps', require('./routes/public-api'));
 
 // --- ERROR HANDLER ---
-app.use((err, _req, res, _next) => {
+// Pre-Beta Hardening, Blocco 7: unico punto che copre QUALUNQUE 500 non
+// gestito da una route (le route già critiche hanno il proprio captureError
+// puntuale — questo è la rete di sicurezza per tutto il resto).
+app.use((err, req, res, _next) => {
   console.error('Unhandled error:', err);
+  captureError('server.unhandled', err, { path: req?.path, method: req?.method });
   res.status(500).json({ error: 'Errore interno del server' });
 });
 
