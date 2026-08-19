@@ -12,6 +12,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Copy, Download, ExternalLink, Key, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://api.shardapps.com';
+
 interface ApiKeySummary {
   id: string;
   name: string;
@@ -51,7 +53,7 @@ export default function DataApiSection({ appId, slug }: { appId: string; slug: s
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyScopes, setNewKeyScopes] = useState<{ read: boolean; write: boolean }>({ read: true, write: false });
+  const [newKeyScopes, setNewKeyScopes] = useState<{ read: boolean; write: boolean; webhook: boolean }>({ read: true, write: false, webhook: false });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
@@ -108,9 +110,10 @@ export default function DataApiSection({ appId, slug }: { appId: string; slug: s
     const scopes = [
       ...(newKeyScopes.read ? ['read'] : []),
       ...(newKeyScopes.write ? ['write'] : []),
+      ...(newKeyScopes.webhook ? ['webhook'] : []),
     ];
     if (scopes.length === 0) {
-      setCreateError('Seleziona almeno uno scope (lettura o scrittura)');
+      setCreateError('Seleziona almeno un permesso');
       return;
     }
 
@@ -128,7 +131,7 @@ export default function DataApiSection({ appId, slug }: { appId: string; slug: s
       }
       setRevealedKey(data.apiKey);
       setNewKeyName('');
-      setNewKeyScopes({ read: true, write: false });
+      setNewKeyScopes({ read: true, write: false, webhook: false });
       setShowCreateForm(false);
       loadKeys();
     } catch {
@@ -271,7 +274,25 @@ export default function DataApiSection({ appId, slug }: { appId: string; slug: s
                   />
                   Scrittura (POST/PATCH/DELETE)
                 </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={newKeyScopes.webhook}
+                    onChange={(e) => setNewKeyScopes((s) => ({ ...s, webhook: e.target.checked }))}
+                  />
+                  Ricevi webhook in ingresso
+                </label>
               </div>
+              {newKeyScopes.webhook && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Un servizio esterno (Make, Zapier, un CRM…) potrà notificare questa app con:{' '}
+                  <code className="text-violet-300">POST {BACKEND_URL}/api/v1/apps/{appId}/webhooks/incoming</code>
+                  {' '}— vedi{' '}
+                  <a href={`/a/${slug}/settings/api-docs`} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300 underline">
+                    la documentazione API
+                  </a>{' '}per i dettagli.
+                </p>
+              )}
             </div>
             {createError && <p className="text-sm text-red-400">{createError}</p>}
             <button

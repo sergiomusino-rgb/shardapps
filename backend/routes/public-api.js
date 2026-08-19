@@ -24,6 +24,9 @@ const { requireApiKey, requireScope } = require('../lib/public-api-auth');
 const { publicApiLimiter } = require('../middleware/rate-limit');
 const { buildEntityList, findEntity } = require('../lib/entity-metadata');
 const { loadExportData, streamExportZip, buildPublicSchema } = require('../lib/data-export');
+const { routeEvent } = require('../lib/event-router');
+const { captureError } = require('../lib/error-tracking');
+const { buildOpenApiSpec } = require('../lib/public-api-openapi');
 
 function getSupabase() {
   return createClient(
@@ -47,6 +50,19 @@ async function loadAppEntities(supabase, appId, tenantId) {
   return buildEntityList(appRow?.config || {}, customDefs || [], { appId, tenantId });
 }
 
+// GET /api/v1/apps/openapi.json — spec OpenAPI 3.0 minimale (Public API
+// Round 2). Registrata PRIMA di router.use('/:appId', ...) sotto: Express
+// fa match sui path nell'ordine di registrazione, quindi questo letterale
+// "openapi.json" vince su quel middleware invece di essere interpretato come
+// un :appId — nessuna API key richiesta per leggere la documentazione,
+// stesso principio della pagina prosa equivalente (settings/api-docs, non
+// protetta da alcuna autenticazione).
+router.get('/openapi.json', (req, res) => {
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const baseUrl = `${proto}://${req.get('host')}`;
+  res.json(buildOpenApiSpec(baseUrl));
+});
+
 // Applicata a TUTTE le route sotto /:appId: autentica la API key, la
 // vincola all'app del path, poi applica il rate limit per-chiave (l'ordine è
 // intenzionale — il limiter usa req.apiKeyId impostato da requireApiKey).
@@ -56,6 +72,87 @@ router.use('/:appId', requireApiKey, publicApiLimiter);
 // e legata a questa app, senza toccare dati applicativi.
 router.get('/:appId/health', (req, res) => {
   res.json({ status: 'ok', appId: req.appId, scopes: req.apiKeyScopes, version: 'v1' });
+});
+
+// ─── POST /api/v1/apps/:appId/webhooks/incoming — Integrations Round 2 ─────
+// Punto di ingresso per sistemi esterni (Make/Zapier/CRM/qualunque servizio
+// che sappia fare una POST) che devono notificare ShardApps di un evento —
+// prima non esisteva alcun modo di ricevere un webhook, solo di inviarne
+// (trigger_webhook). Riusa l'infrastruttura già esistente, non ne introduce
+// una seconda:
+// - autenticazione: STESSA API key del resto della Public API v1
+//   (requireApiKey, sopra), con uno scope dedicato 'webhook' (mai 'read'/
+//   'write' — una chiave emessa per leggere/scrivere dati non autorizza
+//   automaticamente a iniettare eventi, e viceversa) — isolamento tenant/app
+//   quindi IDENTICO e già testato (public-api-auth.test.js): una chiave
+//   vincolata all'app A non può mai innescare un evento sull'app B.
+// - rate limiting: stesso publicApiLimiter già montato su tutta /:appId
+//   (100 richieste/minuto per chiave).
+// - motore: lo stesso event-router.js/workflow engine già usato per
+//   record.created/updated/state.changed — l'evento 'webhook.received' è
+//   nel vocabolario di workflow-model.js fin dalla Fase 4, semplicemente non
+//   era mai stato emesso da nessun endpoint reale. Nessun secondo motore.
+const MAX_INCOMING_WEBHOOK_BYTES = 100_000; // 100KB: un payload di notifica, non un export dati
+
+// Validazione pura del body in ingresso — estratta dalla route per essere
+// testabile senza un vero server Express (questo file, come il resto della
+// Public API, non ha test a livello HTTP: vedi public-api-auth.test.js/
+// public-api-entity-safety.test.js, che testano le funzioni pure usate dalle
+// route invece di simulare richieste reali). Ritorna { ok:true } oppure
+// { ok:false, status, error } pronto per res.status(...).json(...).
+function validateIncomingWebhookPayload(rawBody) {
+  const body = rawBody || {};
+  const size = Buffer.byteLength(JSON.stringify(body), 'utf8');
+  if (size > MAX_INCOMING_WEBHOOK_BYTES) {
+    return { ok: false, status: 413, error: `Payload troppo grande (max ${MAX_INCOMING_WEBHOOK_BYTES} byte)` };
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { ok: false, status: 400, error: 'Il body deve essere un oggetto JSON' };
+  }
+  return { ok: true };
+}
+
+// entity opzionale (query ?entity=ordini): permette a un workflow di
+// filtrare su quale "tipo" di evento in ingresso reagire (stesso meccanismo
+// già usato da record.created/updated — trigger.entity). Assente = il
+// webhook è generico, reagiscono solo i trigger senza filtro entity (vedi
+// triggerMatches in event-router.js, invariato).
+function parseIncomingWebhookEntity(rawQueryEntity) {
+  return typeof rawQueryEntity === 'string' && rawQueryEntity.trim() ? rawQueryEntity.trim() : undefined;
+}
+
+router.post('/:appId/webhooks/incoming', requireScope('webhook'), async (req, res) => {
+  try {
+    const validation = validateIncomingWebhookPayload(req.body);
+    if (!validation.ok) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+
+    const entity = parseIncomingWebhookEntity(req.query.entity);
+
+    const event = {
+      type: 'webhook.received',
+      appId: req.appId,
+      tenantId: req.tenantId,
+      entity,
+      record: { id: null, data: req.body },
+      actorRole: 'external_webhook',
+    };
+
+    console.log(`[public-api] webhook in ingresso ricevuto: app=${req.appId} entity=${entity || '(nessuna)'} apiKey=${req.apiKeyId}`);
+
+    const supabase = getSupabase();
+    const summary = await routeEvent(supabase, event);
+
+    // 200 anche se nessun workflow corrisponde (matched:0): il webhook è
+    // stato ricevuto e processato correttamente, "nessuna azione configurata
+    // per questo evento" non è un errore del chiamante esterno.
+    res.json({ received: true, matched: summary.matched, executed: summary.executed });
+  } catch (err) {
+    console.error('[public-api] POST webhooks/incoming error:', err);
+    captureError('public-api.webhooks.incoming', err, { appId: req.appId });
+    res.status(500).json({ error: 'Errore interno' });
+  }
 });
 
 // GET /api/v1/apps/:appId/schema — rappresentazione pubblica dello schema
@@ -209,6 +306,69 @@ router.get('/:appId/entities/:entity/:id', requireScope('read'), async (req, res
   }
 });
 
+// ─── Idempotency-Key (Public API Round 2) ──────────────────────────────────
+// Header opzionale, stesso pattern REST usato da Stripe/altre API mature: un
+// consumer esterno che riprova una POST dopo un timeout di rete può
+// includere la STESSA chiave per farsi restituire la risposta già data
+// invece di ricreare il record. Solo su POST /entities/:entity — l'unica
+// route che crea qualcosa di nuovo e non è già naturalmente idempotente
+// (vedi supabase/migrations/20260829000000_public_api_idempotency_keys.sql).
+//
+// Nota realistica: questo è un check-then-act non atomico (lookup, poi
+// esegue, poi salva) — sufficiente per il caso reale che l'header serve a
+// risolvere (un client che riprova IN SEQUENZA dopo un timeout), non una
+// garanzia contro due richieste con la stessa chiave inviate in parallelo
+// nello stesso istante (finestra di corsa strettissima, non protetta da un
+// lock atomico come cron_job_runs — fuori scope per "una base professionale
+// minima", non una riscrittura della Public API).
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
+
+function parseIdempotencyKey(rawHeader) {
+  if (typeof rawHeader !== 'string') return undefined;
+  const key = rawHeader.trim();
+  if (!key || key.length > MAX_IDEMPOTENCY_KEY_LENGTH) return undefined;
+  return key;
+}
+
+async function findIdempotentResponse(supabase, appId, key) {
+  if (!key) return null;
+  try {
+    const { data } = await supabase
+      .from('public_api_idempotency_keys')
+      .select('response_status, response_body')
+      .eq('app_id', appId)
+      .eq('idempotency_key', key)
+      .maybeSingle();
+    return data || null;
+  } catch (err) {
+    // Tabella non ancora disponibile su questo ambiente (migration non
+    // applicata) o altro errore infrastrutturale: fail-open, la richiesta
+    // procede come se nessuna chiave fosse stata trovata — mai bloccare una
+    // scrittura legittima per un dettaglio di questo meccanismo opzionale.
+    console.warn('[public-api] lookup idempotency key fallito, procedo comunque:', err.message || err);
+    return null;
+  }
+}
+
+async function storeIdempotentResponse(supabase, appId, key, status, body) {
+  if (!key) return;
+  try {
+    await supabase.from('public_api_idempotency_keys').insert({
+      app_id: appId,
+      idempotency_key: key,
+      response_status: status,
+      response_body: body,
+    });
+  } catch (err) {
+    // Stesso principio del lookup: un fallimento nel salvare la chiave non
+    // deve mai far fallire una scrittura già andata a buon fine — il record
+    // creato resta valido, solo un eventuale retry non troverà la chiave e
+    // (nel peggiore dei casi) ricreerà il record, comportamento identico a
+    // prima dell'introduzione di questo meccanismo.
+    console.warn('[public-api] salvataggio idempotency key fallito (non bloccante):', err.message || err);
+  }
+}
+
 // POST /api/v1/apps/:appId/entities/:entity — crea un record (Fase 5/7,
 // richiede scope 'write'). Il body è preso direttamente come i campi del
 // record (nessun wrapper {data:...} richiesto lato chiamante esterno — più
@@ -217,6 +377,15 @@ router.get('/:appId/entities/:entity/:id', requireScope('read'), async (req, res
 router.post('/:appId/entities/:entity', requireScope('write'), async (req, res) => {
   try {
     const supabase = getSupabase();
+    const idempotencyKey = parseIdempotencyKey(req.get('Idempotency-Key'));
+
+    if (idempotencyKey) {
+      const existing = await findIdempotentResponse(supabase, req.appId, idempotencyKey);
+      if (existing) {
+        return res.status(existing.response_status).set('Idempotent-Replay', 'true').json(existing.response_body);
+      }
+    }
+
     const entities = await loadAppEntities(supabase, req.appId, req.tenantId);
     const entity = findEntity(entities, req.params.entity);
     if (!entity) {
@@ -241,7 +410,14 @@ router.post('/:appId/entities/:entity', requireScope('write'), async (req, res) 
       return res.status(500).json({ error: 'Errore interno' });
     }
 
-    res.status(201).json({ record: toPublicRecord(data) });
+    const responseBody = { record: toPublicRecord(data) };
+    // Salvata SOLO dopo un successo reale: un 404/500 non viene mai
+    // memorizzato come risposta "da rigiocare" — un retry dopo un errore
+    // transitorio deve poter tentare di nuovo, non restare bloccato a
+    // ripetere lo stesso fallimento.
+    await storeIdempotentResponse(supabase, req.appId, idempotencyKey, 201, responseBody);
+
+    res.status(201).json(responseBody);
   } catch (err) {
     console.error('[public-api] POST entity record exception:', err);
     res.status(500).json({ error: 'Errore interno' });
@@ -367,3 +543,8 @@ router.get('/:appId/export', requireScope('read'), async (req, res) => {
 });
 
 module.exports = router;
+// Esportate solo per i test (public-api.test.js) — stesso principio già
+// applicato altrove nel progetto: il router resta l'export di default
+// (invariato per server.js), le funzioni pure usate al suo interno sono
+// raggiungibili senza dover simulare una richiesta Express reale.
+module.exports.__testables = { validateIncomingWebhookPayload, parseIncomingWebhookEntity, parseIdempotencyKey };

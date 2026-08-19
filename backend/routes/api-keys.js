@@ -168,4 +168,38 @@ router.get('/apps/:appId/export-all', authMiddleware, tenantMiddleware, async (r
   }
 });
 
+// GET /api/apps/:appId/action-logs — Pre-Beta Hardening, Blocco 8: viewer
+// minimo di app_action_logs (letto finora solo da query SQL manuali — vedi
+// audit) per il pannello "Data & API" del proprietario. Sola lettura, righe
+// più recenti prima, tetto fisso (nessuna paginazione: "viewer minimo", non
+// un pannello Log Azioni completo). Stesso authMiddleware/tenantMiddleware
+// di ogni altra route di questo file.
+const ACTION_LOGS_LIMIT = 50;
+
+router.get('/apps/:appId/action-logs', authMiddleware, tenantMiddleware, async (req, res) => {
+  try {
+    const { data, error } = await getSupabase()
+      .from('app_action_logs')
+      .select('id, entity, action_id, action_type, status, error, workflow_id, event_type, actor_role, actor_email, retry_count, created_at')
+      .eq('app_id', req.appId)
+      .eq('tenant_id', req.tenantId)
+      .order('created_at', { ascending: false })
+      .limit(ACTION_LOGS_LIMIT);
+
+    if (error) {
+      // La tabella potrebbe non esistere ancora su questo ambiente (migration
+      // 20260813000000 non applicata) — stesso trattamento "fallback
+      // silenzioso" già usato da action-dispatcher.js::logAction per lo
+      // stesso caso, qui semplicemente un elenco vuoto invece di un 500.
+      console.warn('[api-keys] GET action-logs error (tabella forse non ancora migrata):', error.message);
+      return res.json({ logs: [] });
+    }
+
+    res.json({ logs: data || [] });
+  } catch (err) {
+    console.error('[api-keys] GET action-logs exception:', err);
+    res.status(500).json({ error: 'Errore interno' });
+  }
+});
+
 module.exports = router;

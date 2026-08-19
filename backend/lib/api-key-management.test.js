@@ -35,6 +35,12 @@ describe('sanitizeScopes', () => {
   test('solo scope sconosciuti -> default read-only (mai un array vuoto)', () => {
     assert.deepEqual(sanitizeScopes(['admin', 'superuser']), ['read']);
   });
+  test('webhook (Integrations Round 2) -> ammesso, ma isolato da read/write se richiesto da solo', () => {
+    assert.deepEqual(sanitizeScopes(['webhook']), ['webhook']);
+  });
+  test('webhook + read insieme -> entrambi mantenuti (una chiave può avere più scope)', () => {
+    assert.deepEqual(sanitizeScopes(['read', 'webhook']), ['read', 'webhook']);
+  });
 });
 
 describe('toPublicKey — #5/#6 hash mai esposto, stato derivato correttamente', () => {
