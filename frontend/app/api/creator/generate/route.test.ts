@@ -194,6 +194,23 @@ test('generate (ramo projectType): 403 SlotsExhausted quando il tenant ha esauri
   assert.equal((await res.json()).code, 'SLOTS_EXHAUSTED');
 });
 
+test('generate (ramo projectType): tenant beta con app_limit 0 genera comunque (Private Beta, nessun checkout Stripe)', async (t) => {
+  setupRouteTest(t, baseSetup({
+    seedTables: {
+      tenants: [{ id: 'tenant-1', owner_id: 'user-1', plan: 'free', app_limit: 0, total_apps_created: 0, beta_access: true }],
+      tenant_members: [{ id: 'tm-1', tenant_id: 'tenant-1', user_id: 'user-1', role: 'owner' }],
+    },
+    aiResponses: [
+      { content: JSON.stringify(VALID_PLAN) },
+      { content: JSON.stringify(validGestionaleRawSchema()) },
+    ],
+  }));
+  const res = await postGenerate({ projectType: 'gestionale', userPrompt: 'Un gestionale qualsiasi' });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.success, true);
+});
+
 test('tenant isolation: due tenant diversi ottengono job isolati, nessuna fuga cross-tenant', async (t) => {
   const setup = setupRouteTest(t, baseSetup({
     seedTables: {
