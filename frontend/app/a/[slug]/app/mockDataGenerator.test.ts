@@ -15,7 +15,11 @@ import type { TableDef, FieldDef } from './table-definitions.ts';
 
 setupRouteTest({} as unknown, {}); // registra il loader di risoluzione alias per questo processo
 const { generateMockRecord } = (await importRoute('app/a/[slug]/app/mockDataGenerator.ts')) as {
-  generateMockRecord: (table: TableDef, index: number) => Record<string, unknown>;
+  generateMockRecord: (
+    table: TableDef,
+    index: number,
+    relatedRecords?: Record<string, { id: string }[]>
+  ) => Record<string, unknown>;
 };
 
 function field(overrides: Partial<FieldDef> & { name: string; type: FieldDef['type'] }): FieldDef {
@@ -171,4 +175,252 @@ test('4. stati, prezzi, indirizzi, nomi e date già corretti non regrediscono', 
   assert.ok(typeof rec.indirizzo === 'string' && rec.indirizzo.length > 0);
   assert.ok(typeof rec.nome === 'string' && rec.nome.length > 0);
   assert.match(rec.data_apertura as string, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V2 — Fix F.1: inferenza semantica dei campi numerici + coerenza
+// matematica tra campi collegati sullo stesso record.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function interventoNumericTable(): TableDef {
+  return table('interventi', [
+    field({ name: 'ore_lavorate', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_manodopera', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+    field({ name: 'costo_totale', type: 'number' }),
+  ]);
+}
+
+test('F.1: campi numerici semanticamente diversi (ore/tariffa/costi) sullo stesso record NON ricevono tutti lo stesso valore', () => {
+  const t = interventoNumericTable();
+  const rec = generateMockRecord(t, 0);
+  const values = [rec.ore_lavorate, rec.tariffa_oraria, rec.costo_manodopera, rec.costo_materiali, rec.costo_totale];
+  assert.ok(values.every((v) => typeof v === 'number'));
+  const distinct = new Set(values);
+  assert.ok(distinct.size >= 3, `attesi almeno 3 valori distinti su 5 campi numerici diversi, trovati: ${JSON.stringify(values)}`);
+});
+
+test('F.1: costo_manodopera ≈ ore_lavorate × tariffa_oraria quando entrambi i campi esistono sullo stesso record (relazione matematica plausibile)', () => {
+  const t = interventoNumericTable();
+  const rec = generateMockRecord(t, 1);
+  assert.equal(rec.costo_manodopera, (rec.ore_lavorate as number) * (rec.tariffa_oraria as number));
+});
+
+test('F.1: costo_totale ≈ costo_manodopera + costo_materiali quando entrambe le "cost part" esistono sullo stesso record', () => {
+  const t = interventoNumericTable();
+  const rec = generateMockRecord(t, 2);
+  assert.equal(rec.costo_totale, (rec.costo_manodopera as number) + (rec.costo_materiali as number));
+});
+
+test('F.1: ore_lavorate resta un intero piccolo e plausibile (una quantità di tempo, non una valuta)', () => {
+  const t = table('interventi', [field({ name: 'ore_lavorate', type: 'number' })]);
+  for (let i = 0; i < 8; i++) {
+    const rec = generateMockRecord(t, i);
+    assert.ok((rec.ore_lavorate as number) >= 1 && (rec.ore_lavorate as number) <= 10);
+  }
+});
+
+test('F.1: senza campi collegati (solo costo_totale isolato), nessun crash — fallback indipendente invariato', () => {
+  const t = table('generico', [field({ name: 'costo_totale', type: 'number' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(typeof rec.costo_totale, 'number');
+});
+
+test('F.1: due campi "cost part" indipendenti (senza ore/tariffa) su tabelle diverse NON ricevono lo stesso valore per lo stesso indice (era il bug esatto osservato in produzione)', () => {
+  const a = table('tabella_a', [field({ name: 'costo_materiali', type: 'number' })]);
+  const b = table('tabella_a', [field({ name: 'canone_mensile', type: 'number' })]);
+  const recA = generateMockRecord(a, 0);
+  const recB = generateMockRecord(b, 0);
+  assert.notEqual(recA.costo_materiali, recB.canone_mensile);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V2 — Fix F.2: fallback semantico per campi TESTUALI il cui nome
+// è chiaramente riconducibile a una data.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('F.2: "data_chiusura_prevista" (text) produce una data plausibile, non una frase generica', () => {
+  const t = table('opportunita', [field({ name: 'data_chiusura_prevista', type: 'text' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.match(rec.data_chiusura_prevista as string, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('F.2: altri nomi "data-simili" (scadenza, deadline, data_apertura come text) producono anch\'essi una data plausibile', () => {
+  const t = table('pratiche', [
+    field({ name: 'scadenza', type: 'text' }),
+    field({ name: 'deadline_progetto', type: 'text' }),
+    field({ name: 'data_apertura', type: 'text' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  for (const key of ['scadenza', 'deadline_progetto', 'data_apertura']) {
+    assert.match(rec[key] as string, /^\d{4}-\d{2}-\d{2}$/, `${key} deve essere una data plausibile`);
+  }
+});
+
+test('F.2: un campo dichiarato esplicitamente "date"/"datetime" continua a prevalere (invariato, non passa dal fallback testuale)', () => {
+  const t = table('interventi', [field({ name: 'data_intervento', type: 'date' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.match(rec.data_intervento as string, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('F.2: normali stringhe che NON devono diventare date restano invariate (nessuna trasformazione indiscriminata)', () => {
+  const t = table('clienti', [
+    field({ name: 'ragione_sociale', type: 'text' }),
+    field({ name: 'note', type: 'text' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.ok(typeof rec.ragione_sociale === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(rec.ragione_sociale as string));
+  assert.ok(typeof rec.note === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(rec.note as string));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V2 — Relazioni: demo data coerente tra entità collegate.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('Relations: un campo "relation" con record correlati reali disponibili si collega a uno di essi (id reale, non vuoto)', () => {
+  const t = table('interventi', [
+    field({ name: 'cliente_id', type: 'relation', targetTable: 'clienti' } as Partial<FieldDef> & { name: string; type: FieldDef['type'] }),
+  ]);
+  const relatedRecords = { clienti: [{ id: 'cli-1' }, { id: 'cli-2' }, { id: 'cli-3' }] };
+  const rec = generateMockRecord(t, 0, relatedRecords);
+  assert.ok(['cli-1', 'cli-2', 'cli-3'].includes(rec.cliente_id as string));
+});
+
+test('Relations: senza record correlati disponibili, il campo relation resta undefined (comportamento pre-esistente invariato, mai un id inventato)', () => {
+  const t = table('interventi', [
+    field({ name: 'cliente_id', type: 'relation', targetTable: 'clienti' } as Partial<FieldDef> & { name: string; type: FieldDef['type'] }),
+  ]);
+  const rec = generateMockRecord(t, 0, {});
+  assert.equal('cliente_id' in rec, false);
+  const recNoArg = generateMockRecord(t, 0);
+  assert.equal('cliente_id' in recNoArg, false);
+});
+
+test('Relations: relation verso una tabella diversa da quella con record disponibili non si collega per errore', () => {
+  const t = table('interventi', [
+    field({ name: 'tecnico_id', type: 'relation', targetTable: 'tecnici' } as Partial<FieldDef> & { name: string; type: FieldDef['type'] }),
+  ]);
+  const relatedRecords = { clienti: [{ id: 'cli-1' }] }; // nessun record per "tecnici"
+  const rec = generateMockRecord(t, 0, relatedRecords);
+  assert.equal('tecnico_id' in rec, false);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V2 — Final Semantic Consistency Check: la coerenza matematica
+// (F.1) NON deve dipendere dall'ordine dei campi nel blueprint — un modello
+// non garantisce mai un ordine di dichiarazione specifico. Bug reale
+// verificato PRIMA di questo fix: con "costo_manodopera" dichiarato prima
+// di "ore_lavorate"/"tariffa_oraria", il calcolo ricadeva sul fallback
+// indipendente invece che sul prodotto ore×tariffa (numberCtx.duration/
+// rate non erano ancora stati calcolati in quel punto dell'iterazione).
+// ═══════════════════════════════════════════════════════════════════════════
+
+function assertCoerentiOreCostoTotale(rec: Record<string, unknown>) {
+  assert.equal(typeof rec.ore_lavorate, 'number');
+  assert.equal(typeof rec.tariffa_oraria, 'number');
+  assert.equal(typeof rec.costo_manodopera, 'number');
+  assert.equal(typeof rec.costo_materiali, 'number');
+  assert.equal(typeof rec.costo_totale, 'number');
+  assert.equal(rec.costo_manodopera, (rec.ore_lavorate as number) * (rec.tariffa_oraria as number), 'costo_manodopera deve essere ore_lavorate × tariffa_oraria');
+  assert.equal(rec.costo_totale, (rec.costo_manodopera as number) + (rec.costo_materiali as number), 'costo_totale deve essere costo_manodopera + costo_materiali');
+  // Requisito esplicito: mai costo_totale === costo_materiali quando esiste
+  // anche una manodopera non-zero (altrimenti la manodopera è stata ignorata).
+  assert.notEqual(rec.costo_totale, rec.costo_materiali);
+}
+
+test('Caso A — ordine normale (ore, tariffa, manodopera, materiali, totale): relazioni coerenti', () => {
+  const t = table('interventi', [
+    field({ name: 'ore_lavorate', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_manodopera', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+    field({ name: 'costo_totale', type: 'number' }),
+  ]);
+  assertCoerentiOreCostoTotale(generateMockRecord(t, 0));
+});
+
+test('Caso B — ordine invertito (totale, materiali, manodopera, tariffa, ore): stesse relazioni coerenti, non dipende dalla posizione nel blueprint', () => {
+  const t = table('interventi', [
+    field({ name: 'costo_totale', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+    field({ name: 'costo_manodopera', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'ore_lavorate', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assertCoerentiOreCostoTotale(rec);
+  // L'ordine delle CHIAVI nel record restituito segue comunque l'ordine di
+  // dichiarazione originale (dettaglio di rendering, invariato) — solo
+  // l'ordine di CALCOLO interno è cambiato.
+  assert.deepEqual(Object.keys(rec), ['costo_totale', 'costo_materiali', 'costo_manodopera', 'tariffa_oraria', 'ore_lavorate']);
+});
+
+test('Caso C — ordine misto (manodopera, ore, totale, tariffa, materiali): relazioni coerenti indipendentemente dalla posizione', () => {
+  const t = table('interventi', [
+    field({ name: 'costo_manodopera', type: 'number' }),
+    field({ name: 'ore_lavorate', type: 'number' }),
+    field({ name: 'costo_totale', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+  ]);
+  assertCoerentiOreCostoTotale(generateMockRecord(t, 1));
+});
+
+test('Caso D — campi parziali (solo ore_lavorate, tariffa_oraria, costo_totale, senza manodopera/materiali): nessun crash, valori plausibili', () => {
+  const t = table('interventi', [
+    field({ name: 'ore_lavorate', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_totale', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(typeof rec.ore_lavorate, 'number');
+  assert.ok((rec.ore_lavorate as number) >= 1 && (rec.ore_lavorate as number) <= 10);
+  assert.equal(typeof rec.tariffa_oraria, 'number');
+  assert.ok((rec.tariffa_oraria as number) >= 20 && (rec.tariffa_oraria as number) <= 80);
+  // Nessuna "cost part" dichiarata: costo_totale resta un fallback
+  // indipendente plausibile (mai un crash, mai NaN/undefined).
+  assert.equal(typeof rec.costo_totale, 'number');
+  assert.ok(Number.isFinite(rec.costo_totale as number));
+});
+
+test('Caso E — campi numerici semanticamente INDIPENDENTI (numero_dipendenti, punteggio, anno, quantita): mai trattati come costi correlati', () => {
+  const t = table('aziende', [
+    field({ name: 'numero_dipendenti', type: 'number' }),
+    field({ name: 'punteggio', type: 'number' }),
+    field({ name: 'anno_fondazione', type: 'number' }),
+    field({ name: 'quantita_prodotti', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(typeof rec.numero_dipendenti, 'number');
+  assert.equal(typeof rec.punteggio, 'number');
+  assert.equal(typeof rec.anno_fondazione, 'number');
+  assert.equal(typeof rec.quantita_prodotti, 'number');
+  // "anno_fondazione" deve restare un anno plausibile (2010-2024), non un
+  // importo o una quantità generica — prova che il ruolo "year" resta
+  // riconosciuto e non viene confuso con "costPart"/"generic".
+  assert.ok((rec.anno_fondazione as number) >= 2010 && (rec.anno_fondazione as number) <= 2024);
+  // "quantita_prodotti" deve restare nel range quantità (1-50), non nel
+  // range valuta (15-1500).
+  assert.ok((rec.quantita_prodotti as number) >= 1 && (rec.quantita_prodotti as number) <= 50);
+});
+
+test('Caso E bis — campi indipendenti su una tabella che HA ANCHE campi di costo correlati: i due gruppi non si mescolano', () => {
+  const t = table('interventi', [
+    field({ name: 'ore_lavorate', type: 'number' }),
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_manodopera', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+    field({ name: 'costo_totale', type: 'number' }),
+    field({ name: 'punteggio_soddisfazione', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  // costo_totale === ESATTAMENTE manodopera + materiali (asserito da
+  // assertCoerentiOreCostoTotale) dimostra già che "punteggio_soddisfazione"
+  // non è stato incluso nella somma delle cost part: se lo fosse stato,
+  // questa uguaglianza esatta non potrebbe reggere (punteggio è sempre >= 1,
+  // mai 0 — randomInt(1,100,...) — quindi un'inclusione erronea sposterebbe
+  // sempre il totale).
+  assertCoerentiOreCostoTotale(rec);
+  assert.equal(typeof rec.punteggio_soddisfazione, 'number');
 });

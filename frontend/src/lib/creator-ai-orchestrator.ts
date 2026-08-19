@@ -33,7 +33,7 @@ import { z } from 'zod';
 // `node --test` (resolver ESM nativo, richiede estensione esplicita su un
 // import relativo di file .ts).
 import { callAiRouter, extractJsonFromAiContent, type AiRouterMessage } from './ai-router.ts';
-import { sanitizeSiteBlueprint, type ProjectType, type SiteBlueprintJSON } from './site-schema.ts';
+import { sanitizeSiteBlueprint, coerceObviousNumericFieldTypes, type ProjectType, type SiteBlueprintJSON } from './site-schema.ts';
 import { AppSpecificationSchema, toAppSpecificationFromSiteBlueprint, type AppSpecification } from './app-specification.ts';
 import {
   createGenerationJob,
@@ -130,9 +130,27 @@ export function planToPromptContext(plan: GenerationPlan | null): string {
 // resolveEntityRelations/resolveEntityStatesAndActions (relation/state già
 // degradati/scartati se non validi) — qui si verifica ESPLICITAMENTE che
 // nessun riferimento rotto sia sopravvissuto, in difesa in profondità.
+// ─── Errori strutturati (CreatorAI v2) ──────────────────────────────────────
+// Prima runValidator produceva solo stringhe leggibili (usate direttamente
+// nel prompt del Repair Agent, invariato). `issues` aggiunge la stessa
+// informazione in forma strutturata {severity, code, path, message} — per
+// osservabilità (generation_jobs.artifacts) e per distinguere ERRORI (che
+// contano ai fini di ok/false e attivano il repair, invariato) da WARNING
+// (mai bloccanti, mai un motivo di repair — "meglio un warning che
+// un'invenzione"). `errors: string[]` resta invariato per compatibilità con
+// runRepair, che continua a ricevere lo stesso elenco di sempre.
+export type ValidationSeverity = 'error' | 'warning';
+export interface ValidationIssue {
+  severity: ValidationSeverity;
+  code: string;
+  path: string;
+  message: string;
+}
+
 export interface ValidationResult {
   ok: boolean;
   errors: string[];
+  issues?: ValidationIssue[];
   sanitized?: SiteBlueprintJSON;
   specification?: AppSpecification;
 }
@@ -140,7 +158,12 @@ export interface ValidationResult {
 export function runValidator(rawSchema: unknown): ValidationResult {
   const sanitized = sanitizeSiteBlueprint(rawSchema);
   if (!sanitized) {
-    return { ok: false, errors: ['Lo schema generato non è valido (sanitizeSiteBlueprint ha rifiutato l\'input: nessuna pagina recuperabile).'] };
+    const message = 'Lo schema generato non è valido (sanitizeSiteBlueprint ha rifiutato l\'input: nessuna pagina recuperabile).';
+    return {
+      ok: false,
+      errors: [message],
+      issues: [{ severity: 'error', code: 'SCHEMA_UNRECOVERABLE', path: '', message }],
+    };
   }
 
   const specParse = AppSpecificationSchema.safeParse(toAppSpecificationFromSiteBlueprint(sanitized));
@@ -148,12 +171,19 @@ export function runValidator(rawSchema: unknown): ValidationResult {
     return {
       ok: false,
       errors: specParse.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+      issues: specParse.error.issues.map((i) => ({
+        severity: 'error' as const,
+        code: 'SPEC_SCHEMA_INVALID',
+        path: i.path.join('.'),
+        message: i.message,
+      })),
       sanitized,
     };
   }
   const specification = specParse.data;
 
   const errors: string[] = [];
+  const issues: ValidationIssue[] = [];
   const entityNames = new Set(specification.entities.map((e) => e.name));
 
   // entities: almeno un'entità per un progetto che non sia una pura landing
@@ -167,7 +197,9 @@ export function runValidator(rawSchema: unknown): ValidationResult {
   for (const entity of specification.entities) {
     for (const field of entity.fields) {
       if (field.type === 'relation' && field.targetEntity && !entityNames.has(field.targetEntity)) {
-        errors.push(`Entità "${entity.name}", campo "${field.id}": relation verso "${field.targetEntity}" che non esiste tra le entità.`);
+        const message = `Entità "${entity.name}", campo "${field.id}": relation verso "${field.targetEntity}" che non esiste tra le entità.`;
+        errors.push(message);
+        issues.push({ severity: 'error', code: 'RELATION_TARGET_MISSING', path: `adminPanel.entities.${entity.name}.fields.${field.id}`, message });
       }
       // states/actions: targetState deve appartenere agli `states` dello
       // stesso campo — stessa rete di sicurezza esplicita.
@@ -175,7 +207,9 @@ export function runValidator(rawSchema: unknown): ValidationResult {
         const stateSet = new Set(field.states);
         for (const action of entity.actions ?? []) {
           if (action.type === 'change_state' && action.targetState && !stateSet.has(action.targetState)) {
-            errors.push(`Entità "${entity.name}", azione "${action.id}": targetState "${action.targetState}" non è tra gli states del campo "${field.id}".`);
+            const message = `Entità "${entity.name}", azione "${action.id}": targetState "${action.targetState}" non è tra gli states del campo "${field.id}".`;
+            errors.push(message);
+            issues.push({ severity: 'error', code: 'ACTION_TARGET_STATE_INVALID', path: `adminPanel.entities.${entity.name}.actions.${action.id}`, message });
           }
         }
       }
@@ -191,7 +225,9 @@ export function runValidator(rawSchema: unknown): ValidationResult {
   for (const page of specification.pages ?? []) {
     for (const section of page.sections) {
       if ((section.type === 'list' || section.type === 'form') && section.entity && !entityNames.has(section.entity)) {
-        errors.push(`Pagina "${page.slug}", sezione "${section.type}": entity "${section.entity}" non esiste tra le entità.`);
+        const message = `Pagina "${page.slug}", sezione "${section.type}": entity "${section.entity}" non esiste tra le entità.`;
+        errors.push(message);
+        issues.push({ severity: 'error', code: 'SECTION_ENTITY_MISSING', path: `pages.${page.slug}`, message });
       }
     }
   }
@@ -212,20 +248,68 @@ export function runValidator(rawSchema: unknown): ValidationResult {
       const trigger = wf?.trigger as Record<string, unknown> | undefined;
       const triggerEntity = typeof trigger?.entity === 'string' ? trigger.entity : undefined;
       if (triggerEntity && !entityNames.has(triggerEntity)) {
-        errors.push(`Workflow "${String(wf?.id ?? wf?.name ?? '?')}": trigger.entity "${triggerEntity}" non esiste tra le entità.`);
+        const message = `Workflow "${String(wf?.id ?? wf?.name ?? '?')}": trigger.entity "${triggerEntity}" non esiste tra le entità.`;
+        errors.push(message);
+        issues.push({ severity: 'error', code: 'WORKFLOW_TRIGGER_ENTITY_MISSING', path: `workflows.${String(wf?.id ?? wf?.name ?? '?')}`, message });
       }
       for (const action of Array.isArray(wf?.actions) ? (wf.actions as Array<Record<string, unknown>>) : []) {
         if (action?.type === 'create_related_record' && typeof action.targetEntity === 'string' && !entityNames.has(action.targetEntity)) {
-          errors.push(`Workflow "${String(wf?.id ?? wf?.name ?? '?')}": create_related_record verso "${action.targetEntity}" che non esiste.`);
+          const message = `Workflow "${String(wf?.id ?? wf?.name ?? '?')}": create_related_record verso "${action.targetEntity}" che non esiste.`;
+          errors.push(message);
+          issues.push({ severity: 'error', code: 'WORKFLOW_ACTION_TARGET_MISSING', path: `workflows.${String(wf?.id ?? wf?.name ?? '?')}`, message });
         }
       }
     }
   }
 
-  if (errors.length > 0) {
-    return { ok: false, errors, sanitized, specification };
+  // dashboardCards (CreatorAI v2): stesso controllo di resolveDashboardCards
+  // (site-schema.ts) — "sum"/"avg" richiede un campo numerico REALE — ma reso
+  // esplicito qui invece di scartare la card in silenzio. Severity "warning",
+  // MAI "error": una card scartata non impedisce mai la pubblicazione
+  // dell'app (comportamento pre-esistente, invariato — vedi
+  // resolveDashboardCards), quindi non deve mai far fallire l'intera
+  // generazione dopo aver esaurito i tentativi di repair. La correzione
+  // deterministica "sicura" (coerceObviousNumericFieldTypes, applicata PRIMA
+  // di runValidator in runGenerationOrchestrator) risolve già i casi
+  // palesemente ovvi senza bisogno di repair via AI; questo warning segnala
+  // solo i casi residui, per osservabilità (generation_jobs.artifacts).
+  const rawDashboardCards = (rawSchema as { dashboardCards?: unknown } | null)?.dashboardCards;
+  if (Array.isArray(rawDashboardCards)) {
+    const entityByName = new Map(specification.entities.map((e) => [e.name, e]));
+    (rawDashboardCards as Array<Record<string, unknown>>).forEach((card, i) => {
+      const table = typeof card?.table === 'string' ? card.table : undefined;
+      const type = typeof card?.type === 'string' ? card.type : 'count';
+      const label = typeof card?.label === 'string' ? card.label : `#${i}`;
+      if (!table || !entityByName.has(table)) {
+        issues.push({
+          severity: 'warning',
+          code: 'DASHBOARD_CARD_TABLE_MISSING',
+          path: `dashboardCards.${i}`,
+          message: `dashboardCards[${i}] ("${label}"): "table" ("${table ?? ''}") non corrisponde a nessuna entità reale — la card verrà scartata.`,
+        });
+        return;
+      }
+      if (type === 'sum' || type === 'avg') {
+        const entity = entityByName.get(table)!;
+        const cardField = typeof card?.field === 'string' ? card.field : undefined;
+        const field = entity.fields.find((f) => f.id === cardField);
+        const fieldOk = field && (field.type === 'number' || field.type === 'currency');
+        if (!fieldOk) {
+          issues.push({
+            severity: 'warning',
+            code: 'DASHBOARD_FIELD_TYPE_MISMATCH',
+            path: `dashboardCards.${i}`,
+            message: `dashboardCards[${i}] ("${label}"): tipo "${type}" richiede un campo numerico REALE su "${table}" — "${cardField ?? ''}" ${field ? `ha type "${field.type}"` : 'non esiste'} — la card verrà scartata.`,
+          });
+        }
+      }
+    });
   }
-  return { ok: true, errors: [], sanitized, specification };
+
+  if (errors.length > 0) {
+    return { ok: false, errors, issues, sanitized, specification };
+  }
+  return { ok: true, errors: [], issues, sanitized, specification };
 }
 
 // ─── Repair Agent ────────────────────────────────────────────────────────────
@@ -347,11 +431,22 @@ export async function runGenerationOrchestrator(params: OrchestratorParams): Pro
     const promptWithContext = `${planToPromptContext(plan)}${userPrompt}`;
     let rawSchema: unknown = await generate(promptWithContext);
     if (postProcessRawSchema) rawSchema = postProcessRawSchema(rawSchema);
+    // CreatorAI v2: correzione deterministica (mai una chiamata AI, mai
+    // fallibile) di eventuali type di campo palesemente incoerenti con
+    // dashboardCards richieste dal prompt — vedi coerceObviousNumericFieldTypes
+    // (site-schema.ts). Applicata SEMPRE, prima della validazione: risolve i
+    // casi ovvi senza consumare un ciclo di repair via AI.
+    rawSchema = coerceObviousNumericFieldTypes(rawSchema);
 
     // ─── 3. Validator (+ Repair, max MAX_REPAIR_RETRIES tentativi) ───────
     job = await updateGenerationJob(supabase, job.id, { status: 'validating', current_step: 'validator' });
     let result = runValidator(rawSchema);
     let retryCount = 0;
+    if (result.issues?.length) {
+      job = await updateGenerationJob(supabase, job.id, {
+        artifacts: { ...job.artifacts, validationIssues: result.issues },
+      });
+    }
 
     while (!result.ok && retryCount < MAX_REPAIR_RETRIES) {
       retryCount += 1;

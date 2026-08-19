@@ -17,6 +17,7 @@ import { makeFakeSupabase } from './test-helpers/fake-supabase.ts';
 import { findForbiddenSecretKey, getGenerationJobForTenant } from './creator-generation-jobs.ts';
 import {
   runPlanner,
+  runValidator,
   runGenerationOrchestrator,
   PlannerError,
   MAX_REPAIR_RETRIES,
@@ -366,4 +367,121 @@ test('security: un run completo (planner + repair) non lascia mai chiavi sospett
   assert.equal(findForbiddenSecretKey(result.job.context), null);
   assert.equal(findForbiddenSecretKey(result.job.artifacts), null);
   assert.equal(findForbiddenSecretKey(result.job.plan), null);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CreatorAI v2 — VALIDATOR: errori strutturati (issues) + dashboardCards
+// ═══════════════════════════════════════════════════════════════════════════
+
+function schemaWithDashboardCard(card: Record<string, unknown>) {
+  return validRawSchema({
+    adminPanel: {
+      entities: [
+        {
+          name: 'interventi',
+          label: 'Intervento',
+          labelPlural: 'Interventi',
+          icon: '🔧',
+          fields: [
+            { id: 'id', type: 'id', label: 'ID' },
+            { id: 'descrizione', type: 'text', label: 'Descrizione' },
+            { id: 'costo_totale', type: 'number', label: 'Costo Totale' },
+          ],
+        },
+      ],
+    },
+    dashboardCards: [card],
+  });
+}
+
+test('runValidator: schema valido -> ok:true, issues assente/vuoto', () => {
+  const result = runValidator(validRawSchema());
+  assert.equal(result.ok, true);
+  assert.ok(!result.issues || result.issues.length === 0);
+});
+
+test('runValidator: relation verso entità inesistente -> issue "error" con code dedicato, presente sia in errors che in issues', () => {
+  const result = runValidator(invalidRawSchema());
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.length > 0);
+  assert.ok(result.issues && result.issues.length > 0);
+  assert.ok(result.issues!.every((i) => i.severity === 'error'));
+  assert.ok(result.issues!.some((i) => i.code === 'SECTION_ENTITY_MISSING'));
+});
+
+test('runValidator: dashboardCard "sum" su un campo NON numerico -> issue "warning" DASHBOARD_FIELD_TYPE_MISMATCH, non blocca ok:true', () => {
+  const schema = schemaWithDashboardCard({ type: 'sum', table: 'interventi', label: 'Descrizioni Totali', field: 'descrizione' });
+  const result = runValidator(schema);
+  // Warning, mai un errore: una dashboardCard scartata non ha mai impedito
+  // la pubblicazione dell'app (comportamento pre-esistente di
+  // resolveDashboardCards, invariato) — vedi commento in creator-ai-orchestrator.ts.
+  assert.equal(result.ok, true);
+  assert.ok(result.issues?.some((i) => i.code === 'DASHBOARD_FIELD_TYPE_MISMATCH' && i.severity === 'warning'));
+});
+
+test('runValidator: dashboardCard "sum" su un campo numerico REALE -> nessuna issue dashboardCards', () => {
+  const schema = schemaWithDashboardCard({ type: 'sum', table: 'interventi', label: 'Costo Totale', field: 'costo_totale' });
+  const result = runValidator(schema);
+  assert.equal(result.ok, true);
+  assert.ok(!result.issues?.some((i) => i.code.startsWith('DASHBOARD_')));
+});
+
+test('runValidator: dashboardCard con "table" inesistente -> issue "warning" DASHBOARD_CARD_TABLE_MISSING', () => {
+  const schema = schemaWithDashboardCard({ type: 'count', table: 'tabella_mai_esistita', label: 'X' });
+  const result = runValidator(schema);
+  assert.equal(result.ok, true);
+  assert.ok(result.issues?.some((i) => i.code === 'DASHBOARD_CARD_TABLE_MISSING' && i.severity === 'warning'));
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CreatorAI v2 — ORCHESTRATOR: correzione deterministica pre-validazione
+// (coerceObviousNumericFieldTypes) — nessuna chiamata AI, nessun ciclo di
+// repair necessario per un caso "ovvio".
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('Orchestrator: un campo "costo_totale" generato come "text" ma referenziato da una dashboardCard "sum" viene corretto in automatico PRIMA della validazione, zero repair', async () => {
+  const supabase = freshSupabase();
+  let repairCalled = false;
+
+  const result = await runGenerationOrchestrator({
+    supabase,
+    tenantId: 'tenant-1',
+    userId: 'user-1',
+    userPrompt: 'Gestionale interventi con costo totale',
+    projectType: 'gestionale',
+    lang: 'it',
+    skipPlanner: true,
+    generate: async () => validRawSchema({
+      adminPanel: {
+        entities: [
+          {
+            name: 'interventi',
+            label: 'Intervento',
+            labelPlural: 'Interventi',
+            icon: '🔧',
+            fields: [
+              { id: 'id', type: 'id', label: 'ID' },
+              // Dichiarato "text" per errore del modello (esattamente il bug
+              // osservato in produzione, Quality Pass v1.1 report F.1) — il
+              // nome del campo suggerisce chiaramente una semantica monetaria.
+              { id: 'costo_totale', type: 'text', label: 'Costo Totale' },
+            ],
+          },
+        ],
+      },
+      dashboardCards: [{ type: 'sum', table: 'interventi', label: 'Costo Totale', field: 'costo_totale' }],
+    }),
+    repairCall: async () => { repairCalled = true; return { content: '{}' }; },
+  });
+
+  assert.equal(result.status, 'ready');
+  assert.equal(repairCalled, false, 'la correzione deterministica non deve consumare un ciclo di repair via AI');
+  assert.equal(result.job.retry_count, 0);
+  // Il campo è stato corretto a "currency" (o "number"): la card sum sulla
+  // sua esistenza numerica è quindi calcolabile — verificato leggendo lo
+  // schema finale restituito.
+  const entity = result.schema?.adminPanel.entities.find((e) => e.name === 'interventi');
+  const field = entity?.fields.find((f) => f.id === 'costo_totale');
+  assert.ok(field?.type === 'currency' || field?.type === 'number');
+  assert.equal(result.schema?.dashboardCards.length, 1);
 });

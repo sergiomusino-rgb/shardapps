@@ -391,6 +391,63 @@ function resolveEntities(entities: AdminEntity[]): AdminEntity[] {
   return resolveEntityStatesAndActions(resolveEntityRelations(entities));
 }
 
+// ─── Correzione deterministica pre-validazione (CreatorAI v2) ───────────────
+// Mai una chiamata AI, mai fallibile, mai un ciclo di repair: se una
+// dashboardCard "sum"/"avg" (Quality Pass v1, Fix #3) referenzia un campo il
+// cui NOME suggerisce chiaramente una semantica numerica/monetaria (stessa
+// euristica di mockDataGenerator.ts per i dati demo) ma il campo è stato
+// dichiarato con un type diverso — tipicamente "text", per lo stesso motivo
+// già osservato in blueprint-schema.ts::normalizeFieldType — il type del
+// campo viene corretto QUI, prima che resolveDashboardCards sotto scarti
+// silenziosamente la card. Corregge solo un type palesemente incoerente col
+// proprio nome quando l'unica alternativa sarebbe perdere una KPI
+// esplicitamente richiesta dall'utente; non declassa mai un campo già
+// numerico, non tocca campi non referenziati da nessuna dashboardCard.
+// Operata sullo schema GREZZO (prima del parse Zod), esattamente come
+// ensureGestionaleHasPages (creator-site-generator.ts) — stesso principio,
+// stesso livello della pipeline.
+interface RawFieldLike {
+  id?: unknown;
+  label?: unknown;
+  type?: unknown;
+  [key: string]: unknown;
+}
+interface RawEntityLike {
+  name?: unknown;
+  fields?: unknown;
+  [key: string]: unknown;
+}
+interface RawCardLike {
+  type?: unknown;
+  table?: unknown;
+  field?: unknown;
+  [key: string]: unknown;
+}
+
+export function coerceObviousNumericFieldTypes(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const r = raw as Record<string, unknown>;
+  const cards: RawCardLike[] = Array.isArray(r.dashboardCards) ? (r.dashboardCards as RawCardLike[]) : [];
+  const adminPanel = r.adminPanel as { entities?: unknown } | undefined;
+  const entities: RawEntityLike[] = Array.isArray(adminPanel?.entities) ? (adminPanel!.entities as RawEntityLike[]) : [];
+  const entityByName = new Map<unknown, RawEntityLike>(entities.map((e) => [e?.name, e]));
+  for (const card of cards) {
+    if (!card || (card.type !== 'sum' && card.type !== 'avg')) continue;
+    const entity = entityByName.get(card.table);
+    const fields = entity?.fields;
+    if (!entity || !Array.isArray(fields)) continue;
+    const field = (fields as RawFieldLike[]).find((f) => f?.id === card.field);
+    if (!field || field.type === 'number' || field.type === 'currency') continue;
+    const name = String(field.id ?? field.label ?? '').toLowerCase();
+    if (/costo|prezzo|importo|valore|tariffa|canone|totale/.test(name)) field.type = 'currency';
+    else if (/ore|quantit|numero|durata/.test(name)) field.type = 'number';
+    // Nessun match: il nome non suggerisce chiaramente una semantica
+    // numerica, il campo resta invariato — meglio scartare la card
+    // (comportamento esistente, invariato) che indovinare un type sbagliato.
+  }
+  return r;
+}
+
 // ─── dashboardCards (Quality Pass v1, Fix #3) ───────────────────────────────
 // Stesso principio di resolveEntityRelations/resolveEntityStatesAndActions
 // sopra: DashboardCardSchema valida solo la FORMA di una card isolata, non se

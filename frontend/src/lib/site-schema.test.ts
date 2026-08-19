@@ -10,7 +10,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ProjectTypeSchema, SiteBlueprintSchema, sanitizeSiteBlueprint, type SiteBlueprintJSON } from './site-schema.ts';
+import { ProjectTypeSchema, SiteBlueprintSchema, sanitizeSiteBlueprint, coerceObviousNumericFieldTypes, type SiteBlueprintJSON } from './site-schema.ts';
 import type { BlueprintJSON } from './blueprint-schema.ts';
 import { toAppSpecificationFromBlueprint } from './app-specification.ts';
 
@@ -357,4 +357,72 @@ test('TEST 15: il percorso di recupero manuale (parse stretto fallito) riempie c
   assert.ok(result, 'un blueprint recuperabile non deve mai essere scartato del tutto');
   assert.equal(result?.pages.length, 1);
   assert.ok((result?.pages[0].sections.length ?? 0) > 0, 'anche nel percorso di recupero manuale la pagina non deve restare vuota');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATORAI V2 — coerceObviousNumericFieldTypes (correzione deterministica
+// pre-validazione, mai una chiamata AI)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function schemaWithField(fieldId: string, fieldType: string, cardType: 'sum' | 'avg' = 'sum') {
+  return {
+    projectType: 'gestionale',
+    appName: 'Test',
+    sector: 'custom',
+    businessConfig: { name: 'Test', language: 'it' },
+    adminPanel: {
+      entities: [
+        {
+          name: 'interventi',
+          label: 'Intervento',
+          labelPlural: 'Interventi',
+          icon: '🔧',
+          fields: [
+            { id: 'id', type: 'id', label: 'ID' },
+            { id: fieldId, type: fieldType, label: fieldId },
+          ],
+        },
+      ],
+    },
+    pages: [{ slug: 'home', label: 'Home', sections: [] }],
+    actionButtons: [],
+    ui: { primaryColor: '#6366f1' },
+    dashboardCards: [{ type: cardType, table: 'interventi', label: 'X', field: fieldId }],
+  };
+}
+
+/** Legge il "type" del secondo campo dell'unica entità della fixture
+ * schemaWithField() sopra, senza `any` — solo per questi test. */
+function coercedFieldType(fixed: unknown): unknown {
+  const entities = (fixed as { adminPanel: { entities: { fields: { type: unknown }[] }[] } }).adminPanel.entities;
+  return entities[0].fields[1].type;
+}
+
+test('coerceObviousNumericFieldTypes: campo "costo_totale" dichiarato "text" ma referenziato da una sum -> corretto a "currency"', () => {
+  const fixed = coerceObviousNumericFieldTypes(schemaWithField('costo_totale', 'text'));
+  assert.equal(coercedFieldType(fixed), 'currency');
+});
+
+test('coerceObviousNumericFieldTypes: campo "ore_lavorate" dichiarato "text" ma referenziato da una sum -> corretto a "number"', () => {
+  const fixed = coerceObviousNumericFieldTypes(schemaWithField('ore_lavorate', 'text'));
+  assert.equal(coercedFieldType(fixed), 'number');
+});
+
+test('coerceObviousNumericFieldTypes: campo già "number"/"currency" non viene mai declassato o toccato', () => {
+  const fixedNumber = coerceObviousNumericFieldTypes(schemaWithField('costo_totale', 'number'));
+  assert.equal(coercedFieldType(fixedNumber), 'number');
+  const fixedCurrency = coerceObviousNumericFieldTypes(schemaWithField('costo_totale', 'currency'));
+  assert.equal(coercedFieldType(fixedCurrency), 'currency');
+});
+
+test('coerceObviousNumericFieldTypes: nome campo senza alcuna semantica numerica riconoscibile -> lasciato invariato (mai un\'invenzione)', () => {
+  const fixed = coerceObviousNumericFieldTypes(schemaWithField('note_generiche', 'text'));
+  assert.equal(coercedFieldType(fixed), 'text');
+});
+
+test('coerceObviousNumericFieldTypes: nessuna dashboardCard "sum"/"avg" -> nessuna modifica, nessun crash', () => {
+  const schema = { projectType: 'landing', pages: [] };
+  assert.equal(coerceObviousNumericFieldTypes(schema), schema);
+  assert.equal(coerceObviousNumericFieldTypes(null), null);
+  assert.equal(coerceObviousNumericFieldTypes(undefined), undefined);
 });
