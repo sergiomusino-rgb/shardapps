@@ -11,6 +11,16 @@ function normalizeFieldType(type: string): string {
     varchar: 'text',
     char: 'text',
     text: 'text',
+    // "number" stesso non era una chiave qui (bug pre-esistente, confermato
+    // in produzione dalla validazione reale del Quality Pass v1): solo i
+    // suoi alias SQL-style (integer/int/bigint/...) erano mappati, quindi un
+    // campo che il modello dichiarava letteralmente {"type":"number"} — la
+    // forma che il prompt stesso documenta come esempio (RELATION_FIELD_DOC,
+    // creator-site-generator.ts) — cadeva sul fallback 'text' qui sotto e
+    // perdeva la formattazione/gli euristici numerici a valle
+    // (mockDataGenerator.ts, cellRenderers). Fix minimo e mirato: aggiunge
+    // solo questa chiave, nessun altro tipo toccato.
+    number: 'number',
     integer: 'number',
     int: 'number',
     bigint: 'number',

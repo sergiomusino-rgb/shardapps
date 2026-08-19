@@ -96,7 +96,10 @@ Autenticazione multi-utente (authConfig, facoltativo, top-level nello schema —
 // Facoltativo: se il prompt non menziona nessuna metrica specifica, ometti
 // "dashboardCards" del tutto — la Dashboard mostra comunque le card generiche
 // (tabelle/record totali/ultima attività), MAI vuota.
-const DASHBOARD_CARDS_DOC = `"dashboardCards" (facoltativo, top-level nello schema — array di massimo 6 elementi): metriche specifiche del dominio da mostrare in cima alla Dashboard admin, SOLO quando il prompt le richiede esplicitamente o le implica chiaramente (es. "voglio vedere subito le opportunità aperte", "mostrami il fatturato del mese"). Ogni card:
+// Esportata (Quality Pass v1.1, Fix #3): permette a creator-site-generator.test.ts
+// di verificare che la regola di completezza delle KPI sia davvero presente
+// nel testo inviato al modello, senza dover invocare l'AI reale.
+export const DASHBOARD_CARDS_DOC = `"dashboardCards" (facoltativo, top-level nello schema — array di massimo 6 elementi): metriche specifiche del dominio da mostrare in cima alla Dashboard admin, SOLO quando il prompt le richiede esplicitamente o le implica chiaramente (es. "voglio vedere subito le opportunità aperte", "mostrami il fatturato del mese"). Ogni card:
 - "type": una di "count" (conta i record), "sum" (somma un campo numerico), "avg" (media di un campo numerico), "latest" (mostra il valore più recente di un campo, in base alla data di creazione del record).
 - "table": il "name" di un'entità REALE di adminPanel.entities — mai un'entità inventata.
 - "label": etichetta della card (nella lingua richiesta), es. "Opportunità Aperte".
@@ -109,7 +112,8 @@ Esempio concreto — entità "opportunita" con un campo di stato, due card (cont
     {"type": "sum", "table": "opportunita", "label": "Valore Pipeline", "field": "valore_stimato"}
   ]
 }
-Non generare card che duplicano semplicemente "numero totale di record" per ogni entità (quello lo mostra già la Dashboard di base): usa dashboardCards solo per metriche che aggiungono informazione reale (un sottoinsieme filtrato, una somma, una media, un valore recente).`;
+Non generare card che duplicano semplicemente "numero totale di record" per ogni entità (quello lo mostra già la Dashboard di base): usa dashboardCards solo per metriche che aggiungono informazione reale (un sottoinsieme filtrato, una somma, una media, un valore recente).
+Regola tassativa su dashboardCards (Quality Pass v1.1 — verificato in produzione: una KPI esplicitamente richiesta nel prompt, come "ore lavorate" tra più metriche elencate, è comparsa mancante in una generazione reale): ogni KPI o metrica esplicitamente richiesta dall'utente deve essere rappresentata in dashboardCards, quando è calcolabile dai campi/entità che hai generato. Non omettere una KPI esplicitamente richiesta. Prima di restituire il blueprint, rileggi la richiesta dell'utente ed elenca mentalmente ogni KPI/metrica che ha nominato: per ciascuna, verifica che compaia in dashboardCards oppure che esista una ragione strutturale per cui non è calcolabile (es. nessun campo numerico adatto in nessuna entità) — in quel caso ometti solo quella specifica card, non l'intero blocco. Questa regola vale SOLO quando il prompt richiede esplicitamente delle metriche: se non ne richiede nessuna, "dashboardCards" resta assente/vuoto come da regola sopra, non va popolato "per completezza".`;
 
 // Nomi estesi delle lingue supportate (vedi SUPPORTED_LOCALES in
 // LanguageContext.tsx): i modelli seguono un vincolo di lingua molto più
@@ -234,6 +238,7 @@ Regole tassative:
 - Ogni campo di un'entità con un valore economico (prezzo, tariffa, costo) deve avere "type":"number".
 - Se usi un campo "type":"relation", "targetEntity" deve corrispondere ESATTAMENTE al "name" di un'altra entità presente in questo stesso adminPanel.entities, e "displayField" a un "id" di campo REALE di quell'entità (mai "id"). Vedi il paragrafo sulle relazioni sopra per il formato completo.
 - Se usi un campo "type":"state" con "actions" di tipo "change_state", "targetState" deve corrispondere ESATTAMENTE a uno degli "states" dello stesso campo. Vedi il paragrafo su macchine a stati/azioni sopra per il formato completo.
+- Se il prompt richiede esplicitamente delle metriche/KPI per la dashboard, ognuna di esse deve comparire in "dashboardCards" quando calcolabile: vedi il paragrafo dedicato sopra, non ometterne nessuna.
 - TUTTI i campi di businessConfig sono OBBLIGATORI e NON possono restare stringhe vuote (eccetto logoUrl, che può restare "" in assenza di un logo reale): name, tagline, description, address, phone, whatsapp, email, openingHours (almeno 2 righe). Estraili dal prompt dell'utente quando presenti; per ogni campo non specificato esplicitamente, inventa un valore plausibile e coerente con settore/città/nome menzionati nel prompt (es. un indirizzo credibile per quella città, orari tipici del settore, un'email nella forma info@<dominio-plausibile-da-appName>.it) — mai lasciare un placeholder letterale tipo "N/A" o il campo vuoto.
 - VINCOLO DI LINGUA TASSATIVO: ogni testo generato — appName, description, TUTTI i campi di businessConfig (tagline, description, address, openingHours.day/hours inclusi), label/labelPlural/icon-caption delle entità in adminPanel.entities, label dei fields, titoli/sottotitoli/body/label di OGNI sezione di pagina (hero, about, gallery, list, form, contact, reviews, cta, text), label degli actionButtons, i dati di esempio (recensioni, gallery caption) — deve essere scritto SOLO in ${langName} (${lang}), senza mescolare altre lingue nemmeno parzialmente. Il campo "businessConfig.language" deve valere esattamente "${lang}". Fanno eccezione solo identificatori tecnici non testuali: "name"/"id" delle entità e dei campi (snake_case), "slug" delle pagine, "type" dei campi/sezioni, valori URL/telefono/email.
 - Non aggiungere testo prima o dopo il JSON.
