@@ -4,6 +4,7 @@ import { useEffect, useState, type ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/src/lib/supabase';
+import { looksHashed } from '@/src/lib/password-hash-shape';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, Key, ExternalLink } from 'lucide-react';
 
@@ -42,6 +43,9 @@ export default function AppDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [extending, setExtending] = useState(false);
+  // Pre-Beta Hardening, Blocco 9: "Crea app da questa app".
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState('');
   const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [buyerForm, setBuyerForm] = useState({
@@ -101,7 +105,12 @@ export default function AppDetailPage() {
     (supabase.rpc as any)('get_app_client_credentials', { p_app_id: loaded.id }).then(
       ({ data, error }: { data: { client_password: string; initial_password: string }[] | null; error: unknown }) => {
         if (error || !data || !data[0]) return;
-        setApp(prev => prev ? { ...prev, client_password: data[0].client_password, initial_password: data[0].initial_password } : prev);
+        // Pre-Beta Hardening, Blocco 6: client_password è ora hashato dal
+        // primo login/reset successivo a questo cambio — un hash bcrypt non
+        // è una password mostrabile (mai passato al pannello come se lo
+        // fosse, mostra "—" al posto di un hash illeggibile).
+        const displayPassword = looksHashed(data[0].client_password) ? null : data[0].client_password;
+        setApp(prev => prev ? { ...prev, client_password: displayPassword, initial_password: data[0].initial_password } : prev);
       }
     );
   }
@@ -161,6 +170,40 @@ export default function AppDetailPage() {
     if (!iso) return false;
     return new Date(iso) < new Date();
   };
+
+  // Pre-Beta Hardening, Blocco 9: "Crea app da questa app" — duplica la
+  // configurazione (schema/adminPanel/pages/ui/branding) su una nuova app,
+  // mai i dati/credenziali del cliente (vedi api/apps/[id]/duplicate/route.ts).
+  // Consuma uno slot come qualunque altra creazione, quindi può fallire con
+  // SlotsExhausted — stesso messaggio già usato altrove nella pagina.
+  async function handleDuplicate() {
+    if (!app?.id) return;
+    setDuplicating(true);
+    setDuplicateError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/apps/${app.id}/duplicate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setDuplicateError(data.message || data.error || 'Errore durante la duplicazione');
+        return;
+      }
+      // La nuova app è pronta: stessa destinazione di una app appena creata,
+      // dove il reseller vede subito le credenziali fresche generate sopra.
+      router.push(`/dashboard/projects/${data.app.id}`);
+    } catch {
+      setDuplicateError('Errore di connessione');
+    } finally {
+      setDuplicating(false);
+    }
+  }
 
   async function handleDelete() {
     if (!app?.id) return;
@@ -406,6 +449,38 @@ export default function AppDetailPage() {
               Apri Landing Page
             </a>
           )}
+          {/* Pre-Beta Hardening, Blocco 5: Automation (UI minima) — pagina
+              dedicata per non appesantire questa (già lunga) vista con
+              l'editor di workflow, stesso principio già seguito per
+              /a/[slug]/settings/api-docs. */}
+          <Link
+            href={`/dashboard/projects/${app.id}/automation`}
+            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+          >
+            ⚡ Automazioni
+          </Link>
+          {/* Reseller experience (Round 2): Impostazioni, API key, log azioni
+              ed export vivono già in /a/[slug]/settings (DataApiSection +
+              ActionLogsSection) — prima raggiungibile solo digitando l'URL a
+              mano, nessun link da qui. Un solo punto d'ingresso in più,
+              nessuna pagina duplicata. */}
+          {app.slug && (
+            <Link
+              href={`/a/${app.slug}/settings`}
+              className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-2"
+              title="API, log delle automazioni ed export dati di questa app"
+            >
+              ⚙️ Impostazioni &amp; API
+            </Link>
+          )}
+          <button
+            onClick={handleDuplicate}
+            disabled={duplicating}
+            title="Crea una nuova app partendo dalla configurazione di questa (mai i dati del cliente)"
+            className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
+          >
+            {duplicating ? 'Duplicazione…' : '📋 Duplica'}
+          </button>
           <button
             onClick={handleDelete}
             disabled={deleting}
@@ -418,6 +493,12 @@ export default function AppDetailPage() {
           </span>
         </div>
       </div>
+
+      {duplicateError && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">
+          {duplicateError}
+        </div>
+      )}
 
       {expired && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
