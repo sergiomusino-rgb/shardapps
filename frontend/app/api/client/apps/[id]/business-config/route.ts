@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
 
 // Proxy verso backend/routes/client-app.js::PUT /client/apps/:appId/business-config
 // (stesso pattern di ../schema/route.ts): il backend fa da unica fonte di

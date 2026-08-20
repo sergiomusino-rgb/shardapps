@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: zeusx-backend
+    name: shardapps-backend
     runtime: node
     region: frankfurt
     plan: free

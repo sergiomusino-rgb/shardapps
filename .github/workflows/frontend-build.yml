@@ -59,8 +59,8 @@ env:
   TOTALUM_API_KEY: placeholder
   TOTALUM_API_URL: https://api-accounts.totalum.app
   MOCK_TOTALUM: 'true'
-  NEXT_PUBLIC_BACKEND_URL: https://zeusx-backend.onrender.com
-  BACKEND_URL: https://zeusx-backend.onrender.com
+  NEXT_PUBLIC_BACKEND_URL: https://shardapps-backend.onrender.com
+  BACKEND_URL: https://shardapps-backend.onrender.com
   RESEND_API_KEY: placeholder
   ADMIN_EMAIL: admin@shardapps.com
   NEXT_PUBLIC_VAPID_PUBLIC_KEY: placeholder
