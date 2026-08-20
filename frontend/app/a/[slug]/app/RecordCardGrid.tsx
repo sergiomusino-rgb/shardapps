@@ -4,6 +4,7 @@ import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { TableDef, TableAction, fieldName, pickIdentityFields } from './table-definitions';
 import { getPlaceholderImageUrl, type PlaceholderCategory } from '@/lib/recordPlaceholderImages';
+import { isTerminalStateValue } from '@/lib/semantic-fields';
 
 interface AppRecord {
   id: string;
@@ -49,6 +50,8 @@ interface RecordCardGridProps {
 // Stessa identica logica di getVisibleActions in DynamicDataTable.tsx —
 // duplicata (non importata) perché RecordCardGrid è un renderer alternativo
 // indipendente, non un wrapper di DynamicDataTable.
+// CreatorAI V4 (P1-5): stessa rete di sicurezza semantica sugli stati
+// terminali — vedi il commento in DynamicDataTable.tsx::getVisibleActions.
 function getVisibleActions(table: TableDef, record: Record<string, unknown>, role?: string): TableAction[] {
   if (!table.actions?.length || role === 'viewer') return [];
   const stateField = table.fields.find((f) => f.type === 'state');
@@ -58,8 +61,11 @@ function getVisibleActions(table: TableDef, record: Record<string, unknown>, rol
     if (action.type !== 'change_state') return true;
     if (!stateField || !action.targetState) return false;
     const allowed = stateField.allowedTransitions;
-    if (!allowed || !currentState || !allowed[currentState]) return true;
-    return allowed[currentState].includes(action.targetState);
+    if (allowed && currentState && allowed[currentState]) {
+      return allowed[currentState].includes(action.targetState);
+    }
+    if (currentState && isTerminalStateValue(currentState)) return false;
+    return true;
   });
 }
 

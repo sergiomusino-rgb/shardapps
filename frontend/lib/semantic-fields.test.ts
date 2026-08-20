@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyFieldConcept, semanticRole, isFinancialConcept } from './semantic-fields.ts';
+import { classifyFieldConcept, semanticRole, isFinancialConcept, isTerminalStateValue } from './semantic-fields.ts';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Sezione 1/3 della spec V3: la semantica NON deve dipendere dalla lingua
@@ -122,4 +122,29 @@ test('campi numerici indipendenti (numero_dipendenti, punteggio, anno_fondazione
   assert.ok(!isFinancialConcept(classifyFieldConcept('punteggio')));
   assert.equal(classifyFieldConcept('anno_fondazione'), 'year');
   assert.equal(classifyFieldConcept('quantita_prodotti'), 'quantity');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CreatorAI V4, P1-5: isTerminalStateValue — bug verificato dal vivo
+// (benchmark post-hardening), "vinto" (CRM) e "chiuso" (Interventi) restavano
+// permissivi (mostravano ancora pulsanti di transizione) mentre "perso"
+// (CRM) era correttamente riconosciuto come terminale.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('isTerminalStateValue riconosce i valori di stato osservati nel benchmark come terminali (IT e EN)', () => {
+  for (const v of ['vinto', 'perso', 'chiuso', 'won', 'lost', 'closed', 'completato', 'annullato', 'cancellato', 'concluso', 'completed', 'cancelled', 'canceled', 'done']) {
+    assert.ok(isTerminalStateValue(v), `"${v}" dovrebbe essere riconosciuto come stato terminale`);
+  }
+});
+
+test('isTerminalStateValue NON marca come terminali stati intermedi legittimi', () => {
+  for (const v of ['nuovo', 'in_trattativa', 'in_corso', 'aperto', 'attivo', 'disponibile', 'sospeso', 'in_preparazione', 'pronto', 'spedito', 'pending', 'active']) {
+    assert.ok(!isTerminalStateValue(v), `"${v}" NON dovrebbe essere riconosciuto come stato terminale`);
+  }
+});
+
+test('isTerminalStateValue è case/accento-insensitive (stesso normalizeFieldName degli altri concetti)', () => {
+  assert.ok(isTerminalStateValue('VINTO'));
+  assert.ok(isTerminalStateValue('Chiuso'));
+  assert.ok(isTerminalStateValue('annullàto'));
 });

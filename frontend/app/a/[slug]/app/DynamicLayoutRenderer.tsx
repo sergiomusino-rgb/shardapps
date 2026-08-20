@@ -12,6 +12,7 @@ import { DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
+import { isTerminalStateValue } from '@/lib/semantic-fields';
 import { renderCellValue } from './cellRenderers';
 import { Sheet } from '@/components/ui/sheet';
 import AppTopBar from './AppTopBar';
@@ -56,6 +57,15 @@ interface DynamicLayoutRendererProps {
   loadRecords?: (tableName: string) => void;
   designComponents?: DesignComponent[];
   onEditTable?: (table: TableDef) => void;
+  /** CreatorAI V4 (P0-7, Web App/PWA parity): "Genera 5 di esempio" — stesso
+   * prop che il ramo 'saas' passa già a DynamicDataTable (page.tsx), qui
+   * inoltrato a RestaurantLayoutContent perché anche il layout 'restaurant'
+   * offra la stessa capacità di popolare dati demo delle altre tabelle
+   * (prima assente: nessun pulsante "Genera 5 di esempio" in questo layout).
+   * Assente = pulsante nascosto, comportamento pre-esistente invariato per
+   * gli altri layoutType che non lo passano (docs/ecommerce/recipe). */
+  onGenerateMock?: () => void;
+  generatingMock?: boolean;
 }
 
 // ─── Fase 4: azioni di entità visibili per un record ────────────────────────
@@ -73,8 +83,15 @@ function getVisibleTableActions(table: TableDef, record: Record<string, unknown>
     if (action.type !== 'change_state') return true;
     if (!stateField || !action.targetState) return false;
     const allowed = stateField.allowedTransitions;
-    if (!allowed || !currentState || !allowed[currentState]) return true;
-    return allowed[currentState].includes(action.targetState);
+    // CreatorAI V4 (P1-5): stessa rete di sicurezza semantica di
+    // DynamicDataTable.tsx::getVisibleActions — vedi il commento lì per il
+    // bug osservato dal vivo (stati come "vinto"/"chiuso" senza una entry
+    // esplicita in allowedTransitions mostravano ancora tutte le azioni).
+    if (allowed && currentState && allowed[currentState]) {
+      return allowed[currentState].includes(action.targetState);
+    }
+    if (currentState && isTerminalStateValue(currentState)) return false;
+    return true;
   });
 }
 
@@ -135,6 +152,8 @@ export default function DynamicLayoutRenderer({
   designComponents = [],
   onEditTable,
   session,
+  onGenerateMock,
+  generatingMock = false,
 }: DynamicLayoutRendererProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -269,6 +288,8 @@ export default function DynamicLayoutRenderer({
             onEdit={onEdit}
             onDelete={onDelete}
             onAddNew={onAddNew}
+            onGenerateMock={onGenerateMock}
+            generatingMock={generatingMock}
           />
         );
       default:
@@ -1608,13 +1629,62 @@ interface RestaurantLayoutContentProps {
   onEdit: (record: any) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  /** CreatorAI V4 (P0-7): "Genera 5 di esempio" per la tabella attiva —
+   * prima assente in questo layout (nessun modo di popolare dati demo per
+   * "ordini"/"clienti"/qualunque altra tabella non-piatti). Assente = il
+   * pulsante non compare (stesso comportamento di prima), coerente con
+   * onGenerateMock opzionale in DynamicDataTable.tsx. */
+  onGenerateMock?: () => void;
+  generatingMock?: boolean;
+}
+
+// CreatorAI V4 (P0-7, KPI dashboard generica): prima le due KpiCard della
+// dashboard 'restaurant' erano hardcoded su "Piatti"/"Ordini" — mostravano
+// sempre "Ordini" anche quando il blueprint non aveva affatto un'entità
+// "ordini" (il conteggio ricadeva su records.length della tabella ATTIVA,
+// non su un vero conteggio di "ordini"), e ignoravano qualunque altra
+// entità del dominio (es. "clienti"). Stessa tecnica di aggregazione già
+// usata da SaaSLayoutContent.loadDashboardData qui sotto (stesso file):
+// una card REALE per ogni tabella del blueprint, conteggio vero via fetch,
+// nessun nome di tabella hardcoded.
+function useTableRecordCounts(tables: TableDef[]): Record<string, number> {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const appEl = document.querySelector('[data-app-id]');
+      if (!appEl) return;
+      const appId = appEl.getAttribute('data-app-id');
+      const password = appEl.getAttribute('data-password');
+      if (!appId || !password) return;
+      const entries = await Promise.all(tables.map(async (table) => {
+        try {
+          const res = await fetch(`/api/client/apps/${appId}/records?table=${table.name}`, {
+            headers: { Authorization: `Bearer ${password}` },
+          });
+          if (!res.ok) return [table.name, 0] as const;
+          const data = await res.json();
+          const recs: unknown[] = Array.isArray(data) ? data : data.records || data.data || [];
+          return [table.name, recs.length] as const;
+        } catch {
+          return [table.name, 0] as const;
+        }
+      }));
+      if (!cancelled) setCounts(Object.fromEntries(entries));
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [tables]);
+  return counts;
 }
 
 function RestaurantLayoutContent({
   tables, colors, primaryColor,
   activeView, activeTable,
-  records, loading, onAddNew
+  records, loading,
+  onEdit, onDelete, onAddNew, onGenerateMock, generatingMock
 }: RestaurantLayoutContentProps) {
+  const tableCounts = useTableRecordCounts(tables);
   // Restaurant-specific layout with menu cards
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -1626,78 +1696,50 @@ function RestaurantLayoutContent({
 
       {activeView === 'dashboard' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-          <KpiCard
-            title="Piatti"
-            value={String(records.length)}
-            icon={<Utensils size={22} />}
-            colors={colors}
-          />
-          <KpiCard
-            title="Ordini"
-            value={String(tables.find(t => t.name === 'ordini') ? records.length : 0)}
-            icon={<ShoppingCart size={22} />}
-            colors={colors}
-          />
-        </div>
-      ) : activeTable && isRestaurantMenuGridTable(activeTable.name) ? (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '20px',
-        }}>
-          {records.map((record) => (
-            <div
-              key={record.id}
-              style={{
-                background: colors.cardBg,
-                border: `1px solid ${colors.border}`,
-                borderRadius: '12px',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <h3 style={{ color: colors.text, fontSize: '16px', fontWeight: 600, margin: 0 }}>
-                    {record.data?.[fieldName(activeTable.fields[0])] || 'Piatto'}
-                  </h3>
-                  {activeTable.color && (
-                    <span style={{
-                      padding: '2px 8px', borderRadius: '4px',
-                      background: activeTable.color + '15', color: activeTable.color,
-                      fontSize: '11px', fontWeight: 600,
-                    }}>
-                      {record.data?.categoria || 'Piatto'}
-                    </span>
-                  )}
-                </div>
-                <p style={{ color: colors.textSecondary, fontSize: '13px', marginTop: '8px' }}>
-                  {record.data?.descrizione || record.data?.note || 'Descrizione non disponibile'}
-                </p>
-                {record.data?.prezzo && (
-                  <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '24px', fontWeight: 700, color: primaryColor }}>
-                      € {Number(record.data.prezzo).toFixed(2)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+          {tables.length === 0 ? (
+            <div style={{ color: colors.textSecondary, gridColumn: '1 / -1' }}>Nessuna tabella disponibile.</div>
+          ) : (
+            tables.map((table) => (
+              <KpiCard
+                key={table.name}
+                title={table.labelPlural}
+                value={String(tableCounts[table.name] ?? 0)}
+                icon={isRestaurantMenuGridTable(table.name) ? <Utensils size={22} /> : <ShoppingCart size={22} />}
+                colors={colors}
+              />
+            ))
+          )}
         </div>
       ) : activeTable ? (
-        // Fix blocker TEST D: la griglia menu sopra è pensata SOLO per
-        // "piatti" (isRestaurantMenuGridTable) — qualunque altra tabella del
-        // blueprint (clienti, ordini, righe_ordine...) prima ricadeva
-        // silenziosamente in questo stesso ramo "piatto-grid", mostrando una
-        // griglia vuota senza alcuna azione disponibile quando records era
-        // vuoto (il caso comune per una tabella appena creata). Fallback
-        // generico minimo: nome tabella, pulsante "Nuovo" (onAddNew già
-        // disponibile come prop, non prima utilizzato in questo layout), e
-        // un elenco semplice dei record esistenti — nessuna nuova
-        // architettura, stesso principio già usato da SaaSLayoutContent per
-        // qualunque tabella non specificamente prevista dal layout.
+        // CreatorAI V4 (P0-7, fix strutturale — non solo "Piatti"): la
+        // griglia menu (isRestaurantMenuGridTable) e il fallback generico
+        // condividono ora la STESSA toolbar (Nuovo + Genera 5 di esempio) e
+        // lo STESSO trattamento per "0 record"/"in caricamento", invece di
+        // avere ciascuno un proprio comportamento parziale — prima SOLO il
+        // fallback generico aveva un pulsante "Nuovo" e un messaggio "nessun
+        // record": la griglia "piatti" con records=[] renderizzava un div
+        // vuoto (nessun figlio, nessun pulsante, nessun messaggio),
+        // indistinguibile da un crash — il blocker "Trattoria da Marco"
+        // riprodotto dal vivo nel benchmark post-hardening, sulla tabella
+        // "piatti" stessa (non una tabella "non prevista" come nel bug
+        // originale risolto da PR#41 — un caso che quel fix non copriva).
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            {onGenerateMock && records.length === 0 && (
+              <button
+                onClick={onGenerateMock}
+                disabled={generatingMock}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '10px 18px', borderRadius: '10px',
+                  border: `1px solid ${colors.border}`, background: colors.cardBg,
+                  color: colors.text, fontSize: '14px', fontWeight: 600,
+                  cursor: generatingMock ? 'default' : 'pointer', opacity: generatingMock ? 0.6 : 1,
+                }}
+              >
+                {generatingMock ? 'Generazione...' : 'Genera 5 di esempio'}
+              </button>
+            )}
             <button
               onClick={onAddNew}
               style={{
@@ -1710,33 +1752,120 @@ function RestaurantLayoutContent({
               <Plus size={16} /> Nuovo
             </button>
           </div>
-          <div style={{
-            background: colors.cardBg, border: `1px solid ${colors.border}`,
-            borderRadius: '12px', overflow: 'hidden',
-          }}>
-            {loading ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}>
-                Caricamento records...
-              </div>
-            ) : records.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: colors.textSecondary }}>
-                Nessun record presente
-              </div>
-            ) : (
-              records.map((record, idx) => (
+
+          {loading ? (
+            <div style={{
+              background: colors.cardBg, border: `1px solid ${colors.border}`,
+              borderRadius: '12px', padding: '40px', textAlign: 'center', color: colors.textSecondary,
+            }}>
+              Caricamento records...
+            </div>
+          ) : records.length === 0 ? (
+            <div style={{
+              background: colors.cardBg, border: `1px solid ${colors.border}`,
+              borderRadius: '12px', padding: '40px', textAlign: 'center', color: colors.textSecondary,
+            }}>
+              Nessun record presente
+            </div>
+          ) : isRestaurantMenuGridTable(activeTable.name) ? (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: '20px',
+            }}>
+              {records.map((record) => (
+                <div
+                  key={record.id}
+                  style={{
+                    background: colors.cardBg,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ padding: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <h3 style={{ color: colors.text, fontSize: '16px', fontWeight: 600, margin: 0 }}>
+                        {record.data?.[fieldName(activeTable.fields[0])] || 'Piatto'}
+                      </h3>
+                      {activeTable.color && (
+                        <span style={{
+                          padding: '2px 8px', borderRadius: '4px',
+                          background: activeTable.color + '15', color: activeTable.color,
+                          fontSize: '11px', fontWeight: 600,
+                        }}>
+                          {record.data?.categoria || 'Piatto'}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ color: colors.textSecondary, fontSize: '13px', marginTop: '8px' }}>
+                      {record.data?.descrizione || record.data?.note || 'Descrizione non disponibile'}
+                    </p>
+                    {record.data?.prezzo && (
+                      <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '24px', fontWeight: 700, color: primaryColor }}>
+                          € {Number(record.data.prezzo).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => onEdit(record)}
+                        style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text, fontSize: '12px', cursor: 'pointer' }}
+                      >
+                        Modifica
+                      </button>
+                      <button
+                        onClick={() => onDelete(record.id)}
+                        style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${colors.danger}`, background: 'transparent', color: colors.danger, fontSize: '12px', cursor: 'pointer' }}
+                      >
+                        Elimina
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            // Fallback generico per qualunque tabella non prevista dalla
+            // griglia menu (clienti, ordini, righe_ordine...) — stesso
+            // principio già usato da SaaSLayoutContent per tabelle non
+            // previste dal proprio layout (Fix blocker TEST D, PR#41).
+            <div style={{
+              background: colors.cardBg, border: `1px solid ${colors.border}`,
+              borderRadius: '12px', overflow: 'hidden',
+            }}>
+              {records.map((record, idx) => (
                 <div
                   key={record.id || idx}
                   style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
                     padding: '14px 16px',
                     borderBottom: idx < records.length - 1 ? `1px solid ${colors.border}` : 'none',
                     color: colors.text, fontSize: '14px',
                   }}
                 >
-                  {activeTable.fields.slice(0, 4).map((f) => String(record[fieldName(f)] ?? '')).filter(Boolean).join(' · ') || `#${String(record.id).slice(0, 8)}`}
+                  <span>
+                    {activeTable.fields.slice(0, 4).map((f) => String(record[fieldName(f)] ?? '')).filter(Boolean).join(' · ') || `#${String(record.id).slice(0, 8)}`}
+                  </span>
+                  <span style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                    <button
+                      onClick={() => onEdit(record)}
+                      style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${colors.border}`, background: 'transparent', color: colors.text, fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      onClick={() => onDelete(record.id)}
+                      style={{ padding: '6px 10px', borderRadius: '8px', border: `1px solid ${colors.danger}`, background: 'transparent', color: colors.danger, fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Elimina
+                    </button>
+                  </span>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ color: colors.textSecondary, textAlign: 'center', padding: '60px' }}>

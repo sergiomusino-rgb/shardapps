@@ -84,17 +84,42 @@ export function getDatiAziendaliTable<T extends { name: string }>(tables: T[]): 
   return tables.find((t) => DATI_AZIENDALI_TABLE_NAMES.has(t.name));
 }
 
-/**
- * Ordina le tabelle per la sidebar: le tabelle di lavoro restano in cima
- * nell'ordine originale, "Fatture" viene spostata in fondo, "Dati Azienda"
- * viene rimossa dalla lista (renderizzata a parte vicino a Impostazioni).
- * Ordinamento stabile, solo per la visualizzazione — non modifica l'array/i
- * dati sottostanti.
+/** True se la tabella ha un campo type:'state' (macchina a stati, Fase 4) —
+ * per definizione l'entità con un flusso di lavoro operativo da far avanzare
+ * (es. "opportunità"/"interventi"/"abbonamenti"), a differenza di
+ * un'anagrafica pura (es. "clienti"/"agenti"). Stesso segnale semantico già
+ * usato da selectQuickActionTables sotto, estratto qui perché ora lo
+ * riusa anche sortTablesForSidebar (vedi CreatorAI V4, P1-6 sotto).
  */
-export function sortTablesForSidebar<T extends { name: string }>(tables: T[]): T[] {
+function hasWorkflowState<T extends { fields: FieldDef[] }>(t: T): boolean {
+  return t.fields.some((f) => f.type === 'state');
+}
+
+/**
+ * Ordina le tabelle per la sidebar: "Fatture" viene spostata in fondo,
+ * "Dati Azienda" viene rimossa dalla lista (renderizzata a parte vicino a
+ * Impostazioni). Ordinamento stabile, solo per la visualizzazione — non
+ * modifica l'array/i dati sottostanti.
+ *
+ * CreatorAI V4 (P1-6, benchmark post-hardening): prima le tabelle di lavoro
+ * restavano nell'ordine grezzo di generazione del blueprint — per un CRM con
+ * adminPanel.entities [aziende, opportunità] la sidebar (un contenitore con
+ * scroll proprio, `nav` in ViewerSidebar.tsx/DynamicLayoutRenderer.tsx)
+ * mostrava "Aziende Clienti" sopra "Opportunità di Vendita", l'entità
+ * REALMENTE centrale (quella con un flusso di lavoro/stato da far avanzare)
+ * — visibile solo scorrendo, non "raggiungibile solo da Dashboard" come
+ * sembrava dal vivo, ma comunque meno prominente di un'anagrafica di
+ * contorno. Stessa identica euristica già usata da selectQuickActionTables
+ * (tabelle con `type:'state'` anteposte, ordine originale invariato a parità
+ * di questo criterio): nessun nome di tabella hardcoded, funziona per
+ * qualunque blueprint.
+ */
+export function sortTablesForSidebar<T extends { name: string; fields: FieldDef[] }>(tables: T[]): T[] {
   const work = tables.filter((t) => !SYSTEM_TABLE_NAMES.has(t.name));
+  const workWithState = work.filter(hasWorkflowState);
+  const workWithoutState = work.filter((t) => !hasWorkflowState(t));
   const system = tables.filter((t) => FATTURE_TABLE_NAMES.has(t.name));
-  return [...work, ...system];
+  return [...workWithState, ...workWithoutState, ...system];
 }
 
 /**
@@ -113,14 +138,15 @@ export function sortTablesForSidebar<T extends { name: string }>(tables: T[]): T
  * completato", "avanza lo stato") — quindi vengono anteposte; a parità di
  * questo criterio l'ordine originale (= ordine del blueprint) è preservato.
  * Le tabelle di sistema (fatture/dati aziendali) restano escluse, stesso
- * criterio già usato da sortTablesForSidebar. Puramente additivo: non tocca
- * la sidebar (che mostra ancora l'elenco completo, invariato) né
- * sortTablesForSidebar stessa.
+ * criterio già usato da sortTablesForSidebar — che (CreatorAI V4, P1-6)
+ * applica ora la STESSA euristica (hasWorkflowState sopra) al proprio
+ * ordinamento, per lo stesso motivo: l'elenco completo resta invariato,
+ * cambia solo l'ordine con cui compare.
  */
 export function selectQuickActionTables<T extends { name: string; fields: FieldDef[] }>(tables: T[], max = 4): T[] {
   const work = tables.filter((t) => !SYSTEM_TABLE_NAMES.has(t.name));
-  const withState = work.filter((t) => t.fields.some((f) => f.type === 'state'));
-  const withoutState = work.filter((t) => !t.fields.some((f) => f.type === 'state'));
+  const withState = work.filter(hasWorkflowState);
+  const withoutState = work.filter((t) => !hasWorkflowState(t));
   return [...withState, ...withoutState].slice(0, max);
 }
 

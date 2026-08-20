@@ -580,3 +580,90 @@ test('Caso E bis — campi indipendenti su una tabella che HA ANCHE campi di cos
   assertCoerentiOreCostoTotale(rec);
   assert.equal(typeof rec.punteggio_soddisfazione, 'number');
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CreatorAI V4, P1-3: telefono/email dichiarati type:'text' (non il type
+// dedicato 'tel'/'email') — bug verificato dal vivo su 4/4 domini del
+// benchmark post-hardening: ricadevano sul pool GENERIC_DESCRIPTIONS
+// ("Elemento monitorato con cadenza regolare dal team operativo.") invece di
+// un numero di telefono/email plausibile, nonostante classifyFieldConcept
+// riconoscesse già correttamente il concetto 'phone'/'email' sul nome campo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('un campo "telefono" dichiarato type:"text" produce un numero plausibile, non il placeholder generico', () => {
+  const t = table('aziende', [field({ name: 'telefono', type: 'text' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.equal(typeof rec.telefono, 'string');
+  assert.match(rec.telefono as string, /^3\d{9}$/, 'atteso un numero di cellulare IT plausibile (3XXXXXXXXX)');
+});
+
+test('un campo "phone" (EN) dichiarato type:"text" produce lo stesso risultato di "telefono" (IT)', () => {
+  const t = table('companies', [field({ name: 'phone', type: 'text' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.match(rec.phone as string, /^3\d{9}$/);
+});
+
+test('un campo "email" dichiarato type:"text" produce un indirizzo email plausibile, non il placeholder generico', () => {
+  const t = table('aziende', [field({ name: 'email', type: 'text' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.match(rec.email as string, /^[a-z.]+@example\.com$/);
+});
+
+test('telefono ed email sullo stesso record NON coincidono e NON sono il placeholder generico condiviso', () => {
+  const t = table('clienti', [
+    field({ name: 'settore', type: 'text' }),
+    field({ name: 'telefono', type: 'text' }),
+    field({ name: 'email', type: 'text' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.notEqual(rec.telefono, rec.email);
+  assert.ok(!String(rec.telefono).includes('Elemento monitorato'));
+  assert.ok(!String(rec.email).includes('Elemento monitorato'));
+});
+
+test('telefoni ed email generati su 5 record diversi della stessa tabella sono tutti diversi tra loro', () => {
+  const t = table('soci', [
+    field({ name: 'nome_completo', type: 'text' }),
+    field({ name: 'telefono', type: 'text' }),
+  ]);
+  const telefoni = new Set(Array.from({ length: 5 }, (_, i) => generateMockRecord(t, i).telefono));
+  assert.equal(telefoni.size, 5, 'i 5 telefoni generati devono essere tutti diversi tra loro');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CreatorAI V4, P1-4: range numerici domain-aware — bug verificato dal vivo
+// (benchmark post-hardening, scenario Immobiliare): "prezzo" generato tra
+// 11€ e 451€, palesemente irrealistico per una compravendita immobiliare.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('il campo "prezzo" su una tabella "immobili" usa un range realistico per il settore, non il range generico 5-500', () => {
+  const t = table('immobili', [field({ name: 'prezzo', type: 'number' })]);
+  for (let i = 0; i < 8; i++) {
+    const rec = generateMockRecord(t, i);
+    assert.ok((rec.prezzo as number) >= 80000, `prezzo immobile troppo basso: ${rec.prezzo}`);
+  }
+});
+
+test('nessuna regressione: il campo "prezzo" su una tabella NON immobiliare resta nel range generico pre-esistente', () => {
+  const t = table('prodotti', [field({ name: 'prezzo', type: 'number' })]);
+  for (let i = 0; i < 8; i++) {
+    const rec = generateMockRecord(t, i);
+    assert.ok((rec.prezzo as number) <= 500, `un prezzo prodotto generico non deve scalare al range immobiliare: ${rec.prezzo}`);
+  }
+});
+
+test('nessuna regressione: prezzo_mensile (fitness) resta in un range da abbonamento, non immobiliare', () => {
+  const t = table('abbonamenti', [field({ name: 'prezzo_mensile', type: 'number' })]);
+  const rec = generateMockRecord(t, 0);
+  assert.ok((rec.prezzo_mensile as number) < 1000, `un abbonamento mensile non deve scalare al range immobiliare: ${rec.prezzo_mensile}`);
+});
+
+test('nessuna regressione: tariffa_oraria/costo_materiali (interventi) restano nel range pre-esistente', () => {
+  const t = table('interventi', [
+    field({ name: 'tariffa_oraria', type: 'number' }),
+    field({ name: 'costo_materiali', type: 'number' }),
+  ]);
+  const rec = generateMockRecord(t, 0);
+  assert.ok((rec.tariffa_oraria as number) <= 80);
+  assert.ok((rec.costo_materiali as number) <= 1500);
+});

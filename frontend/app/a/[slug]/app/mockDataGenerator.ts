@@ -207,19 +207,46 @@ interface FormulaContext {
   costParts: number[];
 }
 
+// ─── Range di magnitudine per dominio (CreatorAI V4, P1-4) ─────────────────
+// Bug verificato dal vivo (benchmark post-hardening, scenario Immobiliare):
+// il campo "prezzo" di un immobile veniva generato nel range generico
+// unit_price/currency_generic (5-1500€), palesemente irrealistico per una
+// compravendita immobiliare. Il tipo di campo (number/currency) era corretto
+// — solo il RANGE era semanticamente sbagliato per il dominio. Soluzione
+// volutamente minima (nessun "motore economico"): riusa la stessa categoria
+// già calcolata da getPlaceholderCategoryForTable per titoli/immagini
+// (recordPlaceholderImages.ts — 'veicoli'/'immobili'/'prodotti'/...), senza
+// una seconda lista di nomi tabella hardcoded. Solo 'immobili' ha un range
+// esplicito oggi (l'unico bug osservato): qualunque altra categoria, o
+// nessuna categoria riconosciuta, ricade sul range generico invariato — gli
+// altri domini già verificati corretti nel benchmark (fitness/prezzo_mensile,
+// interventi/tariffa_oraria+costo_materiali, CRM/valore_stimato) restano
+// quindi bit-per-bit identici a prima (nessuna regressione).
+const DOMAIN_PRICE_RANGES: Partial<Record<PlaceholderCategory, [number, number]>> = {
+  immobili: [80000, 480000],
+};
+
 /**
  * Genera un valore numerico "semantico" per il nome campo dato, condiviso
  * da entrambi i case "number" e "currency" di generateFieldValue — un campo
  * di costo può arrivare dichiarato come l'uno o l'altro (dal modello, o da
  * coerceObviousNumericFieldTypes in site-schema.ts) e deve comunque
  * partecipare alla stessa coerenza matematica.
+ *
+ * `tableName` (V4, P1-4): usato SOLO per stimare un range di magnitudine più
+ * realistico sui rami di prezzo "generico" (unit_price/currency_generic/
+ * total_cost quando calcolato senza subtotal/cost parts) — vedi
+ * DOMAIN_PRICE_RANGES sopra. Nessun impatto sulla classificazione del
+ * concetto stesso (resta esclusivamente sul nome campo, invariata).
  */
-function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext): number {
+function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext, tableName?: string): number {
   const concept = classifyFieldConcept(fn);
   // Variazione per-campo: applicata SEMPRE ai rami che prima usavano un seed
   // fisso condiviso (v2 Fix F.1 lo faceva solo per "costPart"/"costTotal" —
   // V3 lo estende a ogni ramo indipendente, il fix del residuo #2).
   const v = stringHash(fn) % 100;
+  const category = tableName ? getPlaceholderCategoryForTable(tableName) : null;
+  const domainRange = category ? DOMAIN_PRICE_RANGES[category] : undefined;
   switch (concept) {
     case 'year': return randomInt(2010, 2024, index + 300);
     case 'distance': return randomInt(0, 200000, index + 400);
@@ -244,7 +271,9 @@ function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext):
       return val;
     }
     case 'unit_price': {
-      const val = randomInt(5, 500, index + 280 + v);
+      const val = domainRange
+        ? randomInt(domainRange[0], domainRange[1], index + 280 + v)
+        : randomInt(5, 500, index + 280 + v);
       ctx.unitPrice = val;
       return val;
     }
@@ -289,6 +318,7 @@ function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext):
       let val: number;
       if (ctx.subtotal != null) val = ctx.subtotal + (ctx.tax ?? 0) - (ctx.discount ?? 0);
       else if (ctx.costParts.length > 0) val = ctx.costParts.reduce((a, b) => a + b, 0);
+      else if (domainRange) val = randomInt(domainRange[0], domainRange[1], index + 600 + v);
       else val = randomInt(15, 1500, index + 600 + v);
       ctx.totalCost = val;
       return val;
@@ -303,7 +333,9 @@ function generateSemanticNumber(fn: string, index: number, ctx: FormulaContext):
     // campo (mai lo stesso seed di un altro campo currency_generic dello
     // stesso record).
     case 'currency_generic':
-      return randomInt(15, 1500, index + 600 + v);
+      return domainRange
+        ? randomInt(domainRange[0], domainRange[1], index + 600 + v)
+        : randomInt(15, 1500, index + 600 + v);
     // Concetto non finanziario/non numerico riconosciuto su un campo
     // number/currency (raro ma possibile, es. "priorita" dichiarato number):
     // stesso fallback indipendente e variato del caso davvero sconosciuto.
@@ -458,7 +490,7 @@ function generateFieldValue(
     // (o di come coerceObviousNumericFieldTypes lo corregge, site-schema.ts).
     case 'currency':
     case 'number':
-      return generateSemanticNumber(fn, index, numberCtx);
+      return generateSemanticNumber(fn, index, numberCtx, tableName);
     case 'email':
       return `${slugifyForEmail(identity.firstName)}.${slugifyForEmail(identity.lastName)}@example.com`;
     case 'tel':
@@ -498,6 +530,24 @@ function generateFieldValue(
           return identity.firstName;
         case 'address': return identity.street;
         case 'city': return identity.city;
+        // CreatorAI V4 (P1-3, benchmark post-hardening): "telefono"/"email"
+        // vengono classificati correttamente da classifyFieldConcept (regole
+        // già presenti in semantic-fields.ts) ma, quando il blueprint AI
+        // dichiara il campo come type:'text' invece del type:'tel'/'email'
+        // dedicato (comportamento osservato dal vivo su 4/4 domini
+        // testati), questo switch non aveva un case per i due concetti —
+        // ricadeva quindi sul ramo `default` più sotto, mostrando la stessa
+        // frase placeholder generica di descrizione ("Elemento monitorato
+        // con cadenza regolare dal team operativo.") su un campo telefono/
+        // email. Stessa forma già usata dai case dedicati 'tel'/'email' del
+        // type-switch sopra (varia per record via `index`; il telefono varia
+        // ANCHE per campo via stringHash, nel caso raro di più campi
+        // telefono sullo stesso record — stesso principio già applicato a
+        // tutti gli altri fallback di questo file).
+        case 'phone':
+          return `3${randomInt(300000000, 399999999, index + 800 + (stringHash(fn) % 100))}`;
+        case 'email':
+          return `${slugifyForEmail(identity.firstName)}.${slugifyForEmail(identity.lastName)}@example.com`;
         case 'plate':
           return `${pick(['AB', 'CD', 'EF', 'GH', 'LM'], index)}${String(randomInt(100, 999, index + 900))}${pick(['ZX', 'YW', 'VU', 'TS', 'RQ'], index + 1)}`;
         // Un campo TESTUALE il cui nome è chiaramente riconducibile a una

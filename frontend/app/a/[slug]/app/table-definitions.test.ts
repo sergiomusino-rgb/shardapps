@@ -55,14 +55,39 @@ test('le tabelle di sistema (fatture/documenti) restano escluse dalle Azioni Rap
   assert.ok(!quick.some((t) => t.name === 'fatture'));
 });
 
-test('selectQuickActionTables non altera sortTablesForSidebar (la sidebar mostra sempre l\'elenco completo)', () => {
+// CreatorAI V4, P1-6 (benchmark post-hardening): sortTablesForSidebar
+// applicava prima l'ordine grezzo del blueprint, mai riordinato — per un CRM
+// con adminPanel.entities [aziende, opportunità] l'entità REALMENTE centrale
+// ("opportunità", l'unica con un flusso di lavoro/stato) compariva nella
+// sidebar SOTTO un'anagrafica di contorno, semplicemente per ordine di
+// dichiarazione nel prompt. Stessa euristica già usata da
+// selectQuickActionTables (tabelle con state anteposte): l'elenco resta
+// SEMPRE completo (nessuna tabella nascosta, solo riordinata).
+test('sortTablesForSidebar antepone le tabelle con un flusso di lavoro (type:"state"), stesso criterio di selectQuickActionTables', () => {
   const tables = [
     table('attivita', []),
     table('opportunita', [field({ name: 'stato', type: 'state', states: ['a', 'b'] })]),
     table('fatture', []),
   ];
   const sidebar = sortTablesForSidebar(tables);
-  assert.deepEqual(sidebar.map((t) => t.name), ['attivita', 'opportunita', 'fatture']);
+  assert.deepEqual(sidebar.map((t) => t.name), ['opportunita', 'attivita', 'fatture'], 'l\'entità con flusso di lavoro deve comparire per prima, "fatture" resta sempre in fondo');
+});
+
+test('sortTablesForSidebar mostra SEMPRE l\'elenco completo (nessuna tabella nascosta, solo riordinata)', () => {
+  const tables = [
+    table('attivita', []),
+    table('opportunita', [field({ name: 'stato', type: 'state', states: ['a', 'b'] })]),
+    table('fatture', []),
+  ];
+  const sidebar = sortTablesForSidebar(tables);
+  assert.equal(sidebar.length, 3);
+  assert.ok(['attivita', 'opportunita', 'fatture'].every((n) => sidebar.some((t) => t.name === n)));
+});
+
+test('sortTablesForSidebar: nessuna tabella con stato, ordine originale preservato (invariato rispetto a prima)', () => {
+  const tables = [table('a', []), table('b', []), table('c', [])];
+  const sidebar = sortTablesForSidebar(tables);
+  assert.deepEqual(sidebar.map((t) => t.name), ['a', 'b', 'c']);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
