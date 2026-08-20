@@ -31,6 +31,12 @@ const NON_TERMINAL_STATUSES = new Set(['planning', 'generating', 'validating', '
 // 30000, invariato).
 const STALE_JOB_THRESHOLD_MS = 6 * 60 * 1000;
 
+// Validazione live V4 (preview zeusx-zwu8): risposte di questa route non
+// devono mai essere trattenute da una cache intermedia (CDN/proxy Edge) —
+// ogni poll deve riflettere lo stato reale e più recente del job. Applicato
+// a TUTTE le risposte (anche gli errori), non solo al 200 di successo.
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' };
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
@@ -40,18 +46,18 @@ export async function GET(
 
     const authHeader = request.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ success: false, error: 'Autenticazione richiesta', code: 'UNAUTHORIZED' }, { status: 401 });
+      return NextResponse.json({ success: false, error: 'Autenticazione richiesta', code: 'UNAUTHORIZED' }, { status: 401, headers: NO_STORE_HEADERS });
     }
     const token = authHeader.slice(7);
     const user = await getUserFromToken(supabase, token);
     if (!user) {
-      return NextResponse.json({ success: false, error: 'Utente non autenticato', code: 'UNAUTHORIZED' }, { status: 401 });
+      return NextResponse.json({ success: false, error: 'Utente non autenticato', code: 'UNAUTHORIZED' }, { status: 401, headers: NO_STORE_HEADERS });
     }
 
     const tenantId = await getOrCreateTenant(supabase, user, token);
     let job = await getGenerationJobForTenant(supabase, jobId, tenantId);
     if (!job) {
-      return NextResponse.json({ success: false, error: 'Generazione non trovata', code: 'NOT_FOUND' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Generazione non trovata', code: 'NOT_FOUND' }, { status: 404, headers: NO_STORE_HEADERS });
     }
 
     if (NON_TERMINAL_STATUSES.has(job.status)) {
@@ -84,12 +90,12 @@ export async function GET(
       // così il consumer frontend può riusare la stessa logica di gestione,
       // presente solo quando lo status è 'ready'.
       ...(job.status === 'ready' ? { data: { schema: job.result_schema } } : {}),
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (err) {
     return NextResponse.json({
       success: false,
       error: err instanceof Error ? err.message : 'Errore interno del server',
       code: 'INTERNAL_ERROR',
-    }, { status: 500 });
+    }, { status: 500, headers: NO_STORE_HEADERS });
   }
 }

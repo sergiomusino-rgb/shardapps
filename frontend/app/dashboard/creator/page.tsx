@@ -49,7 +49,25 @@ function stepLabelFor(status: string | null | undefined): string {
 
 // Intervallo di polling — un compromesso tra reattività percepita e numero
 // di richieste per una pipeline che dura tipicamente decine di secondi.
-const POLL_INTERVAL_MS = 3000;
+// Validazione live V4 (preview zeusx-zwu8): un intervallo di 3s saturava un
+// rate-limit lato Edge/proxy Vercel dopo ~4 poll consecutivi (429 mai
+// arrivati al runtime dell'app, quindi non gestibili lato route — solo
+// riducendo la frequenza lato client). Backoff a scalino invece che una
+// vera progressione esponenziale: sufficiente a restare sotto la soglia
+// osservata senza introdurre latenza percepita eccessiva su generazioni
+// brevi.
+const BASE_POLL_INTERVAL_MS = 5000;
+const BACKOFF_POLL_INTERVAL_MS = 8000;
+const BACKOFF_AFTER_ATTEMPTS = 5;
+// Un 429 è per costruzione un problema di frequenza, non del job — mai
+// farlo contare come un errore fatale (MAX_CONSECUTIVE_POLL_ERRORS sotto),
+// solo un'attesa più lunga prima del prossimo tentativo.
+const RATE_LIMIT_BACKOFF_MS = 10000;
+
+function nextPollIntervalMs(attempt: number): number {
+  return attempt > BACKOFF_AFTER_ATTEMPTS ? BACKOFF_POLL_INTERVAL_MS : BASE_POLL_INTERVAL_MS;
+}
+
 // Interruzioni di rete transitorie durante il polling (non del job stesso)
 // non devono far fallire l'intera generazione al primo blip — solo dopo
 // diversi tentativi consecutivi falliti si mostra un errore reale.
@@ -265,8 +283,10 @@ export default function CreatorPage() {
   // bloccante di promptSuggestsStateButMissing.
   const pollGenerationJob = async (jobId: string, prompt?: string) => {
     let consecutiveErrors = 0;
+    let attempt = 0;
 
     const tick = async (): Promise<void> => {
+      attempt += 1;
       try {
         const { data: { session } } = await supabaseBrowser.auth.getSession();
         if (!session?.access_token) {
@@ -281,6 +301,17 @@ export default function CreatorPage() {
         const res = await fetch(`/api/creator/generate/status/${jobId}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
+
+        if (res.status === 429) {
+          // Rate-limit lato Edge/proxy Vercel, non un errore del job (la
+          // richiesta non arriva nemmeno al runtime dell'app — vedi
+          // validazione live V4): mai farlo contare come tentativo fatale,
+          // solo un'attesa più lunga prima del prossimo poll.
+          console.warn('[creator] poll rate-limited (429), backoff prima del prossimo tentativo');
+          setTimeout(tick, RATE_LIMIT_BACKOFF_MS);
+          return;
+        }
+
         const data = await res.json();
         consecutiveErrors = 0;
 
@@ -315,7 +346,7 @@ export default function CreatorPage() {
         // planning/generating/validating/repairing: ancora in corso, MAI un
         // errore mostrato qui — solo il messaggio di passo aggiornato.
         setGenerationStep(stepLabelFor(data.status));
-        setTimeout(tick, POLL_INTERVAL_MS);
+        setTimeout(tick, nextPollIntervalMs(attempt));
       } catch (err) {
         consecutiveErrors += 1;
         console.error('[creator] poll error:', err);
@@ -325,7 +356,7 @@ export default function CreatorPage() {
           setGenerationStep(null);
           return;
         }
-        setTimeout(tick, POLL_INTERVAL_MS);
+        setTimeout(tick, nextPollIntervalMs(attempt));
       }
     };
 

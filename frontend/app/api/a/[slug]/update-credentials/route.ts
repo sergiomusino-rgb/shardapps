@@ -118,10 +118,30 @@ export async function POST(
     // Credenziali anche in app_credentials (mai esposta alla Data API
     // pubblica, vedi 20260808000004_app_credentials_table.sql); dual-write
     // su apps.client_password sopra mantenuto per compatibilità.
+    //
+    // Validazione live V4 (preview zeusx-zwu8): questo upsert non
+    // controllava mai il proprio errore — un fallimento silenzioso qui
+    // lasciava apps.client_password aggiornato ma app_credentials con
+    // l'hash VECCHIO, e verify-password legge app_credentials per primo
+    // (fallback su apps solo se assente): risultato, "Credenziali
+    // aggiornate con successo" mostrato al reseller mentre il login con la
+    // password nuova falliva con "Password errata". Ora un errore qui
+    // blocca la risposta di successo — non c'è ancora un rollback
+    // transazionale sull'update già fatto su apps (richiederebbe una RPC
+    // dedicata), ma il client non deve mai vedere "successo" se le due
+    // tabelle sono rimaste disallineate.
     if (hashedPassword) {
-      await adminClient
+      const { error: credentialsError } = await adminClient
         .from('app_credentials')
         .upsert({ app_id: app.id, client_password: hashedPassword }, { onConflict: 'app_id' });
+
+      if (credentialsError) {
+        console.error('[update-credentials] Error updating app_credentials:', credentialsError);
+        return NextResponse.json(
+          { success: false, error: 'Errore durante l\'aggiornamento delle credenziali' },
+          { status: 500 }
+        );
+      }
     }
 
     console.log('[update-credentials] Credentials updated for app:', app.id);

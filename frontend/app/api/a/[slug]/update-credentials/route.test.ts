@@ -100,6 +100,31 @@ test('TEST G — successo con SOLA client_email + client_password: nessun campo 
   assert.ok(looksHashed(creds[0].client_password));
 });
 
+// ─── Validazione live V4: fix "successo fantasma" quando l'upsert su
+// app_credentials fallisce silenziosamente (root-cause del bug live: verify-
+// password legge da app_credentials per primo, restava con l'hash vecchio
+// mentre apps.client_password veniva comunque aggiornato). ────────────────
+test('500 se l\'upsert su app_credentials fallisce: la risposta non deve MAI indicare successo', async (t) => {
+  const setup = setupRouteTest(t, baseSetup({
+    forceErrors: { app_credentials: { upsert: { message: 'simulated db error' } } },
+  }));
+  const res = await postUpdateCredentials('officina-rossi', {
+    client_email: 'nuova@officina-rossi.it',
+    client_password: 'NuovaPassword123',
+  }, 'tok-1');
+  assert.equal(res.status, 500);
+  const body = await res.json();
+  assert.equal(body.success, false);
+
+  // apps.client_password NON deve restare "silenziosamente disallineato" in
+  // modo che il client creda al successo: qui verifichiamo solo il
+  // contratto HTTP (mai 200/success:true), non un rollback transazionale —
+  // vedi commento nella route sul perché un rollback vero richiederebbe una
+  // RPC dedicata, fuori scope di questo fix.
+  const { data } = await (setup.supabase.from('apps').select('*').eq('id', 'app-1') as unknown as Promise<{ data: Array<{ client_password: string }> }>);
+  assert.notEqual(data[0].client_password, undefined);
+});
+
 test('solo email, nessuna password: la password esistente resta INVARIATA (comportamento pre-esistente, non toccato da P0-4)', async (t) => {
   const setup = setupRouteTest(t, baseSetup());
   const res = await postUpdateCredentials('officina-rossi', { client_email: 'nuova@officina-rossi.it' }, 'tok-1');
