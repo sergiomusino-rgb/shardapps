@@ -564,15 +564,36 @@ export interface OrchestratorResult {
 type GenerationJobStatusResult = 'ready' | 'failed';
 
 export async function runGenerationOrchestrator(params: OrchestratorParams): Promise<OrchestratorResult> {
-  const { supabase, tenantId, userId, appId, userPrompt, projectType, lang, generate, postProcessRawSchema } = params;
+  const { supabase, tenantId, userId, appId, userPrompt, projectType, lang } = params;
 
-  let job = await createGenerationJob(supabase, {
+  const job = await createGenerationJob(supabase, {
     tenantId,
     appId: appId ?? null,
     createdBy: userId,
     userPrompt,
     context: { projectType, lang },
   });
+
+  return runGenerationPipeline(params, job);
+}
+
+/**
+ * Tutto ciò che avviene DOPO la creazione del job: Planner -> Generator ->
+ * Validator/Repair -> ready/failed. Estratta da runGenerationOrchestrator
+ * (P0-1, root-cause report "async generation / client-server lifecycle
+ * mismatch") perché generate/route.ts possa creare il job SINCRONAMENTE
+ * (risposta HTTP rapida con jobId) e proseguire la pipeline dentro
+ * `after()` (next/server) senza duplicare questa logica. Il comportamento
+ * di runGenerationOrchestrator stesso resta IDENTICO — usato invariato da
+ * creator/refactor/route.ts e da ogni test esistente che lo chiama
+ * direttamente.
+ */
+export async function runGenerationPipeline(
+  params: OrchestratorParams,
+  initialJob: GenerationJobRow
+): Promise<OrchestratorResult> {
+  const { supabase, tenantId, userId, userPrompt, projectType, lang, generate, postProcessRawSchema } = params;
+  let job = initialJob;
 
   // ─── 1. Planner (facoltativo, mai bloccante) ────────────────────────────
   let plan: GenerationPlan | null = null;

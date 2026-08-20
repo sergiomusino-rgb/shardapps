@@ -31,6 +31,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [, setUser] = useState<any>(null);
+  // Dichiarato qui (invece che vicino al resto dello stato del form
+  // credenziali, più in basso) perché l'effetto di inizializzazione subito
+  // sotto lo precompila da appInfo.client_email (P0-4) — deve essere
+  // dichiarato PRIMA di quell'effetto.
+  const [clientEmail, setClientEmail] = useState('');
 
   useEffect(() => {
     const init = async () => {
@@ -49,6 +54,13 @@ export default function SettingsPage() {
         .single();
       
       setAppInfo(app as unknown as AppInfo | null);
+      // Bug fix (P0-4, root-cause report): il campo "Nuova Email di Accesso"
+      // partiva sempre vuoto, obbligando a ridigitare l'email corrente anche
+      // per cambiare solo la password (bloccando il submit via `required`
+      // HTML nativo). Precompilato una sola volta al caricamento, coerente
+      // col resto del form che tratta l'email come "quella attuale salvo
+      // modifica esplicita dell'utente".
+      setClientEmail((app as unknown as AppInfo | null)?.client_email || '');
       setLoading(false);
     };
     init();
@@ -108,9 +120,8 @@ export default function SettingsPage() {
     }
   };
 
-  // Credenziali form
+  // Credenziali form (clientEmail dichiarato più in alto, vedi commento lì)
   const [showCredentialsForm, setShowCredentialsForm] = useState(false);
-  const [clientEmail, setClientEmail] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -143,11 +154,14 @@ export default function SettingsPage() {
         return;
       }
 
-      if (newPassword && !currentPassword) {
-        setCredentialsMessage({ type: 'error', text: 'Inserisci la password attuale per confermare' });
-        setCredentialsLoading(false);
-        return;
-      }
+      // Bug fix (P0-4, root-cause report): il backend (update-credentials/
+      // route.ts) non ha mai richiesto/controllato una "password attuale" —
+      // verifica tramite il token del reseller autenticato, non tramite la
+      // vecchia password dell'app. Questo controllo era un blocco client-side
+      // senza contropartita server-side: per un'app il cui login iniziale
+      // fosse già rotto, non esisteva alcuna "password attuale" nota,
+      // rendendo il reset impossibile da UI. Rimosso, non aggiunto lato
+      // backend (nessun requisito reale da soddisfare).
 
       const updateData: any = {
         client_email: clientEmail,
@@ -157,9 +171,17 @@ export default function SettingsPage() {
         updateData.client_password = newPassword;
       }
 
+      // Bug fix (P0-4, root-cause report): questa fetch non inviava mai
+      // l'header Authorization, mentre update-credentials/route.ts lo
+      // richiede sempre (401 altrimenti) — stesso meccanismo già usato da
+      // handleCancelSubscription qui sopra, nessun nuovo sistema di auth.
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/a/${slug}/update-credentials`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify(updateData),
       });
 
