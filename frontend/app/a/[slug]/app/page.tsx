@@ -1763,17 +1763,32 @@ export function ViewerProFinal() {
 
   // ─── Carica i record delle tabelle target di una relazione ──────────────
   // DynamicRecordModal usa questa mappa per popolare i menu a tendina dei
-  // campi di relazione (getTargetRecords, "cliente collegato" ecc.): senza
-  // questo effetto i menu restano sempre vuoti, indipendentemente dai dati
-  // presenti nell'app. Generico su QUALUNQUE targetTable referenziato da
-  // QUALUNQUE tabella disponibile — non più i 3 nomi fissi delle tabelle demo
-  // del motore v1 (clienti/prodotti/ordini): funziona anche per le entità
-  // relazionate generate da CreatorAI (adminPanel.entities, type:'relation').
-  useEffect(() => {
-    // Stessa motivazione degli effetti di fetch sopra: sincronizza questa
-    // mappa con sessione/tabelle disponibili.
+  // campi di relazione (getTargetRecords, "cliente collegato" ecc.) E
+  // mockDataGenerator.ts::generateMockRecord la usa per collegare i record
+  // demo generati a un record REALE della tabella target invece di lasciare
+  // il campo vuoto (vedi handleGenerateMockRecords sotto). Generico su
+  // QUALUNQUE targetTable referenziato da QUALUNQUE tabella disponibile — non
+  // più i 3 nomi fissi delle tabelle demo del motore v1 (clienti/prodotti/
+  // ordini): funziona anche per le entità relazionate generate da CreatorAI
+  // (adminPanel.entities, type:'relation').
+  //
+  // CreatorAI V4 (P0-1, benchmark post-hardening — "Socio → 25/03/2026"):
+  // prima questa mappa veniva popolata SOLO da un useEffect con deps
+  // [session, tables, fetchTableRecords] — mai invalidata quando l'utente
+  // genera/crea/modifica/elimina record di UNA tabella che è target della
+  // relation di un'ALTRA tabella. Scenario reale riprodotto nel benchmark:
+  // utente genera 5 "Aziende Clienti", poi genera 5 "Opportunità" — la
+  // relation azienda_id restava vuota perché relationRecords['aziende'] era
+  // ancora lo snapshot (vuoto) del primo caricamento. refreshRelationRecords
+  // estrae la stessa identica logica di fetch in una funzione richiamabile a
+  // comando: l'effetto sotto la chiama al mount/cambio tabelle (comportamento
+  // preesistente invariato), i 4 handler di mutazione (generate/create/
+  // update/delete) la richiamano DOPO un salvataggio riuscito, così una
+  // tabella generata/modificata "aggiorna" immediatamente la vista che le
+  // tabelle dipendenti hanno di lei — nessun nome di tabella/relation
+  // hardcoded, funziona per qualunque targetTable del blueprint.
+  const refreshRelationRecords = useCallback(async () => {
     if (!session || session.appInfo.id.startsWith('demo-')) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRelationRecords({});
       return;
     }
@@ -1787,16 +1802,26 @@ export function ViewerProFinal() {
       return;
     }
 
-    let cancelled = false;
-    Promise.all(targetNames.map((name) =>
+    const entries = await Promise.all(targetNames.map((name) =>
       fetchTableRecords(name, getAuthToken(session), session.appInfo.id)
         .then((records) => [name, records] as const)
         .catch(() => [name, []] as const)
-    )).then((entries) => {
-      if (!cancelled) setRelationRecords(Object.fromEntries(entries));
-    });
+    ));
+    setRelationRecords(Object.fromEntries(entries));
+  }, [session, tables, fetchTableRecords]);
 
+  useEffect(() => {
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- refreshRelationRecords può risolvere setRelationRecords({}) in modo sincrono nel suo primo ramo (nessuna sessione/app demo, prima di qualunque await) — stessa identica situazione del codice pre-esistente (che disabilitava questa regola sulla stessa chiamata sincrona, prima che questo effetto venisse estratto in una funzione richiamabile per il fix P0-1); il ramo asincrono via .then/.catch resta fuori dallo scope della regola.
+    refreshRelationRecords().catch(() => {
+      // refreshRelationRecords già intrappola i propri errori per-tabella
+      // (.catch(() => [name, []])); questo catch esterno è solo una guardia
+      // contro un eventuale rifiuto della Promise.all stessa (mai atteso in
+      // pratica), per non lasciare una rejection non gestita.
+      if (!cancelled) setRelationRecords({});
+    });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshRelationRecords già dipende da [session, tables, fetchTableRecords]: includerlo qui rieseguirebbe l'effetto ad ogni render (nuova identità di funzione) senza cambiare quando davvero serve.
   }, [session, tables, fetchTableRecords]);
 
   // ─── Load custom tables from backend ────────────────────────────────────
@@ -2073,13 +2098,17 @@ export function ViewerProFinal() {
       if (!res.ok) throw new Error(responseData.error || `Errore server: ${res.status}`);
       setModalRecord(null);
       await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+      // P0-1: questa tabella può essere il target della relation di
+      // un'altra — se lo è, chi la referenzia deve vedere subito questo
+      // nuovo record disponibile (vedi refreshRelationRecords sopra).
+      await refreshRelationRecords();
     } catch (err) {
       console.error('[CreateRecord] Error:', err);
       alert(err instanceof Error ? err.message : 'Errore durante il salvataggio');
     } finally {
       setSaving(false);
     }
-  }, [session, activeTable, loadRecords]);
+  }, [session, activeTable, loadRecords, refreshRelationRecords]);
 
   // Popola una tabella vuota con 5 record plausibili (nomi, indirizzi,
   // prezzi... generati per euristica sul nome/tipo campo, vedi
@@ -2111,13 +2140,21 @@ export function ViewerProFinal() {
         if (!res.ok) throw new Error(responseData.error || `Errore server: ${res.status}`);
       }
       await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+      // P0-1: i 5 record appena generati per questa tabella devono essere
+      // immediatamente disponibili come target di relation per QUALUNQUE
+      // altra tabella dipendente (es. genera prima "Aziende Clienti", poi
+      // "Opportunità": senza questo refresh relationRecords['aziende']
+      // resterebbe lo snapshot vuoto del caricamento iniziale, e la
+      // relation azienda_id nei nuovi record di Opportunità resterebbe
+      // sempre vuota — il bug "flagship" del benchmark v3).
+      await refreshRelationRecords();
     } catch (err) {
       console.error('[GenerateMockRecords] Error:', err);
       alert(err instanceof Error ? err.message : 'Errore durante la generazione dei dati di esempio');
     } finally {
       setGeneratingMock(false);
     }
-  }, [session, activeTable, loadRecords, relationRecords]);
+  }, [session, activeTable, loadRecords, relationRecords, refreshRelationRecords]);
 
   const handleUpdateRecord = useCallback(async (formData: Record<string, unknown>) => {
     if (!session || !activeTable || !modalRecord || modalRecord === 'new') return;
@@ -2146,13 +2183,17 @@ export function ViewerProFinal() {
       if (!res.ok) throw new Error(responseData.error || `Errore server: ${res.status}`);
       setModalRecord(null);
       await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+      // P0-1: un campo di questo record (es. il titolo/display field usato
+      // da targetLabel) può essere cambiato — le tabelle che lo referenziano
+      // come relation devono vedere subito l'etichetta aggiornata.
+      await refreshRelationRecords();
     } catch (err) {
       console.error('[UpdateRecord] Error:', err);
       alert(err instanceof Error ? err.message : 'Errore durante la modifica');
     } finally {
       setSaving(false);
     }
-  }, [session, activeTable, modalRecord, loadRecords]);
+  }, [session, activeTable, modalRecord, loadRecords, refreshRelationRecords]);
 
   const handleDeleteRecord = useCallback(async (recordId: string) => {
     if (!session || !activeTable) return;
@@ -2173,11 +2214,15 @@ export function ViewerProFinal() {
       const responseData = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(responseData.error || `Errore server: ${res.status}`);
       await loadRecords(activeTable.name, getAuthToken(session), session.appInfo.id);
+      // P0-1: un record eliminato non deve restare selezionabile come
+      // relation da tabelle dipendenti (relationRecords conterrebbe
+      // altrimenti un id "fantasma" fino al prossimo refresh di sessione).
+      await refreshRelationRecords();
     } catch (err) {
       console.error('[DeleteRecord] Error:', err);
       alert(err instanceof Error ? err.message : 'Errore durante l\'eliminazione');
     }
-  }, [session, activeTable, loadRecords]);
+  }, [session, activeTable, loadRecords, refreshRelationRecords]);
 
   // ─── Fase 3: esecuzione azioni di entità (cambio stato, ecc.) ────────────
   // L'enforcement reale (ruolo, transizione ammessa) è lato server (vedi
@@ -2377,6 +2422,8 @@ export function ViewerProFinal() {
           onExecuteAction={handleExecuteAction}
           loadRecords={(t) => loadRecords(t, getAuthToken(session), session.appInfo.id)}
           onEditTable={(table) => setEditTable(table)}
+          onGenerateMock={handleGenerateMockRecords}
+          generatingMock={generatingMock}
         />
 
         {/* Stessi modali della dashboard generica, invariati */}

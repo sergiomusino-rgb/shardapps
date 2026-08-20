@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { TableDef, TableAction, fieldName, extractDynamicKeys, pickIdentityFields } from './table-definitions';
 import { getPlaceholderCategoryForTable, getPlaceholderImageUrl } from '@/lib/recordPlaceholderImages';
+import { isTerminalStateValue } from '@/lib/semantic-fields';
 import RecordCardGrid from './RecordCardGrid';
 import { renderCellValue } from './cellRenderers';
 
@@ -72,6 +73,19 @@ export default function DynamicDataTable({
   // rifiuterebbe comunque con un 409. Un'azione senza vincoli noti (nessuna
   // allowedTransitions configurata, o stato corrente non riconosciuto) resta
   // visibile: stessa convenzione "permissiva se non specificato" del server.
+  //
+  // CreatorAI V4 (P1-5, benchmark post-hardening): quella convenzione
+  // permissiva è corretta per uno stato intermedio la cui macchina a stati
+  // non è specificata, ma produceva un bug osservato dal vivo su stati
+  // chiaramente TERMINALI per significato (es. "vinto"/"chiuso") quando il
+  // blueprint non include una entry esplicita `allowedTransitions.vinto: []`
+  // per loro (a differenza di "perso", che l'aveva) — mostravano ancora
+  // tutti i pulsanti di transizione su un record già concluso. Rete di
+  // sicurezza semantica (isTerminalStateValue, semantic-fields.ts): SOLO
+  // quando allowedTransitions non ha già un'informazione più precisa per
+  // questo stato, uno stato il cui VALORE suona terminale (vinto/perso/
+  // chiuso/completato/annullato/cancellato/concluso/won/lost/closed/...)
+  // non mostra alcuna azione di cambio stato, invece di mostrarle tutte.
   const getVisibleActions = (record: AppRecord): TableAction[] => {
     if (!table.actions?.length || isViewer) return [];
     const stateField = table.fields.find((f) => f.type === 'state');
@@ -81,8 +95,11 @@ export default function DynamicDataTable({
       if (action.type !== 'change_state') return true;
       if (!stateField || !action.targetState) return false;
       const allowed = stateField.allowedTransitions;
-      if (!allowed || !currentState || !allowed[currentState]) return true;
-      return allowed[currentState].includes(action.targetState);
+      if (allowed && currentState && allowed[currentState]) {
+        return allowed[currentState].includes(action.targetState);
+      }
+      if (currentState && isTerminalStateValue(currentState)) return false;
+      return true;
     });
   };
 
@@ -349,13 +366,34 @@ export default function DynamicDataTable({
                                     — deve risolvere l'id salvato nell'etichetta
                                     leggibile del record collegato, mai
                                     stringificare l'id grezzo (o restare vuoto,
-                                    come accadeva prima di questo fix). */}
-                                {renderCellValue(
-                                  record,
-                                  fieldName(titleField!),
-                                  titleField!.type,
-                                  resolveRelationLabel(titleField!, record[fieldName(titleField!)])
-                                )}
+                                    come accadeva prima di questo fix).
+                                    CreatorAI V4 (P0-2, benchmark post-hardening
+                                    — bug "flagship" "Socio -> 25/03/2026"): se
+                                    la relation-titolo NON ha ancora un valore
+                                    (record demo generato prima che
+                                    relationRecords fosse popolata, o record
+                                    creato a mano senza selezionare la
+                                    relation), resolveRelationLabel restituisce
+                                    '' (stringa vuota, non undefined — vedi la
+                                    funzione sopra) e questa riga (bold, il
+                                    "nome" della riga) risultava visivamente
+                                    VUOTA — lasciando che il sottotitolo
+                                    immediatamente sotto (un campo qualunque
+                                    scelto da pickIdentityFields, es. una data)
+                                    restasse l'UNICO testo visibile nella
+                                    cella, dando l'illusione che fosse lui il
+                                    "nome" della riga. Stesso fallback già
+                                    corretto in RecordCardGrid.tsx (vista a
+                                    griglia): '' -> nome della tabella
+                                    (etichetta neutra e sempre presente, mai un
+                                    campo casuale del record). */}
+                                {(() => {
+                                  const resolvedTitle = resolveRelationLabel(titleField!, record[fieldName(titleField!)]);
+                                  if (resolvedTitle === '') {
+                                    return table.label;
+                                  }
+                                  return renderCellValue(record, fieldName(titleField!), titleField!.type, resolvedTitle);
+                                })()}
                               </div>
                               {identitySubtitleField && (
                                 <div className="truncate text-xs text-tenant-text-secondary">

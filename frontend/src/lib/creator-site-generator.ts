@@ -151,7 +151,20 @@ export async function callSiteSchemaGenerator(
 
   const projectTypeGuide: Record<ProjectType, string> = {
     'landing': 'Sito Vetrina/Landing per un professionista o artigiano: pagine tipiche Home, Chi Siamo/Galleria, Contatti. adminPanel.entities può restare vuoto o contenere al massimo una entità semplice (es. "richieste" per il form contatti) — non serve un catalogo prodotti.',
-    'webapp-pwa': 'Web App/PWA per un\'attività con menu e prenotazioni (ristorante, pizzeria, salone): pagine tipiche Home, Menu (sezione "list" collegata a un\'entità "menu" o "servizi"), Prenota (sezione "form" collegata a un\'entità "prenotazioni"), Contatti. adminPanel.entities DEVE includere le entità referenziate dalle sezioni "list"/"form" delle pagine, con campi realistici del settore.',
+    // CreatorAI V4 (P0-7, benchmark post-hardening — "Trattoria da Marco",
+    // prompt con 4 entità collegate: piatti/clienti/ordini/righe_ordine):
+    // la guida precedente descriveva adminPanel.entities come derivato SOLO
+    // dalle sezioni pubbliche "list"/"form" (tipicamente 1-2 entità: "menu",
+    // "prenotazioni") — un blueprint reale con più entità esplicitamente
+    // richieste dal prompt (clienti, ordini, righe d'ordine con relazioni)
+    // veniva quindi collassato alle sole 1-2 entità minime per le pagine
+    // pubbliche, perdendo silenziosamente le altre. Stesso principio già
+    // corretto per 'gestionale' sotto ("TUTTE le entità necessarie al
+    // dominio richiesto"): le pagine Home/Menu/Prenota/Contatti restano un
+    // MINIMO da includere sempre (comportamento pre-esistente invariato per
+    // i prompt semplici, un solo "menu"), ma non un tetto massimo quando il
+    // prompt ne descrive di più.
+    'webapp-pwa': 'Web App/PWA per un\'attività con menu e prenotazioni (ristorante, pizzeria, salone): pagine tipiche Home, Menu (sezione "list" collegata a un\'entità "menu" o "servizi"), Prenota (sezione "form" collegata a un\'entità "prenotazioni"), Contatti. adminPanel.entities DEVE includere ALMENO le entità referenziate dalle sezioni "list"/"form" delle pagine, con campi realistici del settore. Se il prompt dell\'utente menziona esplicitamente ALTRE entità del dominio (es. clienti, ordini, righe d\'ordine, prenotazioni con relazione a un cliente, categorie...), includi ANCHE quelle in adminPanel.entities con le relazioni indicate ("type":"relation", stesso vocabolario di "gestionale") — non limitarti alle 1-2 entità minime delle pagine pubbliche quando il prompt ne descrive di più: il pannello admin deve coprire l\'intero dominio richiesto, il sito pubblico resta solo una vetrina che può referenziarne un sottoinsieme.',
     'ecommerce': 'E-Commerce Vetrina per un negozio: pagine tipiche Home, Catalogo (sezione "list" collegata a un\'entità "prodotti" con almeno i campi nome/prezzo/immagine/descrizione), Contatti. adminPanel.entities DEVE includere l\'entità prodotti referenziata dal Catalogo. Gli ordini avvengono via WhatsApp o alla cassa: NON generare un carrello o un checkout, usa piuttosto un actionButton "whatsapp" per ordinare.',
     // CreatorAI Engine 2.0, Fase 1: gestionale generico, sector-agnostic —
     // recupera qui la capacità del vecchio motore v1 (blueprint-engine.ts,

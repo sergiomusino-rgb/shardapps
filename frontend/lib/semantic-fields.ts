@@ -174,3 +174,32 @@ export function classifyFieldConcept(fieldId: string): SemanticConcept {
 export function isFinancialConcept(concept: SemanticConcept): boolean {
   return semanticRole(concept) === 'financial';
 }
+
+// ─── Stati terminali (CreatorAI V4, P1-5) ───────────────────────────────────
+// Bug verificato dal vivo (benchmark post-hardening): un record con stato
+// "vinto" (CRM) o "chiuso" (Interventi) continuava a mostrare i pulsanti di
+// transizione (es. "Segna come Vinta"/"Avvia Trattativa" su un'opportunità
+// già vinta), mentre "perso" (CRM) correttamente non ne mostrava nessuno.
+// Causa: DynamicDataTable.tsx::getVisibleActions (duplicata in
+// DynamicLayoutRenderer.tsx::getVisibleTableActions) tratta uno stato SENZA
+// una entry esplicita in field.allowedTransitions come "permissivo" (mostra
+// tutte le azioni) — comportamento corretto per uno stato intermedio la cui
+// macchina a stati non è stata specificata, ma sbagliato per uno stato che è
+// chiaramente terminale per significato: qui il blueprint/validator generano
+// allowedTransitions in modo incoerente (a volte con una entry [] esplicita
+// per lo stato terminale, a volte senza alcuna entry). Questa funzione NON
+// sostituisce allowedTransitions (che resta l'informazione più precisa
+// quando presente): è una rete di sicurezza semantica, stesso principio già
+// in uso per gli altri concetti di questo file — un piccolo vocabolario
+// IT+EN di stati "conclusi" per significato, non i due soli nomi osservati
+// nel benchmark ("vinto"/"chiuso"): qualunque stato che matcha resta privo
+// di transizioni SOLO se il chiamante non ha già un'informazione più precisa
+// per quello stato specifico.
+const TERMINAL_STATE_PATTERN = /\b(vint\w*|perso|persa|chius\w*|complet\w*|annullat\w*|cancellat\w*|conclus\w*|rifiutat\w*|respint\w*|scadut\w*|risolt\w*|evas\w*|won|lost|closed|completed|cancell?ed|done|rejected|declined|expired|resolved|archived|archiviat\w*)\b/;
+
+/** True se il VALORE di uno stato (non il nome del campo — un valore
+ * ammesso dal vocabolario `states`, es. "vinto"/"chiuso"/"won") suona come
+ * terminale per significato — nessuna transizione ulteriore attesa. */
+export function isTerminalStateValue(stateValue: string): boolean {
+  return TERMINAL_STATE_PATTERN.test(normalizeFieldName(stateValue));
+}
