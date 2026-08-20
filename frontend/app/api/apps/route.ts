@@ -8,7 +8,7 @@ import { provisionComandiAppAction } from '@/app/actions/comandi-provisioning';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
 
 function getServiceSupabase() {
   return createClient<Database>(supabaseUrl, serviceRoleKey);
@@ -374,7 +374,7 @@ export async function POST(req: Request) {
 
     // Incrementa fee mensile per la nuova app
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
       const token = process.env.BACKEND_SERVICE_TOKEN;
       
       await fetch(`${backendUrl}/api/update-app-fee`, {

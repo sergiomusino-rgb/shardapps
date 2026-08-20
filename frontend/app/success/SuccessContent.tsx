@@ -12,7 +12,7 @@ import { supabaseBrowser } from '@/src/lib/supabase-browser';
 // chiamata anche da dashboard/page.tsx (SyncPlanBanner), invece di duplicarla
 // anche qui con un contratto diverso (era session_id/credits_added, il
 // backend usa sessionId/creditsAdded).
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
 
 export default function SuccessPage() {
   const searchParams = useSearchParams();

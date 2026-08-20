@@ -389,7 +389,7 @@ function LegacyLoginGate() {
     // initial_password in chiaro per qualunque app attiva. La verifica avviene
     // invece sull'endpoint backend esistente (client_password confrontata
     // server-side, mai restituita al browser).
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
     const loginRes = await fetch(`${backendUrl}/api/a/${slug}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

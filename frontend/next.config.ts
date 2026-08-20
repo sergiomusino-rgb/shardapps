@@ -19,7 +19,7 @@ import type { NextConfig } from "next";
 //   fa fetch REST diretti; stesso host serve anche i video generati da
 //   Vision (riscaricati da fal.ai e ri-caricati su Supabase Storage, mai
 //   servito da fal.ai al client — vedi app/api/generate-video/route.ts).
-// - zeusx-backend.onrender.com: unico backend Express referenziato da
+// - shardapps-backend.onrender.com: unico backend Express referenziato da
 //   NEXT_PUBLIC_BACKEND_URL in tutto il repo (nessun altro dominio trovato).
 // - Nessun iframe nel repo (grep su tutta la codebase) -> frame-src 'none'.
 // script-src usa 'unsafe-inline' invece di un nonce per-richiesta: il
@@ -32,7 +32,7 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV === 'development';
 const SUPABASE_ORIGIN = 'https://ujdyqnzofclzztmppxea.supabase.co';
 const SUPABASE_WS_ORIGIN = 'wss://ujdyqnzofclzztmppxea.supabase.co';
-const BACKEND_ORIGIN = 'https://zeusx-backend.onrender.com';
+const BACKEND_ORIGIN = 'https://shardapps-backend.onrender.com';
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''};
@@ -121,7 +121,7 @@ const nextConfig: NextConfig = {
         fallback: [
           {
             source: "/api/:path*",
-            destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://zeusx-backend.onrender.com"}/api/:path*`,
+            destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://shardapps-backend.onrender.com"}/api/:path*`,
           },
         ],
       };

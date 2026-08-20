@@ -16,7 +16,7 @@ import type { Database } from '@/types/database';
 // creazione app, qui il simmetrico "decrement" per l'eliminazione.
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://zeusx-backend.onrender.com';
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://shardapps-backend.onrender.com';
 
 export async function POST(req: Request) {
   try {
