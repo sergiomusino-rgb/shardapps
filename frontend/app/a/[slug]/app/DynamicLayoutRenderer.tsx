@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  LayoutDashboard, Users, Package, ShoppingCart, Database,
+  LayoutDashboard, Users, ShoppingCart, Database,
   Settings, LogOut, Search, Plus, Pencil, Trash2, X,
   Download, Upload, MessageSquare, Mail, MessageCircle,
   Settings2, Heart, Receipt, ExternalLink
 } from 'lucide-react';
-import { TableDef, TableAction, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField, isRestaurantMenuGridTable } from './table-definitions';
+import { TableDef, TableAction, fieldName, sortTablesForSidebar, getDatiAziendaliTable, findDisplayPriceField, isRestaurantMenuGridTable, getGenericSectionKpis } from './table-definitions';
 import { DesignComponent } from './DesignParser';
 import { getDesignTokens, type DesignTokens } from '@/lib/designTokens';
 import { resolveIcon } from './iconResolver';
@@ -250,6 +250,7 @@ export default function DynamicLayoutRenderer({
             onEdit={onEdit}
             onDelete={onDelete}
             onAddNew={onAddNew}
+            role={role}
           />
         );
       case 'recipe':
@@ -999,63 +1000,98 @@ interface EcommerceLayoutContentProps {
   onEdit: (record: any) => void;
   onDelete: (recordId: string) => void;
   onAddNew: () => void;
+  /** Fase 4: nasconde "Aggiungi nuovo" per il ruolo 'viewer' (sola lettura),
+   * stesso comportamento già applicato in Docs/SaaSLayoutContent. */
+  role?: string;
 }
 
 function EcommerceLayoutContent({
   tables, colors, primaryColor,
   activeView, activeTable,
-  records
+  records, onAddNew, role
 }: EcommerceLayoutContentProps) {
+  // Fix blocker CRUD custom entities (production, app "Lumen CRM"): stesso
+  // caricamento del totale record REALE di Docs/SaaSLayoutContent, prima
+  // assente qui — le KPI sotto usavano `records.length` (i soli record della
+  // tabella attiva, spesso 0 in dashboard dove nessuna tabella è selezionata)
+  // spacciato per il totale.
+  const [totalRecords, setTotalRecords] = useState(0);
+
+  useEffect(() => {
+    async function loadDashboardData() {
+      try {
+        const appEl = document.querySelector('[data-app-id]');
+        if (!appEl) return;
+        const appId = appEl.getAttribute('data-app-id');
+        const password = appEl.getAttribute('data-password');
+        if (!appId || !password) return;
+
+        let total = 0;
+        for (const table of tables) {
+          try {
+            const res = await fetch(`/api/client/apps/${appId}/records?table=${table.name}`, {
+              headers: { Authorization: `Bearer ${password}` },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const recs: any[] = Array.isArray(data) ? data : data.records || data.data || [];
+              total += recs.length;
+            }
+          } catch { /* skip table */ }
+        }
+        setTotalRecords(total);
+      } catch { /* ignore */ }
+    }
+    loadDashboardData();
+  }, [tables]);
+
   // E-commerce specific layout with product grid
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", color: '#18181B', fontSize: '28px', fontWeight: 700, margin: 0 }}>
           {activeView === 'dashboard' ? 'Dashboard' : activeTable?.labelPlural || 'Prodotti'}
         </h1>
+        {/* Fix blocker CRUD custom entities: "Aggiungi nuovo" era completamente
+            assente in questo layout — nessun modo di creare un record per
+            NESSUNA entità (prodotti reali inclusi), non solo per quelle
+            custom. Stesso pulsante/pattern di Docs/SaaSLayoutContent. */}
+        {activeView !== 'dashboard' && activeTable && role !== 'viewer' && (
+          <button
+            onClick={onAddNew}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '10px 18px', borderRadius: '10px', border: 'none',
+              background: primaryColor, color: '#fff', fontSize: '14px',
+              fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.85'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
+            <Plus size={16} /> Nuovo
+          </button>
+        )}
       </div>
 
       {activeView === 'dashboard' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-          <KpiCard
-            title="Prodotti"
-            value={String(tables.find(t => t.name === 'prodotti') ? records.length : 0)}
-            icon={<Package size={22} />}
-            colors={colors}
-          />
-          <KpiCard
-            title="Ordini"
-            value={String(tables.find(t => t.name === 'ordini') ? records.length : 0)}
-            icon={<ShoppingCart size={22} />}
-            colors={colors}
-          />
-          <KpiCard
-            title="Clienti"
-            value={String(tables.find(t => t.name === 'clienti') ? records.length : 0)}
-            icon={<Users size={22} />}
-            colors={colors}
-          />
+          {/* Fix blocker CRUD custom entities: card KPI prima hardcoded su
+              "Prodotti"/"Ordini"/"Clienti" (0 fisso per qualunque altra
+              entità, es. un CRM con opportunita/attivita/aziende) — stesse
+              2 card generiche, schema-driven, già usate correttamente da
+              Docs/SaaSLayoutContent in questo stesso file. */}
+          {getGenericSectionKpis(tables, totalRecords).map((kpi) => (
+            <KpiCard
+              key={kpi.title}
+              title={kpi.title}
+              value={kpi.value}
+              icon={<Database size={22} />}
+              colors={colors}
+            />
+          ))}
         </div>
       ) : activeTable ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select
-                style={{
-                  padding: '8px 12px', borderRadius: '8px',
-                  border: `1px solid ${colors.border}`, background: colors.cardBg,
-                  color: colors.text, fontSize: '13px',
-                }}
-              >
-                <option>Tutte le categorie</option>
-                <option>Prodotti</option>
-                <option>Ordini</option>
-                <option>Clienti</option>
-              </select>
-            </div>
-          </div>
-
           {/* Product Grid: foto (reale se presente, altrimenti placeholder
               contestuale) invece di semplici caselle di testo */}
           <div style={{

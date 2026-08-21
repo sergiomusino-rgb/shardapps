@@ -924,8 +924,19 @@ const SECTOR_KEYWORD_FALLBACK: Array<{ keywords: string[]; designKey: string }> 
     keywords: ['docs', 'documentation', 'wiki'],
   },
   {
+    // Fix blocker CRUD custom entities (production, app "Lumen CRM"): il
+    // keyword generico 'market' matchava come sottostringa anche "marketing"
+    // ("agenzia di MARKETing" → falso positivo su questa categoria retail),
+    // dirottando un gestionale/CRM di un'agenzia di marketing sul layout
+    // 'ecommerce' (EcommerceLayoutContent) invece del layout generico
+    // 'saas' — il primo non è pensato per entità custom arbitrarie (vedi
+    // fix in DynamicLayoutRenderer.tsx). Sostituito con keyword più
+    // specifiche che non collidono con "marketing": 'marketplace' resta
+    // qui SOLO per completezza (già coperto anche dal match esatto in
+    // SECTOR_TO_DESIGN_KEY sopra), 'supermercat'/'ipermercat' coprono i
+    // casi legittimi di supermercato/ipermercato che 'market' catturava.
     designKey: 'marketnest',
-    keywords: ['retail', 'ecommerce', 'e-commerce', 'negozio', 'shop', 'store', 'market', 'artigian', 'handmade', 'prodott', 'boutique', 'abbigliamento', 'petshop', 'animali', 'elettr'],
+    keywords: ['retail', 'ecommerce', 'e-commerce', 'negozio', 'shop', 'store', 'marketplace', 'supermercat', 'ipermercat', 'artigian', 'handmade', 'prodott', 'boutique', 'abbigliamento', 'petshop', 'animali', 'elettr'],
   },
   {
     designKey: 'wandermap',

@@ -266,6 +266,31 @@ export function computeDashboardCardValue(card: DashboardCardLike, records: Dash
   }
 }
 
+// ─── Fix blocker CRUD custom entities (production, app "Lumen CRM") ────────
+// EcommerceLayoutContent (DynamicLayoutRenderer.tsx, layout dedicato al
+// design "marketnest") mostrava sulla dashboard 3 card KPI hardcoded
+// "Prodotti"/"Ordini"/"Clienti" — corrette SOLO per un'app che ha
+// letteralmente tabelle con questi 3 nomi esatti, un valore fisso (spesso 0)
+// per qualsiasi altra entità custom (es. un CRM con tabelle
+// opportunita/attivita/aziende, dirottato su questo layout da un falso
+// positivo nel matching del settore — vedi designTokens.ts). Stessa causa
+// radice del bug "griglia menu ristorante" sopra (isRestaurantMenuGridTable):
+// un layout di settore che assume una forma fissa dello schema invece di
+// leggere le entità REALI dell'app. Fix generico: le stesse 2 card
+// "Sezioni attive"/"Record Totali" già usate (in modo corretto, schema-driven)
+// da DocsLayoutContent e SaaSLayoutContent nello stesso file — nessuna nuova
+// logica, solo la stessa già testata dal vivo, ora condivisa anche da
+// EcommerceLayoutContent. Pura/senza JSX, testabile con `node --test`.
+export function getGenericSectionKpis(
+  tables: Pick<TableDef, 'name'>[],
+  totalRecords: number
+): { title: string; value: string }[] {
+  return [
+    { title: 'Sezioni attive', value: String(tables.length) },
+    { title: 'Record Totali', value: String(totalRecords) },
+  ];
+}
+
 // ─── Fix blocker TEST D (debug V3, app "ristorazione") ─────────────────────
 // RestaurantLayoutContent (DynamicLayoutRenderer.tsx, layout dedicato al
 // settore "ristorazione", PRE-ESISTENTE — non toccato dall'evoluzione

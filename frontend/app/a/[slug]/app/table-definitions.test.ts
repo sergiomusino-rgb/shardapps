@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 // separato, altrimenti il type-stripping nativo di `node --test` cerca
 // (fallendo) un export reale con quel nome — stesso motivo/pattern già
 // applicato in mockDataGenerator.ts per lo stesso import.
-import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar, pickIdentityFields, findDisplayPriceField, isRestaurantMenuGridTable } from './table-definitions.ts';
+import { selectQuickActionTables, computeDashboardCardValue, sortTablesForSidebar, pickIdentityFields, findDisplayPriceField, isRestaurantMenuGridTable, getGenericSectionKpis } from './table-definitions.ts';
 import type { TableDef, FieldDef } from './table-definitions.ts';
 
 function field(overrides: Partial<FieldDef> & { name: string; type: FieldDef['type'] }): FieldDef {
@@ -238,4 +238,33 @@ test('isRestaurantMenuGridTable: le altre 3 tabelle reali dell\'app "Trattoria d
 test('isRestaurantMenuGridTable: nessuna tabella attiva (null/undefined) -> false, mai un crash', () => {
   assert.equal(isRestaurantMenuGridTable(undefined), false);
   assert.equal(isRestaurantMenuGridTable(null), false);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fix blocker CRUD custom entities (production, app "Lumen CRM") —
+// getGenericSectionKpis: le card KPI della dashboard di EcommerceLayoutContent
+// devono riflettere le entità REALI dell'app (nome/numero tabelle + record
+// totali), mai contare solo tabelle chiamate letteralmente
+// "prodotti"/"ordini"/"clienti" (bug riprodotto in produzione: un CRM con
+// tabelle opportunita/attivita/aziende/clienti/utenti mostrava "Prodotti: 0,
+// Ordini: 0" — dati falsi, non semplicemente "vuoti").
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('getGenericSectionKpis: un CRM con 5 entità custom (nessuna chiamata prodotti/ordini) mostra il conteggio reale delle sezioni, non zero', () => {
+  const tables = [
+    table('opportunita', []), table('attivita', []), table('clienti', []),
+    table('aziende', []), table('utenti', []),
+  ];
+  const kpis = getGenericSectionKpis(tables, 12);
+  assert.deepEqual(kpis, [
+    { title: 'Sezioni attive', value: '5' },
+    { title: 'Record Totali', value: '12' },
+  ]);
+});
+
+test('getGenericSectionKpis: nessuna tabella -> 0 sezioni, 0 record, mai un crash', () => {
+  assert.deepEqual(getGenericSectionKpis([], 0), [
+    { title: 'Sezioni attive', value: '0' },
+    { title: 'Record Totali', value: '0' },
+  ]);
 });
