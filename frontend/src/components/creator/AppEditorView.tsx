@@ -16,6 +16,7 @@ import {
   Rocket, CheckCircle2, Copy, X, ExternalLink, Mic, MicOff, Clock, Palette,
 } from 'lucide-react';
 import { supabaseBrowser } from '@/src/lib/supabase-browser';
+import { useLanguage } from '@/src/lib/LanguageContext';
 import SitePreview from './SitePreview';
 // Hardening 2/2 (CreatorAI Engine 2.0): pannello "Versioni" + rollback, vedi
 // commento in testa a VersionHistoryPanel.tsx per il contratto/sicurezza.
@@ -58,21 +59,8 @@ export interface AppEditorViewLabels {
   brandingButton: string;
 }
 
-const DEFAULT_LABELS: AppEditorViewLabels = {
-  chatTitle: 'ShardApps Copilot',
-  chatSubtitle: 'Scrivi una modifica e la vedi applicata subito a sinistra.',
-  inputPlaceholder: 'Es. "Cambia il colore principale in blu navy", "Aggiungi una sezione recensioni in Home"',
-  sendButton: 'Invia',
-  emptyState: 'Nessuna modifica ancora. Scrivi il primo comando qui sotto.',
-  appliedMessage: 'Fatto — modifica applicata.',
-  publishButton: 'Pubblica Gestionale',
-  publishingButton: 'Pubblicazione in corso…',
-  saveButton: 'Salva Modifiche',
-  versionsButton: 'Versioni',
-  brandingButton: 'Branding',
-};
-
 function CopyField({ label, value }: { label: string; value: string }) {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
@@ -92,7 +80,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
         <button
           onClick={handleCopy}
           className="shrink-0 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-700 hover:text-white"
-          aria-label={`Copia ${label}`}
+          aria-label={`${t('creator_v2_copy_prefix')} ${label}`}
         >
           {copied ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}
         </button>
@@ -102,6 +90,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 function PublishSuccessModal({ result, onClose }: { result: PublishResult; onClose: () => void }) {
+  const { t } = useLanguage();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-2xl">
@@ -112,27 +101,27 @@ function PublishSuccessModal({ result, onClose }: { result: PublishResult; onClo
             </div>
             <div>
               <h3 className="text-base font-bold text-white">
-                {result.updated ? 'Modifiche salvate' : 'Gestionale pubblicato!'}
+                {result.updated ? t('creator_v2_publish_success_updated_title') : t('creator_v2_publish_success_new_title')}
               </h3>
               <p className="text-xs text-gray-500">
-                {result.updated ? 'Le ultime modifiche sono online.' : 'La tua PWA è online e pronta all\'uso.'}
+                {result.updated ? t('creator_v2_publish_success_updated_desc') : t('creator_v2_publish_success_new_desc')}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Chiudi">
+          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label={t('creator_v2_close')}>
             <X size={18} />
           </button>
         </div>
 
         <div className="space-y-3">
-          <CopyField label="Link app" value={result.url} />
-          {!result.updated && result.clientEmail && <CopyField label="Email accesso" value={result.clientEmail} />}
-          {!result.updated && result.clientPassword && <CopyField label="Password accesso" value={result.clientPassword} />}
+          <CopyField label={t('creator_v2_copy_link_label')} value={result.url} />
+          {!result.updated && result.clientEmail && <CopyField label={t('creator_v2_copy_email_label')} value={result.clientEmail} />}
+          {!result.updated && result.clientPassword && <CopyField label={t('creator_v2_copy_password_label')} value={result.clientPassword} />}
         </div>
 
         {!result.updated && (
           <p className="mt-4 text-xs leading-relaxed text-gray-500">
-            Salva queste credenziali: la password non verrà mostrata di nuovo qui (potrai comunque reimpostarla in seguito).
+            {t('creator_v2_publish_success_credentials_note')}
           </p>
         )}
 
@@ -143,13 +132,13 @@ function PublishSuccessModal({ result, onClose }: { result: PublishResult; onClo
             rel="noreferrer"
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
           >
-            <ExternalLink size={14} /> Apri l&apos;app
+            <ExternalLink size={14} /> {t('creator_v2_open_app')}
           </a>
           <button
             onClick={onClose}
             className="rounded-lg border border-gray-700 px-4 py-2.5 text-sm font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
           >
-            Chiudi
+            {t('creator_v2_close')}
           </button>
         </div>
       </div>
@@ -170,7 +159,25 @@ export default function AppEditorView({
   lang?: string;
   labels?: Partial<AppEditorViewLabels>;
 }) {
-  const t = { ...DEFAULT_LABELS, ...labels };
+  // i18n (root-cause report "/dashboard/creator non traduce"): useLanguage()
+  // chiamato direttamente qui, stesso pattern di ProjectWizard.tsx — `labels`
+  // resta un override ESTERNO opzionale invariato, ora sopra default tradotti
+  // invece di stringhe fisse.
+  const { t: translate } = useLanguage();
+  const defaultLabels: AppEditorViewLabels = {
+    chatTitle: translate('creator_v2_chat_title'),
+    chatSubtitle: translate('creator_v2_chat_subtitle'),
+    inputPlaceholder: translate('creator_v2_chat_input_placeholder'),
+    sendButton: translate('creator_v2_chat_send'),
+    emptyState: translate('creator_v2_chat_empty_state'),
+    appliedMessage: translate('creator_v2_chat_applied'),
+    publishButton: translate('creator_v2_publish_button'),
+    publishingButton: translate('creator_v2_publishing_button'),
+    saveButton: translate('creator_v2_save_button'),
+    versionsButton: translate('creator_v2_versions_button'),
+    brandingButton: translate('creator_v2_toolbar_branding'),
+  };
+  const t = { ...defaultLabels, ...labels };
   const router = useRouter();
 
   const [schema, setSchema] = useState<SiteBlueprintJSON>(initialSchema);
@@ -242,7 +249,7 @@ export default function AppEditorView({
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
       if (!session?.access_token) {
-        setMessages((prev) => [...prev, { role: 'error', content: 'Sessione scaduta, effettua di nuovo il login.' }]);
+        setMessages((prev) => [...prev, { role: 'error', content: translate('creator_v2_error_session_expired') }]);
         return;
       }
 
@@ -265,15 +272,15 @@ export default function AppEditorView({
         // — il caso più comune è proprio "chiedi uno stato via chat e non
         // arriva", osservato empiricamente in sessione.
         const appliedMessage = promptSuggestsStateButMissing(message, data.data.schema)
-          ? `${t.appliedMessage} La tua richiesta sembra menzionare uno stato/workflow, ma non vedo ancora un campo di questo tipo nello schema — puoi riprovare a chiederlo in modo più esplicito.`
+          ? `${t.appliedMessage} ${translate('creator_v2_chat_state_warning_suffix')}`
           : t.appliedMessage;
         setMessages((prev) => [...prev, { role: 'assistant', content: appliedMessage }]);
       } else {
-        setMessages((prev) => [...prev, { role: 'error', content: data.error || 'Errore durante la modifica.' }]);
+        setMessages((prev) => [...prev, { role: 'error', content: data.error || translate('creator_v2_error_edit_generic') }]);
       }
     } catch (err) {
       console.error('[AppEditorView] refactor error:', err);
-      setMessages((prev) => [...prev, { role: 'error', content: 'Errore di connessione. Riprova.' }]);
+      setMessages((prev) => [...prev, { role: 'error', content: translate('creator_v2_error_connection_retry_short') }]);
     } finally {
       setIsSending(false);
     }
@@ -298,7 +305,7 @@ export default function AppEditorView({
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
       if (!session?.access_token) {
-        setPublishError('Sessione scaduta, effettua di nuovo il login.');
+        setPublishError(translate('creator_v2_error_session_expired'));
         return;
       }
 
@@ -333,14 +340,14 @@ export default function AppEditorView({
           }
         }
       } else if (data.code === 'SLOTS_EXHAUSTED') {
-        setPublishError(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
+        setPublishError(data.message || translate('creator_v2_error_slots_exhausted'));
         router.push(data.redirectTo || '/pricing');
       } else {
-        setPublishError(data.error || 'Errore durante la pubblicazione.');
+        setPublishError(data.error || translate('creator_v2_error_publish_generic'));
       }
     } catch (err) {
       console.error('[AppEditorView] publish error:', err);
-      setPublishError('Errore di connessione. Riprova.');
+      setPublishError(translate('creator_v2_error_connection_retry_short'));
     } finally {
       setIsPublishing(false);
     }
@@ -355,7 +362,7 @@ export default function AppEditorView({
   const handleOpenVersions = async () => {
     const { data: { session } } = await supabaseBrowser.auth.getSession();
     if (!session?.access_token) {
-      setPublishError('Sessione scaduta, effettua di nuovo il login.');
+      setPublishError(translate('creator_v2_error_session_expired'));
       return;
     }
     setVersionsAccessToken(session.access_token);
@@ -374,7 +381,7 @@ export default function AppEditorView({
     // Il rollback aggiorna apps.config direttamente lato server (stesso
     // contratto già in produzione, invariato): l'app pubblicata è già
     // ripristinata a questo punto, non serve un ulteriore "Salva Modifiche".
-    setRollbackNotice('Versione ripristinata: l\'app pubblicata è già stata aggiornata.');
+    setRollbackNotice(translate('creator_v2_rollback_success'));
   };
 
   // Branding reseller: stesso pattern token-al-momento-dell'apertura di
@@ -386,7 +393,7 @@ export default function AppEditorView({
   const handleOpenBranding = async () => {
     const { data: { session } } = await supabaseBrowser.auth.getSession();
     if (!session?.access_token) {
-      setPublishError('Sessione scaduta, effettua di nuovo il login.');
+      setPublishError(translate('creator_v2_error_session_expired'));
       return;
     }
     setBrandingAccessToken(session.access_token);
@@ -511,7 +518,7 @@ export default function AppEditorView({
             {isSending && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-1.5 rounded-xl bg-gray-800 px-3 py-2 text-xs text-gray-400">
-                  <Loader2 size={13} className="animate-spin" /> Applico la modifica…
+                  <Loader2 size={13} className="animate-spin" /> {translate('creator_v2_applying_change')}
                 </div>
               </div>
             )}
@@ -544,7 +551,7 @@ export default function AppEditorView({
                       ? 'bg-red-500/20 text-red-400 animate-pulse'
                       : 'text-gray-500 hover:bg-gray-700 hover:text-white'
                   }`}
-                  title={isListening ? 'Stop listening' : 'Speak to enter text'}
+                  title={isListening ? translate('creator_v2_mic_stop') : translate('creator_v2_mic_start')}
                 >
                   {isListening ? <MicOff size={14} /> : <Mic size={14} />}
                 </button>
