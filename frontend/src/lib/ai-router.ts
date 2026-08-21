@@ -169,9 +169,35 @@ function resolveModel(tier: AiModelTier): string {
 // Configurabile via env, mai hardcoded: un ambiente con un provider più
 // lento del solito (o più veloce, per test) può regolarlo senza un deploy di
 // codice.
+//
+// P0 Generation Reliability — FIX DEFINITIVO (timeout differenziato per
+// tier): il tier "fast" (Planner/Refactor/chat/micro-fix...) risponde
+// tipicamente in 1-3s, 30s di margine bastano abbondantemente. Il tier
+// "advanced" (Generator, claude-sonnet-5, jsonMode:true, max_tokens:8000)
+// impiega invece 40-48s REALI in test diretti (root-cause report) — un
+// timeout di 30s condiviso per entrambi i tier abortiva sistematicamente il
+// Generator DOPO che gli header 200 erano già arrivati ma PRIMA che il body
+// fosse completamente letto (vedi callOpenRouterOnce sotto). "advanced" ora
+// ha un margine largo (120s di default) coerente con
+// `maxDuration = 300` già impostato su app/api/creator/generate/route.ts,
+// che presuppone generazioni lunghe.
 const AI_ROUTER_TIMEOUT_MS = Number(process.env.AI_ROUTER_TIMEOUT_MS || '30000');
+const AI_ROUTER_ADVANCED_TIMEOUT_MS = Number(process.env.AI_ROUTER_ADVANCED_TIMEOUT_MS || '120000');
 const AI_ROUTER_RETRY_BACKOFF_MS = Number(process.env.AI_ROUTER_RETRY_BACKOFF_MS || '500');
 const MAX_RETRIES = 1; // "massimo 1 retry", esplicito nel task — mai un loop
+
+// Unico punto che decide il timeout per tier — mai duplicato/hardcoded nei
+// singoli chiamanti di callOpenRouterOnce/fetchWithRetry sotto.
+function resolveTimeoutMs(tier: AiModelTier): number {
+  return tier === 'advanced' ? AI_ROUTER_ADVANCED_TIMEOUT_MS : AI_ROUTER_TIMEOUT_MS;
+}
+
+// Esportato SOLO per i test (verificare la selezione fast/advanced senza
+// dover leggere le costanti private del modulo): mai chiamato da codice di
+// produzione, stesso principio di __resetAiRouterCircuitBreakerForTests sotto.
+export function __resolveAiRouterTimeoutMsForTests(tier: AiModelTier): number {
+  return resolveTimeoutMs(tier);
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -231,6 +257,10 @@ export function __resetAiRouterCircuitBreakerForTests(): void {
 
 interface OpenRouterCallResult {
   data: Record<string, unknown>;
+  /** Status HTTP della risposta (sempre 2xx qui: callOpenRouterOnce lancia
+   * su !res.ok) — usato solo per il log diagnostico "content vuoto/zero
+   * token" sotto (P0 Generation Reliability), mai per decidere retry. */
+  status: number;
 }
 
 // Un singolo tentativo di chiamata a OpenRouter, con timeout esplicito.
@@ -238,7 +268,32 @@ interface OpenRouterCallResult {
 // AiRouterError con `.status` valorizzato su una risposta HTTP non-ok — mai
 // un altro tipo, così fetchWithRetry può decidere se ritentare guardando
 // solo questi due casi.
-async function callOpenRouterOnce(apiKey: string, body: Record<string, unknown>): Promise<OpenRouterCallResult> {
+//
+// P0 Generation Reliability — FIX DEFINITIVO (root-cause report): `fetch()`
+// risolve non appena arrivano gli HEADER della risposta (res.ok già
+// determinato), indipendentemente da quanto ci mette il BODY a essere
+// trasmesso per intero — e lo stesso AbortSignal passato sopra resta attivo
+// anche durante la lettura del body via `res.json()`, non solo per l'arrivo
+// degli header. PRIMA di questo fix, `res.json().catch(() => ({}))`
+// inghiottiva QUALUNQUE eccezione lì (un abort per timeout a metà lettura
+// del body, o un vero errore di parsing) e la sostituiva silenziosamente con
+// `{}` — un falso successo HTTP 200 con choices/usage/content assenti,
+// indistinguibile da una risposta genuinamente vuota. Ora la lettura del
+// body ha il proprio try/catch che DISTINGUE le due cause invece di
+// mascherarle:
+// - abort/timeout durante la lettura (err.name 'TimeoutError'/'AbortError')
+//   -> AiTimeoutError, stesso trattamento del timeout sulla fetch stessa
+//   sopra (transitorio, gestito da fetchWithRetry/circuit breaker esistenti);
+// - un vero errore di parsing (body non-JSON/troncato per un motivo diverso
+//   dall'abort) -> AiRouterError esplicito con `.status` valorizzato (mai un
+//   successo silenzioso), status che fetchWithRetry usa già per decidere se
+//   è transitorio (isTransientFailure), esattamente come per un `!res.ok`.
+async function callOpenRouterOnce(
+  apiKey: string,
+  body: Record<string, unknown>,
+  context: { task: AiTaskType; tier: AiModelTier }
+): Promise<OpenRouterCallResult> {
+  const timeoutMs = resolveTimeoutMs(context.tier);
   let res: Response;
   try {
     res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -250,20 +305,44 @@ async function callOpenRouterOnce(apiKey: string, body: Record<string, unknown>)
         'X-Title': 'ShardApps AI Router',
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(AI_ROUTER_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'TimeoutError') {
-      throw new AiTimeoutError(AI_ROUTER_TIMEOUT_MS);
+      throw new AiTimeoutError(timeoutMs);
     }
     throw new AiRouterError(`Errore di rete verso OpenRouter: ${err instanceof Error ? err.message : 'sconosciuto'}`);
   }
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new AiRouterError(data?.error?.message || `Errore OpenRouter (${res.status})`, res.status, data);
+  let data: Record<string, unknown>;
+  try {
+    data = await res.json();
+  } catch (err) {
+    const errorName = err instanceof Error ? err.name : 'UnknownError';
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    // Log diagnostico sicuro (FIX 3): mai messages/prompt/apiKey/Authorization,
+    // solo i metadati necessari a distinguere le due cause a colpo d'occhio.
+    const diagnostic = {
+      task: context.task,
+      tier: context.tier,
+      model: body.model,
+      httpStatus: res.status,
+      errorName,
+      errorMessage,
+    };
+    if (errorName === 'TimeoutError' || errorName === 'AbortError') {
+      console.warn('[ai-router] timeout durante la lettura del body (header già ricevuti, mai più mascherato da {})', diagnostic);
+      throw new AiTimeoutError(timeoutMs);
+    }
+    console.error('[ai-router] errore di parsing del body OpenRouter (mai più mascherato da {})', diagnostic);
+    throw new AiRouterError(`Errore parsing risposta OpenRouter: ${errorMessage}`, res.status);
   }
-  return { data };
+
+  if (!res.ok) {
+    const errorMessage = (data as { error?: { message?: string } } | undefined)?.error?.message;
+    throw new AiRouterError(errorMessage || `Errore OpenRouter (${res.status})`, res.status, data);
+  }
+  return { data, status: res.status };
 }
 
 // Orchestrazione retry: al massimo MAX_RETRIES tentativi extra, solo se
@@ -271,11 +350,15 @@ async function callOpenRouterOnce(apiKey: string, body: Record<string, unknown>)
 // Un errore permanente (400/401/403, JSON parse, ecc.) esce subito al primo
 // fallimento — "NON retryare errori di configurazione/API key/400
 // permanenti", requisito esplicito del task.
-async function fetchWithRetry(apiKey: string, body: Record<string, unknown>): Promise<OpenRouterCallResult> {
+async function fetchWithRetry(
+  apiKey: string,
+  body: Record<string, unknown>,
+  context: { task: AiTaskType; tier: AiModelTier }
+): Promise<OpenRouterCallResult> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await callOpenRouterOnce(apiKey, body);
+      return await callOpenRouterOnce(apiKey, body, context);
     } catch (err) {
       lastErr = err;
       const isTimeout = err instanceof AiTimeoutError;
@@ -409,8 +492,9 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
   if (jsonMode) body.response_format = { type: 'json_object' };
 
   let data: Record<string, unknown>;
+  let httpStatus: number;
   try {
-    ({ data } = await fetchWithRetry(apiKey, body));
+    ({ data, status: httpStatus } = await fetchWithRetry(apiKey, body, { task, tier }));
     recordCircuitSuccess();
   } catch (err) {
     // Solo i fallimenti "del provider" (timeout/rete/5xx/429, già filtrati
@@ -428,7 +512,8 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
     throw new AiRouterError(`Errore imprevisto verso OpenRouter: ${err instanceof Error ? err.message : 'sconosciuto'}`);
   }
 
-  const content: string = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
+  const choices = data.choices as Array<{ message?: { content?: string }; finish_reason?: unknown }> | undefined;
+  const content: string = choices?.[0]?.message?.content || '';
   const rawUsage = (data.usage as Record<string, unknown>) || {};
   const usage: AiRouterUsage = {
     promptTokens: (rawUsage.prompt_tokens as number) ?? 0,
@@ -436,6 +521,27 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
     totalTokens: (rawUsage.total_tokens as number) ?? 0,
     costUsd: typeof rawUsage.cost === 'number' ? rawUsage.cost : null,
   };
+
+  // P0 Generation Reliability (osservabilità, root-cause dimostrata live):
+  // il provider può rispondere 2xx con content vuoto/zero token, senza
+  // alcun errore HTTP — extractJsonFromAiContent lancia solo "Nessun JSON
+  // valido nella risposta del modello", senza contesto su COSA sia
+  // realmente arrivato. Log mirato SOLO qui, mai messages/prompt (possono
+  // contenere dati cliente) né apiKey/Authorization.
+  if (!content || usage.totalTokens === 0) {
+    console.warn('[ai-router] risposta con content vuoto o zero token', {
+      task,
+      tier,
+      model,
+      httpStatus,
+      finishReason: choices?.[0]?.finish_reason ?? null,
+      hasContent: Boolean(content),
+      hasChoices: Array.isArray(data.choices) && data.choices.length > 0,
+      usagePresent: Boolean(data.usage),
+      rawUsage,
+      providerError: (data as { error?: unknown }).error ?? null,
+    });
+  }
 
   // Log strutturato (invariato) + persistenza reale del consumo (Blocco 1):
   // solo se un tenant è stato risolto sopra, stesso principio del budget

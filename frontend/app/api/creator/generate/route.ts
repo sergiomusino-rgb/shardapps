@@ -3,12 +3,12 @@
 // INIEZIONE DEL DESIGN SYSTEM. Non salva nulla: la persistenza avviene solo
 // dopo conferma dell'utente su /api/creator/create (vedi DynamicAppPreview).
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database';
 import { getDesignSystemForSector } from '@/lib/designSystemLoader';
 import { sanitizeBlueprint, normalizeSector } from '@/src/lib/blueprint-schema';
-import { sanitizeSiteBlueprint, ProjectTypeSchema, type ProjectType, type SiteBlueprintJSON } from '@/src/lib/site-schema';
+import { sanitizeSiteBlueprint, ProjectTypeSchema, type ProjectType } from '@/src/lib/site-schema';
 import { callAiRouter, extractJsonFromAiContent, AiRouterError, AiRouterConfigError, AiBudgetExceededError } from '@/src/lib/ai-router';
 import {
   getUserFromToken,
@@ -19,9 +19,21 @@ import { checkRateLimit, getClientIp } from '@/src/lib/rate-limit';
 import { captureError } from '@/src/lib/error-tracking';
 // CreatorAI Engine 2.0, Fase 5 (AI Agent Orchestrator): il ramo "sito/PWA"
 // (projectType) sotto passa dal processo planner->generator->validator->
-// repair persistito in generation_jobs, invece della chiamata diretta di
-// prima — vedi runGenerationOrchestrator per il perché e il contratto.
-import { runGenerationOrchestrator } from '@/src/lib/creator-ai-orchestrator';
+// repair persistito in generation_jobs — runGenerationPipeline per il
+// perché/contratto (P0-1, root-cause report "async generation / client-
+// server lifecycle mismatch": il job viene ora creato SINCRONAMENTE qui
+// sotto, per rispondere subito con jobId, e la pipeline continua dentro
+// after() — runGenerationPipeline è la stessa logica di sempre, solo
+// estratta da runGenerationOrchestrator perché il chiamante possa creare il
+// job prima di avviarla, invece di lasciarla creare un job al suo interno).
+import { runGenerationPipeline } from '@/src/lib/creator-ai-orchestrator';
+import {
+  createGenerationJob,
+  updateGenerationJob,
+  computePromptFingerprint,
+  findRecentEquivalentJob,
+  type GenerationJobRow,
+} from '@/src/lib/creator-generation-jobs';
 // callSiteSchemaGenerator/fillBusinessConfigDefaults/ensureGestionaleHasPages:
 // stesso codice di prima, solo spostato in un modulo dedicato (Fase 5) perché
 // l'orchestrator possa riusarli senza duplicarli — vedi creator-site-generator.ts.
@@ -30,6 +42,20 @@ import {
   fillBusinessConfigDefaults,
   ensureGestionaleHasPages,
 } from '@/src/lib/creator-site-generator';
+
+// P0-3 (root-cause report): NON aumenta il timeout AI per singola chiamata
+// (AI_ROUTER_TIMEOUT_MS resta 30000, invariato in ai-router.ts) né i retry
+// (MAX_RETRIES/MAX_REPAIR_RETRIES invariati) — imposta solo il tetto di
+// durata della funzione serverless così la pipeline in background (after())
+// non venga troncata a metà da un default di piattaforma mai configurato
+// esplicitamente, lasciando un job bloccato in uno stato non terminale.
+// Margine ampio sopra il caso peggiore teorico invariato (planner + generator
+// + fino a 2 repair, ciascuno fino a 2 tentativi da 30s, + l'eventuale
+// generator del fallback): ordine di grandezza qualche minuto, vedi lo
+// stesso calcolo in IDEMPOTENCY_WINDOW_MS (creator-generation-jobs.ts).
+// Il ceiling REALE dipende dal piano Vercel — da verificare live, vedi
+// report finale.
+export const maxDuration = 300;
 
 // Duplicato intenzionalmente da src/lib/LanguageContext.tsx (SUPPORTED_LOCALES):
 // quel modulo è 'use client' e importarlo da una route API server-side
@@ -116,6 +142,83 @@ Non aggiungere testo prima o dopo il JSON.`;
 }
 
 
+// ─── P0-1 (async generation): esegue la pipeline reale su un job GIA'
+// creato e persiste il risultato finale — chiamata da dentro after() (la
+// risposta HTTP con jobId è già stata inviata al client). Stessa strategia
+// di fallback già esistente (Fase 5 punto 7): se l'orchestrator stesso
+// fallisce (errore infrastrutturale, non di validazione), si ricade sulla
+// generazione diretta — qui il risultato finisce comunque nello STESSO job,
+// mai una risposta invisibile al polling. Ogni ramo termina SEMPRE il job in
+// 'ready' o 'failed' (P0-3: mai uno stato intermedio indefinito per un
+// errore imprevisto qui) — se anche l'ultimo update di bookkeeping fallisse,
+// il job resta comunque nello stato che il proprio catch interno di
+// runGenerationPipeline gli ha già assegnato prima di rilanciare.
+async function finalizeGenerationJob(params: {
+  supabase: ReturnType<typeof createClient<Database>>;
+  job: GenerationJobRow;
+  tenantId: string;
+  userId: string;
+  userPrompt: string;
+  projectType: ProjectType;
+  lang: string;
+  generate: (promptWithContext: string) => Promise<unknown>;
+  postProcess: (raw: unknown) => unknown;
+}): Promise<void> {
+  const { supabase, job, tenantId, userId, userPrompt, projectType, lang, generate, postProcess } = params;
+
+  try {
+    const result = await runGenerationPipeline(
+      { supabase, tenantId, userId, appId: null, userPrompt, projectType, lang, generate, postProcessRawSchema: postProcess },
+      job
+    );
+
+    if (result.status === 'ready' && result.schema) {
+      const blueprint = fillBusinessConfigDefaults(result.schema, lang);
+      await updateGenerationJob(supabase, result.job.id, { result_schema: blueprint });
+    }
+    // status === 'failed': runGenerationPipeline ha già persistito
+    // error/status, nulla altro da fare qui.
+  } catch (orchestratorErr) {
+    // ─── Fallback legacy (Fase 5 punto 7), stesso comportamento di prima,
+    // ora persistito sullo STESSO job invece che restituito direttamente
+    // nella risposta HTTP (che a questo punto è già stata inviata). ───────
+    captureError('creator.generate.orchestrator_fallback', orchestratorErr, { projectType, tenantId, userId });
+    try {
+      const rawSchema = postProcess(await generate(userPrompt));
+      const sanitized = sanitizeSiteBlueprint(rawSchema);
+      if (!sanitized) {
+        await updateGenerationJob(supabase, job.id, {
+          status: 'failed',
+          current_step: 'failed',
+          error: 'Lo schema generato non è valido, riprova con un prompt più specifico',
+          fallback_used: true,
+        }).catch(() => {});
+        return;
+      }
+      const blueprint = fillBusinessConfigDefaults(sanitized, lang);
+      await updateGenerationJob(supabase, job.id, {
+        status: 'ready',
+        current_step: 'ready:fallback',
+        result_schema: blueprint,
+        fallback_used: true,
+        error: null,
+      }).catch(() => {});
+    } catch (fallbackErr) {
+      captureError('creator.generate', fallbackErr, { projectType, tenantId, userId });
+      let message = fallbackErr instanceof Error ? fallbackErr.message : 'Errore interno del server';
+      if (fallbackErr instanceof AiRouterConfigError) message = 'Servizio AI non configurato correttamente. Contatta il supporto.';
+      else if (fallbackErr instanceof AiBudgetExceededError) message = fallbackErr.message;
+      else if (fallbackErr instanceof AiRouterError) message = fallbackErr.message;
+      await updateGenerationJob(supabase, job.id, {
+        status: 'failed',
+        current_step: 'failed',
+        error: message,
+        fallback_used: true,
+      }).catch(() => {});
+    }
+  }
+}
+
 // ─── POST /api/creator/generate ───────────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
@@ -183,82 +286,94 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: reason || 'Errore controllo limite app', code: 'SLOTS_CHECK_ERROR' }, { status: 500 });
       }
 
-      // ─── Fase 5: AI Agent Orchestrator ─────────────────────────────────
-      // PLANNING -> GENERATION -> VALIDATION -> REPAIR (se necessario) ->
-      // READY, persistito in generation_jobs. Il Generator reale resta
-      // callSiteSchemaGenerator (iniettato, mai duplicato) — vedi
-      // creator-ai-orchestrator.ts. Contratto HTTP INVARIATO: il frontend
-      // (dashboard/creator/page.tsx) continua a ricevere
-      // { success, data: { schema } } esattamente come prima; `jobId` è
-      // un campo aggiuntivo, ignorato dal consumer attuale.
+      // ─── P0-2 (idempotenza) ─────────────────────────────────────────────
+      // Un secondo POST con lo stesso tenant+utente+projectType+lang+prompt
+      // (tipicamente l'utente che ritenta dopo un falso "errore di
+      // connessione", vedi root-cause report) NON deve creare un secondo job
+      // né una seconda app: se un job equivalente esiste già ed è ancora in
+      // corso o è già pronto, lo si riusa. Un job FALLITO non blocca un
+      // nuovo tentativo esplicito (requisito Fase 6C del task).
+      const promptFingerprint = computePromptFingerprint({ tenantId, createdBy: user.id, projectType, lang, userPrompt });
+      let existingJob: GenerationJobRow | null = null;
+      try {
+        existingJob = await findRecentEquivalentJob(supabase, { tenantId, createdBy: user.id, promptFingerprint });
+      } catch (err) {
+        // Fail-open (stesso principio del budget check in ai-router.ts): un
+        // problema nostro nella query di idempotenza non deve mai impedire
+        // una generazione altrimenti legittima.
+        captureError('creator.generate.idempotency_check_failed', err, { tenantId, userId: user.id });
+      }
+
+      if (existingJob && existingJob.status === 'ready') {
+        return NextResponse.json({
+          success: true,
+          data: { schema: existingJob.result_schema },
+          jobId: existingJob.id,
+          status: 'ready',
+          fallbackUsed: existingJob.fallback_used,
+          deduped: true,
+        });
+      }
+      if (existingJob && existingJob.status !== 'failed') {
+        // planning/generating/validating/repairing: già in corso, stesso job.
+        return NextResponse.json({
+          success: true,
+          jobId: existingJob.id,
+          status: existingJob.status,
+          current_step: existingJob.current_step,
+          deduped: true,
+        }, { status: 202 });
+      }
+
+      // ─── P0-1 (generazione asincrona) ───────────────────────────────────
+      // Il job viene creato QUI, sincronamente (un semplice insert, non una
+      // chiamata AI) — la risposta HTTP parte subito con jobId, la pipeline
+      // reale (Planner->Generator->Validator->Repair, invariata — vedi
+      // runGenerationPipeline in creator-ai-orchestrator.ts) continua dentro
+      // after() (next/server), che estende l'esecuzione della funzione
+      // serverless oltre l'invio della risposta senza tenere la connessione
+      // del client aperta. La UI fa polling su GET /api/creator/generate/
+      // status/[jobId] (vedi quella route) finché status non è ready/failed.
+      let job: GenerationJobRow;
+      try {
+        job = await createGenerationJob(supabase, {
+          tenantId, appId: null, createdBy: user.id, userPrompt,
+          context: { projectType, lang }, promptFingerprint,
+        });
+      } catch (err) {
+        captureError('creator.generate.job_create_failed', err, { projectType, tenantId, userId: user.id });
+        return NextResponse.json({ success: false, error: 'Errore interno del server', code: 'INTERNAL_ERROR' }, { status: 500 });
+      }
+
       const generatorFn = (promptWithContext: string) =>
         callSiteSchemaGenerator(promptWithContext, projectType, lang, { userId: user.id, tenantId });
       const postProcess = (raw: unknown) => ensureGestionaleHasPages(raw, projectType);
 
-      let orchestratorResult;
-      let usedFallback = false;
+      const runToCompletion = () => finalizeGenerationJob({
+        supabase, job, tenantId, userId: user.id, userPrompt, projectType, lang,
+        generate: generatorFn, postProcess,
+      });
+
       try {
-        orchestratorResult = await runGenerationOrchestrator({
-          supabase, tenantId, userId: user.id, appId: null,
-          userPrompt, projectType, lang,
-          generate: generatorFn,
-          postProcessRawSchema: postProcess,
-        });
-      } catch (orchestratorErr) {
-        // Requisito Fase 5, punto 7 — fallback esplicito e registrato: se
-        // l'orchestrator stesso (bookkeeping del job, planner, validator)
-        // fallisce per una ragione indipendente dal contenuto AI, non deve
-        // rompere il flusso CreatorAI esistente — si ricade sulla strategia
-        // "diretta" pre-Fase 5 (stesso identico comportamento del codice
-        // rimosso qui sopra), MAI silenziosa: loggata via captureError e
-        // segnalata con `fallbackUsed:true` nella risposta.
-        captureError('creator.generate.orchestrator_fallback', orchestratorErr, { projectType, tenantId, userId: user.id });
-        usedFallback = true;
-        try {
-          const rawSchema = postProcess(await generatorFn(userPrompt));
-          const sanitized = sanitizeSiteBlueprint(rawSchema);
-          if (!sanitized) {
-            return NextResponse.json({
-              success: false,
-              error: 'Lo schema generato non è valido, riprova con un prompt più specifico',
-              code: 'INVALID_SCHEMA',
-            }, { status: 500 });
-          }
-          const blueprint = fillBusinessConfigDefaults(sanitized, lang);
-          return NextResponse.json({ success: true, data: { schema: blueprint }, fallbackUsed: true });
-        } catch (fallbackErr) {
-          captureError('creator.generate', fallbackErr, { projectType, tenantId, userId: user.id });
-          if (fallbackErr instanceof AiRouterConfigError) {
-            return NextResponse.json({ success: false, error: 'Servizio AI non configurato correttamente. Contatta il supporto.', code: 'AI_CONFIG_ERROR' }, { status: 500 });
-          }
-          if (fallbackErr instanceof AiBudgetExceededError) {
-            return NextResponse.json({ success: false, error: fallbackErr.message, code: 'AI_BUDGET_EXCEEDED' }, { status: 429 });
-          }
-          if (fallbackErr instanceof AiRouterError) {
-            return NextResponse.json({ success: false, error: fallbackErr.message, code: 'AI_PROVIDER_ERROR' }, { status: 502 });
-          }
-          return NextResponse.json({ success: false, error: fallbackErr instanceof Error ? fallbackErr.message : 'Errore interno del server', code: 'INTERNAL_ERROR' }, { status: 500 });
-        }
+        // In produzione (Next.js su Vercel, dentro una vera richiesta HTTP)
+        // schedula il lavoro DOPO l'invio della risposta — vedi doc after().
+        after(runToCompletion);
+      } catch {
+        // after() lancia sincronamente fuori da uno "scope di richiesta"
+        // reale (es. i test che chiamano l'handler direttamente, senza
+        // passare dal dispatcher di Next.js — vedi route.test.ts). Nessuna
+        // finestra silenziosa: si esegue comunque la pipeline PRIMA di
+        // rispondere, degradando semplicemente al comportamento sincrono di
+        // sempre per quella singola chiamata, invece di perdere il lavoro.
+        await runToCompletion();
       }
 
-      if (usedFallback) {
-        // Già risposto dentro il blocco catch sopra — ramo irraggiungibile,
-        // solo per soddisfare l'analisi di flow di TypeScript su
-        // orchestratorResult sotto (assegnato solo nel percorso try riuscito).
-        return NextResponse.json({ success: false, error: 'Errore interno del server', code: 'INTERNAL_ERROR' }, { status: 500 });
-      }
-
-      if (orchestratorResult.status === 'failed') {
-        return NextResponse.json({
-          success: false,
-          error: orchestratorResult.error || 'Lo schema generato non è valido, riprova con un prompt più specifico',
-          code: 'INVALID_SCHEMA',
-          jobId: orchestratorResult.job.id,
-        }, { status: 500 });
-      }
-
-      const blueprint = fillBusinessConfigDefaults(orchestratorResult.schema!, lang);
-      return NextResponse.json({ success: true, data: { schema: blueprint }, jobId: orchestratorResult.job.id });
+      return NextResponse.json({
+        success: true,
+        jobId: job.id,
+        status: job.status,
+        current_step: job.current_step,
+      }, { status: 202 });
     }
 
     // Validazione input

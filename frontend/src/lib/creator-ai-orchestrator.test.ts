@@ -320,8 +320,22 @@ test('Orchestrator: un Planner che fallisce non blocca la generazione (best-effo
 // ═══════════════════════════════════════════════════════════════════════════
 // FALLBACK (requisito Fase 5, punto 7): esplicito e registrato nel job
 // ═══════════════════════════════════════════════════════════════════════════
-
-test('fallback: se il Generator iniettato fallisce, il job persistito viene marcato failed+fallback_used PRIMA che l\'errore risalga al chiamante', async () => {
+//
+// P0 Generation Reliability (root-cause dimostrata live — vedi report):
+// il job NON viene più marcato 'failed' (terminale) qui — route.ts tenta
+// SEMPRE un fallback subito dopo aver ricevuto l'errore rilanciato, e un
+// client in polling smette di osservare il job non appena vede
+// status='failed'. Se lo status fosse già 'failed' durante il tentativo di
+// fallback, un fallback che POI riesce a produrre uno schema valido
+// resterebbe invisibile al client — esattamente il bug dimostrato in
+// produzione. Il job resta quindi 'generating' (stesso status non-terminale
+// già usato per l'attesa del Generator principale, nessuna modifica lato
+// client necessaria), con l'errore del tentativo fallito registrato in
+// artifacts (stesso pattern di plannerError/repairError_attemptN sopra) —
+// route.ts::finalizeGenerationJob decide poi lo stato REALMENTE terminale
+// (ready o failed) in base all'esito del fallback (vedi generate/route.test.ts
+// per quella parte, che vive fuori da questo modulo).
+test('fallback: se il Generator iniettato fallisce, il job resta NON terminale (generating/fallback_in_progress) con l\'errore in artifacts, mai "failed" a questo punto', async () => {
   const supabase = freshSupabase();
 
   let thrown: (Error & { generationJobId?: string }) | undefined;
@@ -349,9 +363,16 @@ test('fallback: se il Generator iniettato fallisce, il job persistito viene marc
 
   const job = await getGenerationJobForTenant(supabase, thrown!.generationJobId!, 'tenant-1');
   assert.ok(job);
-  assert.equal(job?.status, 'failed');
+  // NON terminale: un client in polling deve continuare a osservare questo
+  // job mentre route.ts tenta il fallback, invece di fermarsi su un
+  // "failed" prematuro.
+  assert.equal(job?.status, 'generating');
+  assert.equal(job?.current_step, 'fallback_in_progress');
   assert.equal(job?.fallback_used, true);
-  assert.equal(job?.error, 'errore AI provider');
+  // L'errore del tentativo fallito è tracciato per osservabilità, ma NON
+  // nel campo top-level `error` (riservato allo stato realmente finale).
+  assert.equal(job?.error, null);
+  assert.equal(job?.artifacts.generatorError, 'errore AI provider');
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

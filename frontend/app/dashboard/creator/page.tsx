@@ -27,6 +27,52 @@ import { sanitizeSiteBlueprint, promptSuggestsStateButMissing } from '@/src/lib/
 import type { ProjectType } from '@/src/lib/site-schema';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 
+// P0-1/P0-6 (async generation + client recovery): chiave sessionStorage per
+// il jobId di una generazione in corso — sopravvive a un reload della pagina
+// nella stessa tab, non oltre (nessun bisogno di localStorage/persistenza
+// più a lungo: un job termina sempre entro pochi minuti, vedi P0-3).
+const PENDING_JOB_STORAGE_KEY = 'creatorai:pendingGenerationJobId';
+
+// Messaggi reali per passo (requisito UX del task, "non è necessario
+// introdurre una UI complessa" — solo testo, nessun componente nuovo).
+const GENERATION_STEP_LABELS: Record<string, string> = {
+  planning: 'Analisi della struttura…',
+  generating: 'Generazione dell\'app…',
+  validating: 'Validazione…',
+  repairing: 'Finalizzazione…',
+};
+
+function stepLabelFor(status: string | null | undefined): string {
+  if (status && GENERATION_STEP_LABELS[status]) return GENERATION_STEP_LABELS[status];
+  return 'Creazione app in corso…';
+}
+
+// Intervallo di polling — un compromesso tra reattività percepita e numero
+// di richieste per una pipeline che dura tipicamente decine di secondi.
+// Validazione live V4 (preview zeusx-zwu8): un intervallo di 3s saturava un
+// rate-limit lato Edge/proxy Vercel dopo ~4 poll consecutivi (429 mai
+// arrivati al runtime dell'app, quindi non gestibili lato route — solo
+// riducendo la frequenza lato client). Backoff a scalino invece che una
+// vera progressione esponenziale: sufficiente a restare sotto la soglia
+// osservata senza introdurre latenza percepita eccessiva su generazioni
+// brevi.
+const BASE_POLL_INTERVAL_MS = 5000;
+const BACKOFF_POLL_INTERVAL_MS = 8000;
+const BACKOFF_AFTER_ATTEMPTS = 5;
+// Un 429 è per costruzione un problema di frequenza, non del job — mai
+// farlo contare come un errore fatale (MAX_CONSECUTIVE_POLL_ERRORS sotto),
+// solo un'attesa più lunga prima del prossimo tentativo.
+const RATE_LIMIT_BACKOFF_MS = 10000;
+
+function nextPollIntervalMs(attempt: number): number {
+  return attempt > BACKOFF_AFTER_ATTEMPTS ? BACKOFF_POLL_INTERVAL_MS : BASE_POLL_INTERVAL_MS;
+}
+
+// Interruzioni di rete transitorie durante il polling (non del job stesso)
+// non devono far fallire l'intera generazione al primo blip — solo dopo
+// diversi tentativi consecutivi falliti si mostra un errore reale.
+const MAX_CONSECUTIVE_POLL_ERRORS = 5;
+
 export default function CreatorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -37,6 +83,11 @@ export default function CreatorPage() {
   // Product Readiness Audit (P2 — qualità percepita): avviso non bloccante,
   // mai un blocco della generazione — vedi promptSuggestsStateButMissing.
   const [stateWarning, setStateWarning] = useState<string | null>(null);
+  // P0-1 (async generation): messaggio reale sul passo corrente, mostrato al
+  // posto del generico "Generazione in corso…" di ProjectWizard (labels
+  // override, nessuna modifica al componente) mentre si fa polling di
+  // GET /api/creator/generate/status/[jobId].
+  const [generationStep, setGenerationStep] = useState<string | null>(null);
 
   // ─── Editor re-entry (FASE 3) ────────────────────────────────────────────
   // /dashboard/creator?appId=<id> — riapertura di un'app già pubblicata dalla
@@ -211,10 +262,136 @@ export default function CreatorPage() {
     }
   };
 
+  // ─── P0-1 (async generation) ──────────────────────────────────────────
+  // Applica il risultato di un job 'ready' allo stato dell'editor — stessa
+  // logica che prima viveva inline in handleGenerate quando la risposta
+  // arrivava sincrona, ora condivisa fra il percorso "generazione appena
+  // avviata" e "job recuperato dopo un reload" (P0-6).
+  const applyReadySchema = (readySchema: SiteBlueprintJSON, prompt?: string) => {
+    setSchema(readySchema);
+    if (prompt && promptSuggestsStateButMissing(prompt, readySchema)) {
+      setStateWarning('La tua descrizione sembra menzionare uno stato/workflow, ma lo schema generato non include un campo di questo tipo. Puoi chiederlo di nuovo al Copilot qui a destra (es. "aggiungi un campo di stato con i valori...").');
+    }
+  };
+
+  // Polling di GET /api/creator/generate/status/[jobId] finché lo status non
+  // è 'ready' o 'failed' (requisito esplicito: MAI mostrare "generation
+  // failed" per un job ancora planning/generating/validating/repairing —
+  // root-cause report, "async generation / client-server lifecycle
+  // mismatch"). `prompt` è opzionale: assente quando il job viene recuperato
+  // dopo un reload (P0-6), nel qual caso si salta solo l'euristica non
+  // bloccante di promptSuggestsStateButMissing.
+  const pollGenerationJob = async (jobId: string, prompt?: string) => {
+    let consecutiveErrors = 0;
+    let attempt = 0;
+
+    const tick = async (): Promise<void> => {
+      attempt += 1;
+      try {
+        const { data: { session } } = await supabaseBrowser.auth.getSession();
+        if (!session?.access_token) {
+          sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
+          setIsGenerating(false);
+          setGenerationStep(null);
+          alert('Devi effettuare il login per continuare');
+          router.push('/login');
+          return;
+        }
+
+        const res = await fetch(`/api/creator/generate/status/${jobId}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+
+        if (res.status === 429) {
+          // Rate-limit lato Edge/proxy Vercel, non un errore del job (la
+          // richiesta non arriva nemmeno al runtime dell'app — vedi
+          // validazione live V4): mai farlo contare come tentativo fatale,
+          // solo un'attesa più lunga prima del prossimo poll.
+          console.warn('[creator] poll rate-limited (429), backoff prima del prossimo tentativo');
+          setTimeout(tick, RATE_LIMIT_BACKOFF_MS);
+          return;
+        }
+
+        const data = await res.json();
+        consecutiveErrors = 0;
+
+        if (!res.ok || !data.success) {
+          // 404 (job non trovato/non proprio) è terminale, non transitorio.
+          if (res.status === 404) {
+            sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
+            setError(data.error || 'Generazione non trovata.');
+            setIsGenerating(false);
+            setGenerationStep(null);
+            return;
+          }
+          throw new Error(data.error || `status ${res.status}`);
+        }
+
+        if (data.status === 'ready') {
+          sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
+          setGenerationStep(null);
+          setIsGenerating(false);
+          if (data.data?.schema) applyReadySchema(data.data.schema, prompt);
+          else setError('La generazione è terminata senza uno schema valido. Riprova.');
+          return;
+        }
+        if (data.status === 'failed') {
+          sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
+          setGenerationStep(null);
+          setIsGenerating(false);
+          setError(data.error || 'Errore sconosciuto durante la generazione');
+          return;
+        }
+
+        // planning/generating/validating/repairing: ancora in corso, MAI un
+        // errore mostrato qui — solo il messaggio di passo aggiornato.
+        setGenerationStep(stepLabelFor(data.status));
+        setTimeout(tick, nextPollIntervalMs(attempt));
+      } catch (err) {
+        consecutiveErrors += 1;
+        console.error('[creator] poll error:', err);
+        if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
+          setError('Errore di connessione durante il controllo della generazione. Riprova più tardi — se la generazione era già in corso potrebbe comunque completarsi: controlla tra qualche minuto prima di riprovare.');
+          setIsGenerating(false);
+          setGenerationStep(null);
+          return;
+        }
+        setTimeout(tick, nextPollIntervalMs(attempt));
+      }
+    };
+
+    await tick();
+  };
+
+  // ─── P0-6 (client recovery dopo disconnessione) ──────────────────────────
+  // Se il browser perde la connessione/ricarica la pagina mentre un job è
+  // ancora in corso, al rientro su questa pagina si riprende il polling
+  // dello STESSO job invece di lasciare l'utente senza feedback (o peggio,
+  // permettergli di avviarne uno nuovo credendo che il precedente sia
+  // perso — vedi P0-2, idempotenza, che comunque lo eviterebbe lato server,
+  // ma qui l'obiettivo è UX: recuperare lo stato reale). Meccanismo più
+  // semplice compatibile col resto del codice: sessionStorage, nessuna
+  // libreria nuova. Effetto posizionato DOPO pollGenerationJob (dichiarata
+  // sopra) — stesso vincolo di ordine di dichiarazione già rispettato
+  // altrove in questo file; il corpo async è racchiuso in una IIFE, stesso
+  // pattern dell'effetto di re-entry "?appId=" più in alto.
+  useEffect(() => {
+    const pendingJobId = sessionStorage.getItem(PENDING_JOB_STORAGE_KEY);
+    if (!pendingJobId) return;
+    (async () => {
+      setIsGenerating(true);
+      setError(null);
+      setGenerationStep('Recupero della generazione in corso…');
+      await pollGenerationJob(pendingJobId);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleGenerate = async (projectType: ProjectType, prompt: string) => {
     setIsGenerating(true);
     setError(null);
     setStateWarning(null);
+    setGenerationStep('Creazione app in corso…');
 
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
@@ -235,10 +412,20 @@ export default function CreatorPage() {
       const data = await response.json();
 
       if (data.success && data.data?.schema) {
-        setSchema(data.data.schema);
-        if (promptSuggestsStateButMissing(prompt, data.data.schema)) {
-          setStateWarning('La tua descrizione sembra menzionare uno stato/workflow, ma lo schema generato non include un campo di questo tipo. Puoi chiederlo di nuovo al Copilot qui a destra (es. "aggiungi un campo di stato con i valori...").');
-        }
+        // Risposta immediata con schema già pronto: ramo legacy sector-based
+        // (invariato), o un job idempotente già 'ready' (P0-2, deduped:true).
+        setGenerationStep(null);
+        setIsGenerating(false);
+        applyReadySchema(data.data.schema, prompt);
+      } else if (data.success && data.jobId) {
+        // P0-1: generazione asincrona avviata (o già in corso, deduped) —
+        // la connessione HTTP di /generate è già chiusa, si fa polling dello
+        // stato reale invece di aspettare qui. P0-6: jobId persistito così
+        // un reload della pagina può recuperarlo.
+        sessionStorage.setItem(PENDING_JOB_STORAGE_KEY, data.jobId);
+        setGenerationStep(stepLabelFor(data.status));
+        await pollGenerationJob(data.jobId, prompt);
+        return; // pollGenerationJob gestisce già isGenerating/generationStep
       } else if (data.code === 'SLOTS_EXHAUSTED') {
         alert(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
         router.push(data.redirectTo || '/pricing');
@@ -249,7 +436,12 @@ export default function CreatorPage() {
       console.error('[creator] generate error:', err);
       setError('Errore di connessione. Riprova più tardi.');
     } finally {
-      setIsGenerating(false);
+      // pollGenerationJob (ramo asincrono) gestisce da sé isGenerating: se
+      // questo finally lo resettasse comunque, un polling ancora in corso
+      // lascerebbe la UI in uno stato incoerente (bottone di nuovo attivo
+      // mentre il job procede). setIsGenerating(false) qui è quindi corretto
+      // SOLO per i rami sincroni sopra (return anticipato nel ramo async).
+      setIsGenerating((prev) => (sessionStorage.getItem(PENDING_JOB_STORAGE_KEY) ? prev : false));
     }
   };
 
@@ -392,7 +584,15 @@ export default function CreatorPage() {
             {brandingError && <p className="mt-2 text-xs text-red-400">{brandingError}</p>}
           </div>
 
-          <ProjectWizard onGenerate={handleGenerate} isGenerating={isGenerating} lang={locale} />
+          <ProjectWizard
+            onGenerate={handleGenerate}
+            isGenerating={isGenerating}
+            lang={locale}
+            // P0-1: messaggio di passo reale al posto del generico
+            // "Generazione in corso…" — nessuna modifica a ProjectWizard,
+            // usa l'override labels già esistente.
+            labels={generationStep ? { generatingButton: generationStep } : undefined}
+          />
         </div>
       ) : (
         <div className="h-[calc(100vh-180px)] min-h-[560px]">

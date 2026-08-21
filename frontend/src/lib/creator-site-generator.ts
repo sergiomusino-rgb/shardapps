@@ -265,6 +265,12 @@ PROMEMORIA FINALE (il più importante, non ignorarlo): PRIMA di scrivere il JSON
 
   const { content } = await callAiRouter({
     task: 'app-generation',
+    // P0 Generation Reliability (root-cause dimostrata live): senza
+    // jsonMode il provider a volte risponde con content vuoto/zero token
+    // (nessun errore HTTP, quindi mai ritentato da fetchWithRetry) — lo
+    // stesso trattamento già usato da runPlanner (creator-ai-orchestrator.ts)
+    // per lo stesso motivo, mai stato applicato qui.
+    jsonMode: true,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },

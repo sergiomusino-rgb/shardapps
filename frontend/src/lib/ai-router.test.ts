@@ -17,6 +17,12 @@ import { makeFakeSupabase } from './test-helpers/fake-supabase.ts';
 
 process.env.OPENROUTER_API_KEY = 'test-key';
 process.env.AI_ROUTER_TIMEOUT_MS = '50';
+// P0 Generation Reliability — FIX DEFINITIVO: timeout differenziato per tier
+// (vedi ai-router.ts::resolveTimeoutMs). Valore deliberatamente DIVERSO da
+// AI_ROUTER_TIMEOUT_MS sopra, cosi' i test sulla selezione fast/advanced
+// (sotto) falliscono se qualcuno torna a condividere un unico timeout tra i
+// due tier — esattamente la root-cause del bug originale.
+process.env.AI_ROUTER_ADVANCED_TIMEOUT_MS = '80';
 process.env.AI_ROUTER_RETRY_BACKOFF_MS = '5';
 process.env.AI_CIRCUIT_BREAKER_THRESHOLD = '3';
 process.env.AI_CIRCUIT_BREAKER_COOLDOWN_MS = '200';
@@ -28,6 +34,7 @@ const {
   AiTimeoutError,
   AiRouterError,
   __resetAiRouterCircuitBreakerForTests,
+  __resolveAiRouterTimeoutMsForTests,
 } = await import('./ai-router.ts');
 
 beforeEach(() => {
@@ -133,6 +140,182 @@ test('secondo fallimento consecutivo -> errore finale (mai un terzo tentativo, m
   } finally {
     restoreFetch();
   }
+});
+
+// ─── Osservabilità: content vuoto / zero token (P0 Generation Reliability, FIX 3) ──
+// Root-cause dimostrata live: il provider può rispondere 2xx con
+// choices[0].message.content vuoto e usage.total_tokens=0 — nessun errore
+// HTTP, quindi mai intercettato da isTransientFailure/retry. Prima di questo
+// fix, l'unica traccia era l'eccezione generica di extractJsonFromAiContent
+// più a valle, senza alcun contesto su COSA fosse arrivato dal provider.
+
+function emptyContentResponse(overrides: Record<string, unknown> = {}): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: '' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      ...overrides,
+    }),
+  } as unknown as Response;
+}
+
+test('content vuoto/zero token: callAiRouter NON lancia (non è un errore HTTP) — il content vuoto risale al chiamante invariato', async () => {
+  installFetchSequence([() => emptyContentResponse()]);
+  try {
+    const result = await callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'genera' }] });
+    assert.equal(result.content, '');
+    assert.equal(result.usage.totalTokens, 0);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('content vuoto/zero token: viene loggato un warning diagnostico con task/tier/model/finishReason/usage, MAI messages/apiKey', async (t) => {
+  installFetchSequence([() => emptyContentResponse()]);
+  const warnMock = t.mock.method(console, 'warn');
+  try {
+    await callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'dati cliente sensibili qui' }] });
+
+    const diagnosticCall = warnMock.mock.calls.find((c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('content vuoto o zero token'));
+    assert.ok(diagnosticCall, 'atteso un console.warn diagnostico per content vuoto/zero token');
+    const payload = diagnosticCall.arguments[1] as Record<string, unknown>;
+    assert.equal(payload.task, 'app-generation');
+    assert.equal(payload.tier, 'advanced');
+    assert.equal(payload.hasContent, false);
+    assert.equal(payload.finishReason, 'stop');
+    assert.equal(payload.usagePresent, true);
+    assert.equal(payload.httpStatus, 200);
+
+    // Nessun dato sensibile nel payload loggato: né il prompt utente, né
+    // l'API key/Authorization (mai passati a questo punto del codice).
+    const serialized = JSON.stringify(payload);
+    assert.ok(!serialized.includes('dati cliente sensibili'), 'il prompt utente non deve mai comparire nel log diagnostico');
+    assert.ok(!('apiKey' in payload) && !('authorization' in payload) && !('Authorization' in payload));
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('content presente/token>0: NESSUN warning diagnostico (solo il path del content vuoto lo produce)', async (t) => {
+  installFetchSequence([() => okResponse()]);
+  const warnMock = t.mock.method(console, 'warn');
+  try {
+    await callAiRouter({ task: 'chat', messages: [{ role: 'user', content: 'ciao' }] });
+    const diagnosticCall = warnMock.mock.calls.find((c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('content vuoto o zero token'));
+    assert.equal(diagnosticCall, undefined);
+  } finally {
+    restoreFetch();
+  }
+});
+
+// ─── FIX DEFINITIVO: res.json() non inghiotte più abort/timeout/parse error ──
+// Root-cause report: `res.json().catch(() => ({}))` trasformava QUALUNQUE
+// eccezione nella lettura del body (timeout a metà lettura, dopo header 200
+// già ricevuti, o un vero errore di parsing) in un falso successo `{}` —
+// choices/usage/content assenti, indistinguibile da una risposta
+// genuinamente vuota. Questi test simulano un Response con `ok:true` il cui
+// `.json()` lancia, esattamente il caso non coperto dai test "content
+// vuoto" sopra (lì `.json()` risolve regolarmente con un oggetto vuoto).
+
+function timeoutNamedError(): Error {
+  const e = new Error('The operation was aborted due to timeout');
+  e.name = 'TimeoutError';
+  return e;
+}
+
+function abortNamedError(): Error {
+  const e = new Error('The operation was aborted.');
+  e.name = 'AbortError';
+  return e;
+}
+
+function bodyReadThrowsResponse(err: Error): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => { throw err; },
+  } as unknown as Response;
+}
+
+// TEST A
+test('FIX definitivo: res.json() che lancia TimeoutError (header 200 già ricevuti) -> AiTimeoutError, MAI un successo silenzioso ({})', async () => {
+  const tracker = installFetchSequence([
+    () => bodyReadThrowsResponse(timeoutNamedError()),
+    () => bodyReadThrowsResponse(timeoutNamedError()),
+  ]);
+  try {
+    await assert.rejects(
+      () => callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'genera' }] }),
+      (err: unknown) => err instanceof AiTimeoutError
+    );
+    assert.equal(tracker.callCount(), 2, 'timeout durante la lettura del body è transitorio: un tentativo + un retry, come un timeout sulla fetch stessa');
+  } finally {
+    restoreFetch();
+  }
+});
+
+// TEST A (variante AbortError, stesso trattamento di TimeoutError)
+test('FIX definitivo: res.json() che lancia AbortError -> AiTimeoutError, stesso trattamento di TimeoutError', async () => {
+  const tracker = installFetchSequence([
+    () => bodyReadThrowsResponse(abortNamedError()),
+    () => bodyReadThrowsResponse(abortNamedError()),
+  ]);
+  try {
+    await assert.rejects(
+      () => callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'genera' }] }),
+      (err: unknown) => err instanceof AiTimeoutError
+    );
+    assert.equal(tracker.callCount(), 2);
+  } finally {
+    restoreFetch();
+  }
+});
+
+// TEST B
+test('FIX definitivo: res.json() che lancia SyntaxError (body non-JSON/troncato, non un abort) -> AiRouterError esplicito, MAI un successo silenzioso ({})', async () => {
+  const tracker = installFetchSequence([
+    () => bodyReadThrowsResponse(new SyntaxError('Unexpected token < in JSON at position 0')),
+  ]);
+  try {
+    await assert.rejects(
+      () => callAiRouter({ task: 'chat', messages: [{ role: 'user', content: 'ciao' }] }),
+      (err: unknown) => err instanceof AiRouterError && !(err instanceof AiTimeoutError) && /Errore parsing risposta OpenRouter/.test((err as Error).message)
+    );
+    assert.equal(tracker.callCount(), 1, 'un errore di parsing con status 200 non è transitorio (isTransientFailure) -> nessun retry, mai un {} silenzioso');
+  } finally {
+    restoreFetch();
+  }
+});
+
+// TEST C — comportamento invariato su body JSON valido (nessuna regressione
+// introdotta dal try/catch aggiuntivo attorno a res.json()).
+test('FIX definitivo: body JSON valido -> comportamento invariato, nessuna regressione', async () => {
+  installFetchSequence([() => okResponse()]);
+  try {
+    const result = await callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'genera' }] });
+    assert.equal(result.content, 'risposta di test');
+    assert.equal(result.usage.totalTokens, 30);
+  } finally {
+    restoreFetch();
+  }
+});
+
+// TEST D/E — timeout differenziato per tier (FIX 2): il bug originale
+// derivava da un UNICO timeout condiviso tra un tier "fast" (~1-3s reali) e
+// un tier "advanced" (40-48s reali, dimostrato nel root-cause report) — qui
+// si verifica che i due tier risolvano davvero soglie DIVERSE, lette da due
+// env var distinte (AI_ROUTER_TIMEOUT_MS vs AI_ROUTER_ADVANCED_TIMEOUT_MS,
+// impostate a valori diversi in testa a questo file apposta per questo).
+test('FIX definitivo: timeout differenziato per tier — fast usa AI_ROUTER_TIMEOUT_MS, advanced usa AI_ROUTER_ADVANCED_TIMEOUT_MS', () => {
+  assert.equal(__resolveAiRouterTimeoutMsForTests('fast'), Number(process.env.AI_ROUTER_TIMEOUT_MS));
+  assert.equal(__resolveAiRouterTimeoutMsForTests('advanced'), Number(process.env.AI_ROUTER_ADVANCED_TIMEOUT_MS));
+  assert.notEqual(
+    __resolveAiRouterTimeoutMsForTests('fast'),
+    __resolveAiRouterTimeoutMsForTests('advanced'),
+    'i due tier devono usare soglie realmente diverse — un unico timeout condiviso è esattamente la root-cause del bug originale'
+  );
 });
 
 // ─── Circuit breaker ────────────────────────────────────────────────────────
