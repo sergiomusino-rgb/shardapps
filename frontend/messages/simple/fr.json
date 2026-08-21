@@ -1332,5 +1332,13 @@
   "creator_v2_chat_state_warning_suffix": "Votre demande semble mentionner un statut/workflow, mais je ne vois pas encore de champ de ce type dans le schéma — vous pouvez réessayer en le demandant plus explicitement.",
   "creator_v2_save": "Enregistrer",
   "creator_v2_versions_fetch_error": "Erreur lors du chargement des versions.",
-  "creator_v2_versions_rollback_error": "Erreur lors de la restauration de la version."
+  "creator_v2_versions_rollback_error": "Erreur lors de la restauration de la version.",
+  "creator_v2_project_type_landing_title": "Site Vitrine / Landing",
+  "creator_v2_project_type_landing_desc": "Pour les professionnels et artisans : galerie, histoire, carte, contacts.",
+  "creator_v2_project_type_webapp_pwa_title": "Application Web / PWA",
+  "creator_v2_project_type_webapp_pwa_desc": "Pour les pizzerias, restaurants et salons : menu interactif, réservations, panneau de commandes.",
+  "creator_v2_project_type_ecommerce_title": "Vitrine E-Commerce",
+  "creator_v2_project_type_ecommerce_desc": "Pour les boutiques : catalogue de produits, panier, commandes via WhatsApp ou caisse.",
+  "creator_v2_project_type_gestionale_title": "Logiciel de gestion",
+  "creator_v2_project_type_gestionale_desc": "CRM, helpdesk, gestion de projet, gestion immobilière ou tout autre domaine : vous décrivez, l'IA conçoit les entités."
 }

@@ -1328,5 +1328,13 @@
   "creator_v2_chat_state_warning_suffix": "Tu solicitud parece mencionar un estado/flujo de trabajo, pero aún no veo un campo de este tipo en el esquema — puedes intentar pedirlo de forma más explícita.",
   "creator_v2_save": "Guardar",
   "creator_v2_versions_fetch_error": "Error al cargar las versiones.",
-  "creator_v2_versions_rollback_error": "Error al restaurar la versión."
+  "creator_v2_versions_rollback_error": "Error al restaurar la versión.",
+  "creator_v2_project_type_landing_title": "Sitio Web / Landing",
+  "creator_v2_project_type_landing_desc": "Para profesionales y artesanos: galería, historia, mapa, contactos.",
+  "creator_v2_project_type_webapp_pwa_title": "Aplicación Web / PWA",
+  "creator_v2_project_type_webapp_pwa_desc": "Para pizzerías, restaurantes y salones: menú interactivo, reservas, panel de pedidos.",
+  "creator_v2_project_type_ecommerce_title": "Escaparate E-Commerce",
+  "creator_v2_project_type_ecommerce_desc": "Para tiendas: catálogo de productos, carrito, pedidos por WhatsApp o caja.",
+  "creator_v2_project_type_gestionale_title": "Sistema de gestión",
+  "creator_v2_project_type_gestionale_desc": "CRM, helpdesk, gestión de proyectos, gestión inmobiliaria o cualquier otro ámbito: tú lo describes, la IA diseña las entidades."
 }

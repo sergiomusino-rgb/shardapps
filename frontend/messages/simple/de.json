@@ -1328,5 +1328,13 @@
   "creator_v2_chat_state_warning_suffix": "Ihre Anfrage scheint einen Status/Workflow zu erwähnen, aber ich sehe noch kein Feld dieses Typs im Schema — Sie können es erneut expliziter anfordern.",
   "creator_v2_save": "Speichern",
   "creator_v2_versions_fetch_error": "Fehler beim Laden der Versionen.",
-  "creator_v2_versions_rollback_error": "Fehler bei der Wiederherstellung der Version."
+  "creator_v2_versions_rollback_error": "Fehler bei der Wiederherstellung der Version.",
+  "creator_v2_project_type_landing_title": "Website / Landingpage",
+  "creator_v2_project_type_landing_desc": "Für Fachleute und Handwerker: Galerie, Geschichte, Karte, Kontakte.",
+  "creator_v2_project_type_webapp_pwa_title": "Web-App / PWA",
+  "creator_v2_project_type_webapp_pwa_desc": "Für Pizzerien, Restaurants und Salons: interaktive Speisekarte, Reservierungen, Bestellübersicht.",
+  "creator_v2_project_type_ecommerce_title": "E-Commerce-Schaufenster",
+  "creator_v2_project_type_ecommerce_desc": "Für Geschäfte: Produktkatalog, Warenkorb, Bestellungen über WhatsApp oder Kasse.",
+  "creator_v2_project_type_gestionale_title": "Verwaltungssystem",
+  "creator_v2_project_type_gestionale_desc": "CRM, Helpdesk, Projektmanagement, Immobilienverwaltung oder jeder andere Bereich: Sie beschreiben, die KI entwirft die Entitäten."
 }

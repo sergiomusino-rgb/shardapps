@@ -23,6 +23,22 @@ export interface ProjectWizardLabels {
   generatingButton: string;
 }
 
+// i18n gap chiuso (root-cause report, follow-up): le card "Tipo di
+// progetto" leggevano label/description direttamente da PROJECT_TYPES
+// (site-schema.ts) — sempre in italiano, mai passate da t(). PROJECT_TYPES
+// resta la fonte di verità INVARIATA per `value` (ProjectType, usato nel
+// payload di generazione — mai toccato) e `icon` (indipendente dalla
+// lingua); qui si mappa solo l'ID stabile `value` alle chiavi i18n del
+// titolo/descrizione da mostrare, sostituendo pt.label/pt.description a
+// valle. Nessuna modifica a site-schema.ts: PROJECT_TYPES resta compatibile
+// con qualunque altro consumer futuro che ne legga label/description.
+const PROJECT_TYPE_I18N_KEYS: Record<ProjectType, { title: string; description: string }> = {
+  'landing': { title: 'creator_v2_project_type_landing_title', description: 'creator_v2_project_type_landing_desc' },
+  'webapp-pwa': { title: 'creator_v2_project_type_webapp_pwa_title', description: 'creator_v2_project_type_webapp_pwa_desc' },
+  'ecommerce': { title: 'creator_v2_project_type_ecommerce_title', description: 'creator_v2_project_type_ecommerce_desc' },
+  'gestionale': { title: 'creator_v2_project_type_gestionale_title', description: 'creator_v2_project_type_gestionale_desc' },
+};
+
 export default function ProjectWizard({
   onGenerate,
   isGenerating = false,
@@ -83,6 +99,7 @@ export default function ProjectWizard({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {PROJECT_TYPES.map((pt) => {
               const isSelected = projectType === pt.value;
+              const i18nKeys = PROJECT_TYPE_I18N_KEYS[pt.value];
               return (
                 <button
                   key={pt.value}
@@ -97,9 +114,9 @@ export default function ProjectWizard({
                 >
                   <span className="text-2xl" aria-hidden="true">{pt.icon}</span>
                   <span className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-200'}`}>
-                    {pt.label}
+                    {translate(i18nKeys.title)}
                   </span>
-                  <span className="text-xs leading-relaxed text-gray-500">{pt.description}</span>
+                  <span className="text-xs leading-relaxed text-gray-500">{translate(i18nKeys.description)}</span>
                 </button>
               );
             })}

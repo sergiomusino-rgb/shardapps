@@ -1334,5 +1334,13 @@
   "creator_v2_chat_state_warning_suffix": "Your request seems to mention a status/workflow, but I don't see a field of this type in the schema yet — you can try asking again more explicitly.",
   "creator_v2_save": "Save",
   "creator_v2_versions_fetch_error": "Error loading versions.",
-  "creator_v2_versions_rollback_error": "Error while restoring the version."
+  "creator_v2_versions_rollback_error": "Error while restoring the version.",
+  "creator_v2_project_type_landing_title": "Showcase Site / Landing",
+  "creator_v2_project_type_landing_desc": "For professionals and artisans: gallery, story, map, contacts.",
+  "creator_v2_project_type_webapp_pwa_title": "Web App / PWA",
+  "creator_v2_project_type_webapp_pwa_desc": "For pizzerias, restaurants and salons: interactive menu, bookings, order panel.",
+  "creator_v2_project_type_ecommerce_title": "E-Commerce Showcase",
+  "creator_v2_project_type_ecommerce_desc": "For shops: product catalog, cart, orders via WhatsApp or checkout.",
+  "creator_v2_project_type_gestionale_title": "Management System",
+  "creator_v2_project_type_gestionale_desc": "CRM, helpdesk, project management, property management or any other domain: you describe it, the AI designs the entities."
 }

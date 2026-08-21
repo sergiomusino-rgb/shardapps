@@ -1338,5 +1338,13 @@
   "creator_v2_chat_state_warning_suffix": "La tua richiesta sembra menzionare uno stato/workflow, ma non vedo ancora un campo di questo tipo nello schema — puoi riprovare a chiederlo in modo più esplicito.",
   "creator_v2_save": "Salva",
   "creator_v2_versions_fetch_error": "Errore nel caricamento delle versioni.",
-  "creator_v2_versions_rollback_error": "Errore durante il ripristino della versione."
+  "creator_v2_versions_rollback_error": "Errore durante il ripristino della versione.",
+  "creator_v2_project_type_landing_title": "Sito Vetrina / Landing",
+  "creator_v2_project_type_landing_desc": "Per professionisti e artigiani: galleria, storia, mappa, contatti.",
+  "creator_v2_project_type_webapp_pwa_title": "Web App / PWA",
+  "creator_v2_project_type_webapp_pwa_desc": "Per pizzerie, ristoranti e saloni: menu interattivo, prenotazioni, pannello ordini.",
+  "creator_v2_project_type_ecommerce_title": "E-Commerce Vetrina",
+  "creator_v2_project_type_ecommerce_desc": "Per negozi: catalogo prodotti, carrello, ordini via WhatsApp o cassa.",
+  "creator_v2_project_type_gestionale_title": "Gestionale",
+  "creator_v2_project_type_gestionale_desc": "CRM, helpdesk, project management, gestione immobili o qualunque altro dominio: tu descrivi, l'AI progetta le entità."
 }
