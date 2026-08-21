@@ -193,14 +193,10 @@ export default function DashboardPage() {
       icon: "📅",
       highlighted: false
     },
-    { 
-      title: t('dashboard_showcase_title'), 
-      desc: t('dashboard_showcase_subtitle'),
-      link: "/dashboard/showcase", 
-      color: "bg-gradient-to-br from-indigo-500 to-purple-600",
-      icon: "🚀",
-      highlighted: false,
-    },
+    // Card "Demo App" (Showcase) rimossa dalla dashboard su richiesta — la
+    // route /dashboard/showcase e lib/demoApps.ts restano invariate (nessuna
+    // pagina cancellata, solo non più linkata da qui), così un eventuale
+    // accesso diretto all'URL continua a funzionare invariato.
   ];
 
   // Card admin visibile solo per il tuo account
