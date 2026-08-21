@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { Loader2, Mic, MicOff, Sparkles } from 'lucide-react';
 import { PROJECT_TYPES, type ProjectType } from '@/src/lib/site-schema';
 import { useVoiceInput } from '@/src/lib/useVoiceInput';
+import { useLanguage } from '@/src/lib/LanguageContext';
 
 export interface ProjectWizardLabels {
   title: string;
@@ -22,14 +23,20 @@ export interface ProjectWizardLabels {
   generatingButton: string;
 }
 
-const DEFAULT_LABELS: ProjectWizardLabels = {
-  title: 'Crea con ShardApps',
-  subtitle: 'Scegli il tipo di progetto e descrivi la tua idea: ci pensa l\'AI.',
-  projectTypeLabel: 'Tipo di progetto',
-  promptLabel: 'Descrivi la tua idea',
-  promptPlaceholder: 'Es. "Pizzeria Da Mario, menu con margherita e diavola, prenotazioni tavoli e ordini d\'asporto via WhatsApp"',
-  generateButton: 'Genera con ShardApps',
-  generatingButton: 'Generazione in corso…',
+// i18n gap chiuso (root-cause report, follow-up): le card "Tipo di
+// progetto" leggevano label/description direttamente da PROJECT_TYPES
+// (site-schema.ts) — sempre in italiano, mai passate da t(). PROJECT_TYPES
+// resta la fonte di verità INVARIATA per `value` (ProjectType, usato nel
+// payload di generazione — mai toccato) e `icon` (indipendente dalla
+// lingua); qui si mappa solo l'ID stabile `value` alle chiavi i18n del
+// titolo/descrizione da mostrare, sostituendo pt.label/pt.description a
+// valle. Nessuna modifica a site-schema.ts: PROJECT_TYPES resta compatibile
+// con qualunque altro consumer futuro che ne legga label/description.
+const PROJECT_TYPE_I18N_KEYS: Record<ProjectType, { title: string; description: string }> = {
+  'landing': { title: 'creator_v2_project_type_landing_title', description: 'creator_v2_project_type_landing_desc' },
+  'webapp-pwa': { title: 'creator_v2_project_type_webapp_pwa_title', description: 'creator_v2_project_type_webapp_pwa_desc' },
+  'ecommerce': { title: 'creator_v2_project_type_ecommerce_title', description: 'creator_v2_project_type_ecommerce_desc' },
+  'gestionale': { title: 'creator_v2_project_type_gestionale_title', description: 'creator_v2_project_type_gestionale_desc' },
 };
 
 export default function ProjectWizard({
@@ -45,9 +52,26 @@ export default function ProjectWizard({
   defaultProjectType?: ProjectType;
   lang?: string;
 }) {
+  // i18n (root-cause report "/dashboard/creator non traduce"): useLanguage()
+  // chiamato direttamente qui (non via prop `lang`, che resta solo per
+  // useVoiceInput sotto — riconoscimento vocale, non testo UI). I default
+  // sotto sono ora costruiti da t(); `labels` resta un override ESTERNO
+  // opzionale (usato da dashboard/creator/page.tsx per il messaggio di step
+  // reale durante la generazione) — stesso contratto di prima, solo con
+  // default tradotti invece di stringhe fisse.
+  const { t: translate } = useLanguage();
   const [projectType, setProjectType] = useState<ProjectType>(defaultProjectType);
   const [prompt, setPrompt] = useState('');
-  const t = { ...DEFAULT_LABELS, ...labels };
+  const defaultLabels: ProjectWizardLabels = {
+    title: translate('creator_v2_wizard_title'),
+    subtitle: translate('creator_v2_wizard_subtitle'),
+    projectTypeLabel: translate('creator_v2_project_type_label'),
+    promptLabel: translate('creator_v2_prompt_label'),
+    promptPlaceholder: translate('creator_v2_prompt_placeholder'),
+    generateButton: translate('creator_v2_generate_button'),
+    generatingButton: translate('creator_v2_generating_button'),
+  };
+  const t = { ...defaultLabels, ...labels };
 
   // Comandi AI: dettatura vocale del prompt, stesso pattern di Generator AI.
   const { isListening, isSupported: isVoiceSupported, toggleListening } = useVoiceInput(lang, setPrompt);
@@ -75,6 +99,7 @@ export default function ProjectWizard({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {PROJECT_TYPES.map((pt) => {
               const isSelected = projectType === pt.value;
+              const i18nKeys = PROJECT_TYPE_I18N_KEYS[pt.value];
               return (
                 <button
                   key={pt.value}
@@ -89,9 +114,9 @@ export default function ProjectWizard({
                 >
                   <span className="text-2xl" aria-hidden="true">{pt.icon}</span>
                   <span className={`text-sm font-semibold ${isSelected ? 'text-white' : 'text-gray-200'}`}>
-                    {pt.label}
+                    {translate(i18nKeys.title)}
                   </span>
-                  <span className="text-xs leading-relaxed text-gray-500">{pt.description}</span>
+                  <span className="text-xs leading-relaxed text-gray-500">{translate(i18nKeys.description)}</span>
                 </button>
               );
             })}
@@ -126,7 +151,7 @@ export default function ProjectWizard({
                     ? 'bg-red-500/20 text-red-400 animate-pulse'
                     : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white'
                 }`}
-                title={isListening ? 'Stop listening' : 'Speak to enter text'}
+                title={isListening ? translate('creator_v2_mic_stop') : translate('creator_v2_mic_start')}
               >
                 {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
               </button>

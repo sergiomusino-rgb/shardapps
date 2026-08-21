@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from 'react';
 import { X, Clock, RotateCcw, Loader2, AlertCircle } from 'lucide-react';
+import { useLanguage } from '@/src/lib/LanguageContext';
 import SitePreview from './SitePreview';
 import type { SiteBlueprintJSON } from '@/src/lib/site-schema';
 import {
@@ -45,6 +46,9 @@ export default function VersionHistoryPanel({
   onRollback: (config: SiteBlueprintJSON) => void;
   onClose: () => void;
 }) {
+  // i18n (root-cause report "/dashboard/creator non traduce"): useLanguage()
+  // chiamato direttamente qui, stesso pattern degli altri componenti Creator.
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [entries, setEntries] = useState<VersionListEntry[]>([]);
@@ -59,7 +63,7 @@ export default function VersionHistoryPanel({
     // quando showVersions è true), quindi questo effetto gira una sola
     // volta per montaggio, non serve "resettare" lo stato qui.
     let cancelled = false;
-    fetchAppVersions(appId, accessToken).then((result) => {
+    fetchAppVersions(appId, accessToken, fetch, t).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setEntries(buildVersionListView(result.versions, currentSchema));
@@ -91,7 +95,7 @@ export default function VersionHistoryPanel({
     const versionId = confirmState.versionId;
     setConfirmState((prev) => reduceRollbackConfirm(prev, { type: 'CONFIRM' }));
 
-    const result = await rollbackToVersion(appId, versionId, accessToken);
+    const result = await rollbackToVersion(appId, versionId, accessToken, fetch, t);
     if (result.ok) {
       setConfirmState(IDLE_ROLLBACK_STATE);
       onRollback(result.config as SiteBlueprintJSON);
@@ -105,9 +109,9 @@ export default function VersionHistoryPanel({
       <div className="flex h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-800 px-5 py-3.5">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Clock size={16} className="text-indigo-400" /> Versioni
+            <Clock size={16} className="text-indigo-400" /> {t('creator_v2_versions_button')}
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label="Chiudi">
+          <button onClick={onClose} className="text-gray-500 hover:text-white" aria-label={t('creator_v2_close')}>
             <X size={18} />
           </button>
         </div>
@@ -117,7 +121,7 @@ export default function VersionHistoryPanel({
           <div className="overflow-y-auto border-b border-gray-800 sm:border-b-0 sm:border-r sm:max-h-full">
             {loading && (
               <div className="flex items-center gap-2 p-4 text-xs text-gray-400">
-                <Loader2 size={14} className="animate-spin" /> Caricamento versioni…
+                <Loader2 size={14} className="animate-spin" /> {t('creator_v2_versions_loading')}
               </div>
             )}
             {loadError && !loading && (
@@ -136,10 +140,10 @@ export default function VersionHistoryPanel({
                 <div className="flex items-center gap-1.5 font-semibold text-white">
                   v{entry.versionNumber}
                   {entry.isCurrent && (
-                    <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">IN USO</span>
+                    <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">{t('creator_v2_versions_current_badge')}</span>
                   )}
                 </div>
-                <div className="mt-0.5 text-gray-500">{sourceLabel(entry.source)}</div>
+                <div className="mt-0.5 text-gray-500">{sourceLabel(entry.source, t)}</div>
                 {entry.createdAt && (
                   <div className="mt-0.5 text-gray-600">{new Date(entry.createdAt).toLocaleString()}</div>
                 )}
@@ -153,24 +157,24 @@ export default function VersionHistoryPanel({
               <>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 px-4 py-2.5">
                   <div className="text-xs text-gray-400">
-                    v{selected.versionNumber} — {sourceLabel(selected.source)}
+                    v{selected.versionNumber} — {sourceLabel(selected.source, t)}
                     {selected.createdAt && ` · ${new Date(selected.createdAt).toLocaleString()}`}
                   </div>
                   {!selected.isCurrent && (
                     confirmState.phase === 'confirming' && confirmState.versionId === selected.id ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-amber-400">Ripristinare questa versione?</span>
+                        <span className="text-xs text-amber-400">{t('creator_v2_versions_confirm_question')}</span>
                         <button
                           onClick={handleConfirmRollback}
                           className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-amber-500"
                         >
-                          Conferma
+                          {t('creator_v2_confirm')}
                         </button>
                         <button
                           onClick={handleCancelRollback}
                           className="rounded-md border border-gray-700 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:text-white"
                         >
-                          Annulla
+                          {t('creator_v2_cancel')}
                         </button>
                       </div>
                     ) : (
@@ -184,7 +188,7 @@ export default function VersionHistoryPanel({
                         ) : (
                           <RotateCcw size={12} />
                         )}
-                        Ripristina questa versione
+                        {t('creator_v2_versions_restore_button')}
                       </button>
                     )
                   )}
@@ -202,7 +206,7 @@ export default function VersionHistoryPanel({
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-2 p-10 text-center text-gray-400">
                       <AlertCircle size={24} />
-                      <p className="text-sm">Anteprima non disponibile per questa versione.</p>
+                      <p className="text-sm">{t('creator_v2_versions_preview_unavailable')}</p>
                     </div>
                   )}
                 </div>

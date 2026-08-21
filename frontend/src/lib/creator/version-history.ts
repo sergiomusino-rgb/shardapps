@@ -66,7 +66,18 @@ export function getPreviewSchema(entry: Pick<VersionListEntry, 'config'>): SiteB
   return sanitizeSiteBlueprint(entry.config);
 }
 
-export function sourceLabel(source: AppVersionSource | 'current'): string {
+// i18n (root-cause report "/dashboard/creator non traduce"): `t` opzionale,
+// iniettato da VersionHistoryPanel.tsx (unico chiamante reale nella UI) — se
+// omesso (es. il test di questa funzione, o un futuro chiamante non-UI),
+// ricade sullo stesso identico valore italiano hardcoded di sempre, zero
+// regressione per chi non passa ancora `t`.
+export function sourceLabel(source: AppVersionSource | 'current', t?: (key: string) => string): string {
+  const key = source === 'current'
+    ? 'creator_v2_version_source_current'
+    : source === 'rollback'
+      ? 'creator_v2_version_source_rollback'
+      : 'creator_v2_version_source_publish';
+  if (t) return t(key);
   if (source === 'current') return 'Versione attuale';
   if (source === 'rollback') return 'Ripristino di una versione precedente';
   return 'Pubblicazione';
@@ -80,10 +91,17 @@ export type FetchVersionsResult =
   | { ok: true; versions: AppVersionRow[] }
   | { ok: false; error: string };
 
+// i18n (root-cause report "/dashboard/creator non traduce"): `t` opzionale
+// in coda, DOPO `fetchImpl` (mai spostare fetchImpl, romperebbe le chiamate
+// posizionali esistenti nei test) — stesso fallback IT hardcoded di sempre
+// quando omesso. Questi messaggi vengono usati SOLO come fallback quando
+// l'API non fornisce un `data.error` proprio (il caso comune, testato,
+// passa già il messaggio del server invariato).
 export async function fetchAppVersions(
   appId: string,
   accessToken: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  t?: (key: string) => string
 ): Promise<FetchVersionsResult> {
   try {
     const res = await fetchImpl(`/api/creator/rollback?appId=${encodeURIComponent(appId)}`, {
@@ -91,11 +109,11 @@ export async function fetchAppVersions(
     });
     const data = await res.json();
     if (!data?.success) {
-      return { ok: false, error: data?.error || 'Errore nel caricamento delle versioni.' };
+      return { ok: false, error: data?.error || (t ? t('creator_v2_versions_fetch_error') : 'Errore nel caricamento delle versioni.') };
     }
     return { ok: true, versions: (data.data?.versions ?? []) as AppVersionRow[] };
   } catch {
-    return { ok: false, error: 'Errore di connessione. Riprova.' };
+    return { ok: false, error: t ? t('creator_v2_error_connection_retry_short') : 'Errore di connessione. Riprova.' };
   }
 }
 
@@ -107,7 +125,8 @@ export async function rollbackToVersion(
   appId: string,
   versionId: string,
   accessToken: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  t?: (key: string) => string
 ): Promise<RollbackApiResult> {
   try {
     const res = await fetchImpl('/api/creator/rollback', {
@@ -117,11 +136,11 @@ export async function rollbackToVersion(
     });
     const data = await res.json();
     if (!data?.success) {
-      return { ok: false, error: data?.error || 'Errore durante il ripristino della versione.' };
+      return { ok: false, error: data?.error || (t ? t('creator_v2_versions_rollback_error') : 'Errore durante il ripristino della versione.') };
     }
     return { ok: true, config: data.data?.config };
   } catch {
-    return { ok: false, error: 'Errore di connessione. Riprova.' };
+    return { ok: false, error: t ? t('creator_v2_error_connection_retry_short') : 'Errore di connessione. Riprova.' };
   }
 }
 

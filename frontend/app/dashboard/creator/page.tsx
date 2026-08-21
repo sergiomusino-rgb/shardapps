@@ -35,16 +35,20 @@ const PENDING_JOB_STORAGE_KEY = 'creatorai:pendingGenerationJobId';
 
 // Messaggi reali per passo (requisito UX del task, "non è necessario
 // introdurre una UI complessa" — solo testo, nessun componente nuovo).
-const GENERATION_STEP_LABELS: Record<string, string> = {
-  planning: 'Analisi della struttura…',
-  generating: 'Generazione dell\'app…',
-  validating: 'Validazione…',
-  repairing: 'Finalizzazione…',
+// i18n (root-cause report "/dashboard/creator non traduce"): tradotti via
+// t(), mappa costruita dentro il componente (dove useLanguage() è
+// disponibile) invece che a livello di modulo — vedi stepLabelFor sotto,
+// che riceve `t` come parametro per lo stesso motivo.
+const GENERATION_STEP_KEYS: Record<string, string> = {
+  planning: 'creator_v2_step_planning',
+  generating: 'creator_v2_step_generating',
+  validating: 'creator_v2_step_validating',
+  repairing: 'creator_v2_step_repairing',
 };
 
-function stepLabelFor(status: string | null | undefined): string {
-  if (status && GENERATION_STEP_LABELS[status]) return GENERATION_STEP_LABELS[status];
-  return 'Creazione app in corso…';
+function stepLabelFor(status: string | null | undefined, t: (key: string) => string): string {
+  const key = status ? GENERATION_STEP_KEYS[status] : undefined;
+  return key ? t(key) : t('creator_v2_step_default');
 }
 
 // Intervallo di polling — un compromesso tra reattività percepita e numero
@@ -76,7 +80,7 @@ const MAX_CONSECUTIVE_POLL_ERRORS = 5;
 export default function CreatorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   const [schema, setSchema] = useState<SiteBlueprintJSON | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +120,7 @@ export default function CreatorPage() {
         const { data: { session } } = await supabaseBrowser.auth.getSession();
         if (!session?.access_token) {
           if (!cancelled) {
-            setError('Devi effettuare il login per modificare questa app.');
+            setError(t('creator_v2_error_login_edit'));
             router.push('/login');
           }
           return;
@@ -128,7 +132,7 @@ export default function CreatorPage() {
         const data = await res.json();
 
         if (!res.ok || !data.app) {
-          if (!cancelled) setError(data.error || 'App non trovata o non autorizzata.');
+          if (!cancelled) setError(data.error || t('creator_v2_error_app_not_found'));
           return;
         }
 
@@ -141,7 +145,7 @@ export default function CreatorPage() {
         // parziale.
         const sanitized = sanitizeSiteBlueprint(data.app.config);
         if (!sanitized) {
-          if (!cancelled) setError('Questa app non usa il motore Creator AI (Sito/PWA) e non può essere riaperta qui.');
+          if (!cancelled) setError(t('creator_v2_error_app_wrong_engine'));
           return;
         }
 
@@ -152,7 +156,7 @@ export default function CreatorPage() {
         }
       } catch (err) {
         console.error('[creator] load existing app error:', err);
-        if (!cancelled) setError('Errore di connessione durante il caricamento dell\'app.');
+        if (!cancelled) setError(t('creator_v2_error_load_app_connection'));
       } finally {
         if (!cancelled) setIsLoadingExisting(false);
       }
@@ -200,18 +204,18 @@ export default function CreatorPage() {
     if (!file) return;
     setBrandingError('');
     if (!file.type.startsWith('image/')) {
-      setBrandingError('Il file deve essere un\'immagine');
+      setBrandingError(t('creator_v2_branding_error_not_image'));
       return;
     }
     if (file.size > 2 * 1024 * 1024) {
-      setBrandingError('Immagine troppo grande (max 2MB)');
+      setBrandingError(t('creator_v2_branding_error_too_large'));
       return;
     }
     setUploadingLogo(true);
     try {
       const { data: { user } } = await supabaseBrowser.auth.getUser();
       if (!user) {
-        setBrandingError('Devi effettuare il login');
+        setBrandingError(t('creator_v2_error_login_required'));
         return;
       }
       const ext = file.name.split('.').pop() || 'png';
@@ -224,7 +228,7 @@ export default function CreatorPage() {
       setWhiteLabelLogoUrl(publicUrlData.publicUrl);
     } catch (err) {
       console.error('[CreatorBranding] errore upload logo:', err);
-      setBrandingError('Errore durante il caricamento del logo');
+      setBrandingError(t('creator_v2_branding_error_upload'));
     } finally {
       setUploadingLogo(false);
     }
@@ -250,13 +254,13 @@ export default function CreatorPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setBrandingError(data.error || 'Errore salvataggio');
+        setBrandingError(data.error || t('creator_v2_error_save_generic'));
         return;
       }
       setBrandingSaved(true);
       setTimeout(() => setBrandingSaved(false), 2000);
     } catch {
-      setBrandingError('Errore di connessione');
+      setBrandingError(t('creator_v2_error_connection_generic'));
     } finally {
       setSavingBranding(false);
     }
@@ -270,7 +274,7 @@ export default function CreatorPage() {
   const applyReadySchema = (readySchema: SiteBlueprintJSON, prompt?: string) => {
     setSchema(readySchema);
     if (prompt && promptSuggestsStateButMissing(prompt, readySchema)) {
-      setStateWarning('La tua descrizione sembra menzionare uno stato/workflow, ma lo schema generato non include un campo di questo tipo. Puoi chiederlo di nuovo al Copilot qui a destra (es. "aggiungi un campo di stato con i valori...").');
+      setStateWarning(t('creator_v2_state_warning'));
     }
   };
 
@@ -293,7 +297,7 @@ export default function CreatorPage() {
           sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
           setIsGenerating(false);
           setGenerationStep(null);
-          alert('Devi effettuare il login per continuare');
+          alert(t('creator_v2_error_login_continue'));
           router.push('/login');
           return;
         }
@@ -319,7 +323,7 @@ export default function CreatorPage() {
           // 404 (job non trovato/non proprio) è terminale, non transitorio.
           if (res.status === 404) {
             sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
-            setError(data.error || 'Generazione non trovata.');
+            setError(data.error || t('creator_v2_error_generation_not_found'));
             setIsGenerating(false);
             setGenerationStep(null);
             return;
@@ -332,26 +336,26 @@ export default function CreatorPage() {
           setGenerationStep(null);
           setIsGenerating(false);
           if (data.data?.schema) applyReadySchema(data.data.schema, prompt);
-          else setError('La generazione è terminata senza uno schema valido. Riprova.');
+          else setError(t('creator_v2_error_no_schema'));
           return;
         }
         if (data.status === 'failed') {
           sessionStorage.removeItem(PENDING_JOB_STORAGE_KEY);
           setGenerationStep(null);
           setIsGenerating(false);
-          setError(data.error || 'Errore sconosciuto durante la generazione');
+          setError(data.error || t('creator_v2_error_unknown_generation'));
           return;
         }
 
         // planning/generating/validating/repairing: ancora in corso, MAI un
         // errore mostrato qui — solo il messaggio di passo aggiornato.
-        setGenerationStep(stepLabelFor(data.status));
+        setGenerationStep(stepLabelFor(data.status, t));
         setTimeout(tick, nextPollIntervalMs(attempt));
       } catch (err) {
         consecutiveErrors += 1;
         console.error('[creator] poll error:', err);
         if (consecutiveErrors >= MAX_CONSECUTIVE_POLL_ERRORS) {
-          setError('Errore di connessione durante il controllo della generazione. Riprova più tardi — se la generazione era già in corso potrebbe comunque completarsi: controlla tra qualche minuto prima di riprovare.');
+          setError(t('creator_v2_error_poll_connection'));
           setIsGenerating(false);
           setGenerationStep(null);
           return;
@@ -381,7 +385,7 @@ export default function CreatorPage() {
     (async () => {
       setIsGenerating(true);
       setError(null);
-      setGenerationStep('Recupero della generazione in corso…');
+      setGenerationStep(t('creator_v2_recovering_generation'));
       await pollGenerationJob(pendingJobId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -391,12 +395,12 @@ export default function CreatorPage() {
     setIsGenerating(true);
     setError(null);
     setStateWarning(null);
-    setGenerationStep('Creazione app in corso…');
+    setGenerationStep(t('creator_v2_step_default'));
 
     try {
       const { data: { session } } = await supabaseBrowser.auth.getSession();
       if (!session?.access_token) {
-        alert('Devi effettuare il login per generare un progetto');
+        alert(t('creator_v2_error_login_generate'));
         router.push('/login');
         return;
       }
@@ -423,18 +427,18 @@ export default function CreatorPage() {
         // stato reale invece di aspettare qui. P0-6: jobId persistito così
         // un reload della pagina può recuperarlo.
         sessionStorage.setItem(PENDING_JOB_STORAGE_KEY, data.jobId);
-        setGenerationStep(stepLabelFor(data.status));
+        setGenerationStep(stepLabelFor(data.status, t));
         await pollGenerationJob(data.jobId, prompt);
         return; // pollGenerationJob gestisce già isGenerating/generationStep
       } else if (data.code === 'SLOTS_EXHAUSTED') {
-        alert(data.message || 'Hai esaurito gli slot app. Acquista un nuovo piano per crearne altre.');
+        alert(data.message || t('creator_v2_error_slots_exhausted'));
         router.push(data.redirectTo || '/pricing');
       } else {
-        setError(data.error || 'Errore sconosciuto durante la generazione');
+        setError(data.error || t('creator_v2_error_unknown_generation'));
       }
     } catch (err) {
       console.error('[creator] generate error:', err);
-      setError('Errore di connessione. Riprova più tardi.');
+      setError(t('creator_v2_error_connection_retry'));
     } finally {
       // pollGenerationJob (ramo asincrono) gestisce da sé isGenerating: se
       // questo finally lo resettasse comunque, un polling ancora in corso
@@ -458,7 +462,7 @@ export default function CreatorPage() {
         <div className="flex items-center gap-2">
           {editingAppId && (
             <span className="flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-semibold text-indigo-300">
-              <Pencil size={11} /> Modifica: {editingAppName}
+              <Pencil size={11} /> {t('creator_v2_editing_prefix')} {editingAppName}
             </span>
           )}
           {schema && (
@@ -476,7 +480,7 @@ export default function CreatorPage() {
               }}
               className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-xs font-medium text-gray-300 transition-colors hover:border-gray-600 hover:text-white"
             >
-              <RotateCcw size={14} /> Ricomincia
+              <RotateCcw size={14} /> {t('creator_v2_restart')}
             </button>
           )}
         </div>
@@ -494,7 +498,7 @@ export default function CreatorPage() {
               (altrimenti mostreremmo lo spinner, non questo banner). */}
           {searchParams.get('appId') && !editingAppId && (
             <Link href="/dashboard/projects" className="shrink-0 whitespace-nowrap font-semibold text-red-200 underline hover:text-white">
-              Torna alle tue app
+              {t('creator_v2_back_to_apps')}
             </Link>
           )}
         </div>
@@ -515,7 +519,7 @@ export default function CreatorPage() {
         <div className="flex flex-1 items-center justify-center py-20">
           <div className="flex items-center gap-3 text-sm text-gray-400">
             <Loader2 size={20} className="animate-spin" />
-            Caricamento dell&apos;app…
+            {t('creator_v2_loading_app')}
           </div>
         </div>
       ) : !schema ? (
@@ -529,37 +533,37 @@ export default function CreatorPage() {
               <div className="flex items-center gap-2">
                 <Sparkles size={16} className="text-indigo-400 shrink-0" />
                 <div>
-                  <h2 className="text-sm font-semibold text-white">Brandizza la tua app</h2>
+                  <h2 className="text-sm font-semibold text-white">{t('creator_v2_branding_title')}</h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Il tuo logo al posto di &quot;ShardApps by MUSINO&quot; in ogni app che pubblichi da qui in poi.
+                    {t('creator_v2_branding_desc')}
                   </p>
                 </div>
               </div>
               {tenantPlan !== 'business' && (
                 <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400">
-                  Piano Business
+                  {t('creator_v2_branding_plan_badge')}
                 </span>
               )}
             </div>
 
             {tenantPlan === undefined ? null : tenantPlan !== 'business' ? (
               <p className="mt-3 text-xs text-gray-500">
-                Disponibile con il piano Business.{' '}
-                <Link href="/pricing" className="text-indigo-400 hover:underline">Scopri di più</Link>
+                {t('creator_v2_branding_upgrade_prefix')}{' '}
+                <Link href="/pricing" className="text-indigo-400 hover:underline">{t('creator_v2_branding_upgrade_link')}</Link>
               </p>
             ) : (
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-700 bg-gray-800">
                     {whiteLabelLogoUrl ? (
-                      <img src={whiteLabelLogoUrl} alt="Il tuo logo" className="h-full w-full object-cover" />
+                      <img src={whiteLabelLogoUrl} alt={t('creator_v2_branding_logo_preview_alt')} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-[9px] text-gray-500">Logo</span>
+                      <span className="text-[9px] text-gray-500">{t('creator_v2_branding_logo_label')}</span>
                     )}
                   </div>
                   <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-200 hover:border-gray-600">
                     {uploadingLogo ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
-                    Carica logo
+                    {t('creator_v2_branding_upload_logo')}
                     <input type="file" accept="image/*" onChange={handleWhiteLabelLogoFile} disabled={uploadingLogo} className="hidden" />
                   </label>
                 </div>
@@ -567,7 +571,7 @@ export default function CreatorPage() {
                   type="text"
                   value={whiteLabelLabel}
                   onChange={(e) => setWhiteLabelLabel(e.target.value)}
-                  placeholder="Testo sotto il logo, es. by Rossi Digital"
+                  placeholder={t('creator_v2_branding_label_placeholder')}
                   maxLength={40}
                   className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs text-gray-200 focus:border-indigo-500 focus:outline-none"
                 />
@@ -576,7 +580,7 @@ export default function CreatorPage() {
                   disabled={savingBranding || uploadingLogo}
                   className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-indigo-500 disabled:bg-gray-700"
                 >
-                  {savingBranding ? 'Salvataggio...' : 'Salva'}
+                  {savingBranding ? t('creator_v2_saving') : t('creator_v2_save')}
                 </button>
                 {brandingSaved && <Check size={16} className="shrink-0 text-emerald-400" />}
               </div>
