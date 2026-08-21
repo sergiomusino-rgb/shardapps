@@ -135,6 +135,74 @@ test('secondo fallimento consecutivo -> errore finale (mai un terzo tentativo, m
   }
 });
 
+// ─── Osservabilità: content vuoto / zero token (P0 Generation Reliability, FIX 3) ──
+// Root-cause dimostrata live: il provider può rispondere 2xx con
+// choices[0].message.content vuoto e usage.total_tokens=0 — nessun errore
+// HTTP, quindi mai intercettato da isTransientFailure/retry. Prima di questo
+// fix, l'unica traccia era l'eccezione generica di extractJsonFromAiContent
+// più a valle, senza alcun contesto su COSA fosse arrivato dal provider.
+
+function emptyContentResponse(overrides: Record<string, unknown> = {}): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [{ message: { content: '' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      ...overrides,
+    }),
+  } as unknown as Response;
+}
+
+test('content vuoto/zero token: callAiRouter NON lancia (non è un errore HTTP) — il content vuoto risale al chiamante invariato', async () => {
+  installFetchSequence([() => emptyContentResponse()]);
+  try {
+    const result = await callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'genera' }] });
+    assert.equal(result.content, '');
+    assert.equal(result.usage.totalTokens, 0);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('content vuoto/zero token: viene loggato un warning diagnostico con task/tier/model/finishReason/usage, MAI messages/apiKey', async (t) => {
+  installFetchSequence([() => emptyContentResponse()]);
+  const warnMock = t.mock.method(console, 'warn');
+  try {
+    await callAiRouter({ task: 'app-generation', messages: [{ role: 'user', content: 'dati cliente sensibili qui' }] });
+
+    const diagnosticCall = warnMock.mock.calls.find((c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('content vuoto o zero token'));
+    assert.ok(diagnosticCall, 'atteso un console.warn diagnostico per content vuoto/zero token');
+    const payload = diagnosticCall.arguments[1] as Record<string, unknown>;
+    assert.equal(payload.task, 'app-generation');
+    assert.equal(payload.tier, 'advanced');
+    assert.equal(payload.hasContent, false);
+    assert.equal(payload.finishReason, 'stop');
+    assert.equal(payload.usagePresent, true);
+    assert.equal(payload.httpStatus, 200);
+
+    // Nessun dato sensibile nel payload loggato: né il prompt utente, né
+    // l'API key/Authorization (mai passati a questo punto del codice).
+    const serialized = JSON.stringify(payload);
+    assert.ok(!serialized.includes('dati cliente sensibili'), 'il prompt utente non deve mai comparire nel log diagnostico');
+    assert.ok(!('apiKey' in payload) && !('authorization' in payload) && !('Authorization' in payload));
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('content presente/token>0: NESSUN warning diagnostico (solo il path del content vuoto lo produce)', async (t) => {
+  installFetchSequence([() => okResponse()]);
+  const warnMock = t.mock.method(console, 'warn');
+  try {
+    await callAiRouter({ task: 'chat', messages: [{ role: 'user', content: 'ciao' }] });
+    const diagnosticCall = warnMock.mock.calls.find((c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('content vuoto o zero token'));
+    assert.equal(diagnosticCall, undefined);
+  } finally {
+    restoreFetch();
+  }
+});
+
 // ─── Circuit breaker ────────────────────────────────────────────────────────
 
 test('circuit breaker: si apre dopo N fallimenti consecutivi e blocca SENZA chiamare il provider', async () => {

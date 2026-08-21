@@ -621,11 +621,23 @@ export async function runGenerationPipeline(
   // di bookkeeping) è esattamente il caso per cui app/api/creator/generate/
   // route.ts ricade sulla strategia di generazione legacy (requisito Fase 5
   // punto 7). Quel fallback resta l'unico punto che decide/esegue la
-  // strategia legacy — questo try/catch NON la duplica — ma "esplicito e
-  // registrato nel job" richiede che il job stesso rifletta che è stato
-  // usato un fallback, invece di restare silenziosamente bloccato in uno
-  // stato intermedio (es. 'generating'): lo marchiamo failed+fallback_used
-  // PRIMA di rilanciare l'errore originale invariato.
+  // strategia legacy — questo try/catch NON la duplica.
+  //
+  // P0 Generation Reliability (root-cause dimostrata live, vedi report):
+  // qui NON si marca più il job 'failed' prima di rilanciare — route.ts
+  // tenta SEMPRE un fallback subito dopo aver ricevuto questo errore
+  // rilanciato, e un client in polling smette di osservare il job non
+  // appena vede status='failed' (comportamento corretto per uno stato
+  // realmente terminale — vedi pollGenerationJob in dashboard/creator/
+  // page.tsx). Se lo status fosse già 'failed' durante il tentativo di
+  // fallback, un fallback che POI riesce a produrre uno schema valido
+  // resterebbe invisibile al client — esattamente il bug dimostrato in
+  // produzione (fallback riuscito, client comunque fermo su un errore).
+  // 'generating' è lo stesso status non-terminale già usato per l'attesa
+  // del Generator principale: nessuna modifica lato client necessaria. Se
+  // il fallback stesso non dovesse mai concludersi, STALE_JOB_THRESHOLD_MS
+  // (status/[jobId]/route.ts) marca comunque il job failed dopo 6 minuti —
+  // nessun rischio di blocco indefinito.
   try {
     // ─── 2. Generator (riusa la funzione iniettata, mai duplicata) ───────
     job = await updateGenerationJob(supabase, job.id, { status: 'generating', current_step: 'generator' });
@@ -710,9 +722,9 @@ export async function runGenerationPipeline(
     const message = err instanceof Error ? err.message : String(err);
     try {
       await updateGenerationJob(supabase, job.id, {
-        status: 'failed',
-        current_step: 'fallback',
-        error: message,
+        status: 'generating',
+        current_step: 'fallback_in_progress',
+        artifacts: { ...job.artifacts, generatorError: message },
         fallback_used: true,
       });
     } catch {

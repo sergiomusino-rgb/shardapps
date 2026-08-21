@@ -231,6 +231,10 @@ export function __resetAiRouterCircuitBreakerForTests(): void {
 
 interface OpenRouterCallResult {
   data: Record<string, unknown>;
+  /** Status HTTP della risposta (sempre 2xx qui: callOpenRouterOnce lancia
+   * su !res.ok) — usato solo per il log diagnostico "content vuoto/zero
+   * token" sotto (P0 Generation Reliability), mai per decidere retry. */
+  status: number;
 }
 
 // Un singolo tentativo di chiamata a OpenRouter, con timeout esplicito.
@@ -263,7 +267,7 @@ async function callOpenRouterOnce(apiKey: string, body: Record<string, unknown>)
   if (!res.ok) {
     throw new AiRouterError(data?.error?.message || `Errore OpenRouter (${res.status})`, res.status, data);
   }
-  return { data };
+  return { data, status: res.status };
 }
 
 // Orchestrazione retry: al massimo MAX_RETRIES tentativi extra, solo se
@@ -409,8 +413,9 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
   if (jsonMode) body.response_format = { type: 'json_object' };
 
   let data: Record<string, unknown>;
+  let httpStatus: number;
   try {
-    ({ data } = await fetchWithRetry(apiKey, body));
+    ({ data, status: httpStatus } = await fetchWithRetry(apiKey, body));
     recordCircuitSuccess();
   } catch (err) {
     // Solo i fallimenti "del provider" (timeout/rete/5xx/429, già filtrati
@@ -428,7 +433,8 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
     throw new AiRouterError(`Errore imprevisto verso OpenRouter: ${err instanceof Error ? err.message : 'sconosciuto'}`);
   }
 
-  const content: string = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
+  const choices = data.choices as Array<{ message?: { content?: string }; finish_reason?: unknown }> | undefined;
+  const content: string = choices?.[0]?.message?.content || '';
   const rawUsage = (data.usage as Record<string, unknown>) || {};
   const usage: AiRouterUsage = {
     promptTokens: (rawUsage.prompt_tokens as number) ?? 0,
@@ -436,6 +442,27 @@ export async function callAiRouter(options: AiRouterCallOptions): Promise<AiRout
     totalTokens: (rawUsage.total_tokens as number) ?? 0,
     costUsd: typeof rawUsage.cost === 'number' ? rawUsage.cost : null,
   };
+
+  // P0 Generation Reliability (osservabilità, root-cause dimostrata live):
+  // il provider può rispondere 2xx con content vuoto/zero token, senza
+  // alcun errore HTTP — extractJsonFromAiContent lancia solo "Nessun JSON
+  // valido nella risposta del modello", senza contesto su COSA sia
+  // realmente arrivato. Log mirato SOLO qui, mai messages/prompt (possono
+  // contenere dati cliente) né apiKey/Authorization.
+  if (!content || usage.totalTokens === 0) {
+    console.warn('[ai-router] risposta con content vuoto o zero token', {
+      task,
+      tier,
+      model,
+      httpStatus,
+      finishReason: choices?.[0]?.finish_reason ?? null,
+      hasContent: Boolean(content),
+      hasChoices: Array.isArray(data.choices) && data.choices.length > 0,
+      usagePresent: Boolean(data.usage),
+      rawUsage,
+      providerError: (data as { error?: unknown }).error ?? null,
+    });
+  }
 
   // Log strutturato (invariato) + persistenza reale del consumo (Blocco 1):
   // solo se un tenant è stato risolto sopra, stesso principio del budget

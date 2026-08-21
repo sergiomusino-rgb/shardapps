@@ -131,6 +131,11 @@ test('generate -> job: 202 immediato con jobId, il job persistito raggiunge read
   assert.equal(setup.aiCalls.length, 2);
   assert.equal(setup.aiCalls[0].task, 'app-planning');
   assert.equal(setup.aiCalls[1].task, 'app-generation');
+  // FIX 1 (P0 Generation Reliability): il Generator ora richiede jsonMode
+  // al provider, stesso trattamento già riservato al Planner — root-cause
+  // dimostrata live: senza, il provider a volte rispondeva con content
+  // vuoto/zero token, mai un errore HTTP, quindi mai ritentato.
+  assert.equal(setup.aiCalls[1].jsonMode, true);
 
   const job = await getGenerationJobForTenant(setup.supabase, body.jobId, 'tenant-1');
   assert.ok(job);
@@ -203,6 +208,34 @@ test('generate: fallback OBBLIGATORIO quando l\'orchestrator stesso fallisce (es
   assert.equal(job?.status, 'ready');
   assert.equal(job?.fallback_used, true);
   assert.equal((job?.result_schema as { appName?: string } | null)?.appName, 'Salvata dal fallback');
+});
+
+// P0 Generation Reliability (fallback lifecycle — FIX 2): il caso
+// complementare al test sopra. Se ANCHE il fallback fallisce, il job deve
+// arrivare a status='failed' con l'errore REALE del fallback (non quello
+// del primo tentativo, che resta in artifacts.generatorError) — mai
+// bloccato indefinitamente su un intermedio.
+test('generate: fallback fallisce a sua volta -> job status "failed" con l\'errore reale del fallback (mai bloccato su un intermedio)', async (t) => {
+  const setup = setupRouteTest(t, baseSetup({
+    aiResponses: [
+      { content: JSON.stringify(VALID_PLAN) },            // planner ok
+      new Error('OpenRouter non raggiungibile'),           // generator (pipeline principale): fallisce
+      new Error('OpenRouter ancora non raggiungibile'),     // fallback: fallisce a sua volta
+    ],
+  }));
+
+  const res = await postGenerate({ projectType: 'gestionale', userPrompt: 'Gestionale clienti', lang: 'it' });
+  assert.equal(res.status, 202);
+  const body = await res.json();
+  assert.ok(body.jobId);
+  assert.equal(setup.aiCalls.length, 3);
+
+  const job = await getGenerationJobForTenant(setup.supabase, body.jobId, 'tenant-1');
+  assert.ok(job);
+  assert.equal(job?.status, 'failed');
+  assert.equal(job?.fallback_used, true);
+  assert.match(job?.error || '', /OpenRouter ancora non raggiungibile/);
+  assert.equal(job?.result_schema, null);
 });
 
 test('generate (ramo projectType): 403 SlotsExhausted quando il tenant ha esaurito gli slot', async (t) => {
