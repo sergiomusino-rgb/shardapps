@@ -18,8 +18,9 @@ import assert from 'node:assert/strict';
 import { setupRouteTest, importRoute } from './test-helpers/route-test-harness.ts';
 
 setupRouteTest({} as unknown, {}); // registra il loader di risoluzione alias per questo processo
-const { DASHBOARD_CARDS_DOC, ensureGestionaleHasPages } = (await importRoute('src/lib/creator-site-generator.ts')) as {
+const { DASHBOARD_CARDS_DOC, WORKFLOW_DOC, ensureGestionaleHasPages } = (await importRoute('src/lib/creator-site-generator.ts')) as {
   DASHBOARD_CARDS_DOC: string;
+  WORKFLOW_DOC: string;
   ensureGestionaleHasPages: (rawSchema: unknown, projectType: string) => unknown;
 };
 
@@ -48,4 +49,20 @@ test('ensureGestionaleHasPages: nessuna regressione, invariato da questa session
   const result = ensureGestionaleHasPages(raw, 'gestionale') as { pages: unknown[] };
   assert.equal(result.pages.length, 1);
   assert.equal((result.pages[0] as { slug: string }).slug, 'home');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Regressione: trigger_webhook e send_notification sono implementati in runtime
+// (vedi backend/lib/action-dispatcher.js) — il prompt non deve più indicarli
+// come "non ancora implementati".
+// ═══════════════════════════════════════════════════════════════════════════
+test('WORKFLOW_DOC documenta correttamente che trigger_webhook e send_notification sono implementati', () => {
+  // Verifica che il prompt NON dica che le azioni sono non implementate
+  assert.doesNotMatch(WORKFLOW_DOC, /non è ancora implementata/);
+  assert.doesNotMatch(WORKFLOW_DOC, /l'unico tipo con effetto reale oggi/);
+  
+  // Verifica che il prompt menzioni esplicitamente che sono implementate
+  assert.match(WORKFLOW_DOC, /trigger_webhook/);
+  assert.match(WORKFLOW_DOC, /send_notification/);
+  assert.match(WORKFLOW_DOC, /tutti e tre i tipi sono eseguiti in produzione/);
 });
