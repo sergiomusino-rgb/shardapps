@@ -151,7 +151,7 @@ Schema obbligatorio:
         "fields": [
           {
             "id": "snake_case",
-            "type": "text|number|date|datetime|boolean|email|phone|textarea|select|multiselect|relation|currency|file|image",
+            "type": "text|number|date|datetime|boolean|email|phone|textarea|select|multiselect|relation|state|currency|file|image",
             "label": "Etichetta campo",
             "required": true|false,
             "options": ["opzione1", "opzione2"],

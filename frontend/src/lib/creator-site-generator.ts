@@ -64,14 +64,14 @@ Non inventare un'entità solo per avere qualcosa a cui collegare una relazione: 
 // rompe nulla (resolveEntityStatesAndActions in site-schema.ts degrada/
 // scarta ciò che non torna), ma un esempio chiaro evita che il modello
 // inventi stati o azioni che poi il server neutralizza silenziosamente.
-const WORKFLOW_DOC = `Macchine a stati e azioni (facoltative — usale solo per entità con un vero flusso di lavoro: ordini da preparare/consegnare, interventi da completare, ticket da chiudere; NON per anagrafiche/cataloghi come clienti o prodotti, che non hanno stati):
+export const WORKFLOW_DOC = `Macchine a stati e azioni (facoltative — usale solo per entità con un vero flusso di lavoro: ordini da preparare/consegnare, interventi da completare, ticket da chiudere; NON per anagrafiche/cataloghi come clienti o prodotti, che non hanno stati):
 - Un campo può avere "type":"state" per rappresentare lo stato di avanzamento di un record. In quel caso DEVE avere anche:
   - "states": elenco di stringhe, il vocabolario COMPLETO degli stati possibili (es. ["bozza", "in_lavorazione", "completato", "annullato"]).
   - "allowedTransitions" (facoltativo ma consigliato): mappa {stato_di_partenza: [stati_di_arrivo_ammessi]} — SOLO stati già elencati in "states". Se omesso, tutte le transizioni tra gli stati sono ammesse (nessun vincolo).
 - L'entità che ha un campo "type":"state" può avere anche un array "actions" (facoltativo) con pulsanti eseguibili su ogni record. Ogni azione:
   - "id": identificativo snake_case.
   - "label": etichetta del pulsante (nella lingua richiesta).
-  - "type": "change_state" (cambia lo stato del record — l'unico tipo con effetto reale oggi), "trigger_webhook" o "send_notification" (accettati a schema, ma la loro esecuzione non è ancora implementata: usali solo se il prompt li richiede esplicitamente, altrimenti preferisci "change_state").
+  - "type": "change_state" (cambia lo stato del record), "trigger_webhook" (invia una chiamata HTTP POST a un URL configurato) o "send_notification" (invia una notifica email tramite Resend): tutti e tre i tipi sono eseguiti in produzione.
   - "targetState" (SOLO per "change_state"): uno degli stati elencati in "states" del campo di stato dell'entità.
   - "requiredRole" (facoltativo): "admin" oppure "operator" — ruolo minimo richiesto per eseguire l'azione. Omettilo se chiunque con accesso in scrittura (operator o admin) deve poterla eseguire.
   - "webhookUrl" (facoltativo, SOLO per "trigger_webhook"): un URL http/https valido a cui inviare una notifica quando l'azione viene eseguita. Valorizzalo SOLO se il prompt indica esplicitamente un URL reale — non inventare un URL plausibile.
